@@ -3,7 +3,7 @@
 # 2026-10-30 从 new-forecast/site/copilot 搬过来（Worker 和 D1 改名 marketing / marketing-staging，Amos 2026-10-30；密钥和数据都不用动）。
 #   bash scripts/deploy.sh staging      测试版 marketing-staging
 #   bash scripts/deploy.sh production   正式版 marketing
-# 步骤：D1 没有就建（ensure-d1.mjs）→ 执行没执行过的迁移 → 部署（带提交号）→ 打印健康检查（不含密钥）。
+# 步骤：把 extension/ 打成 zip 给后台下载（build-ext-zip.mjs）→ D1 没有就建（ensure-d1.mjs）→ 执行没执行过的迁移 → 部署（带提交号）→ 打印健康检查（不含密钥）。
 # 没有 CLOUDFLARE_API_TOKEN / CLOUDFLARE_ACCOUNT_ID 时打印"跳过"并成功（C103）。
 set -euo pipefail
 cd "$(dirname "$0")/.."
@@ -21,6 +21,7 @@ export WRANGLER_SEND_METRICS=false
 SHA="${GITHUB_SHA:-$(git rev-parse HEAD)}"
 OUT="$(mktemp)"
 trap 'rm -f wrangler.deploy.toml "$OUT"' EXIT
+node scripts/build-ext-zip.mjs
 node scripts/ensure-d1.mjs --env "$TARGET" --app copilot
 npx wrangler d1 migrations apply "$DB" --remote -c wrangler.deploy.toml --env="$E" || { echo "✗ 副驾驶 D1 迁移失败" >&2; exit 1; }
 echo "✓ 副驾驶 D1 迁移"

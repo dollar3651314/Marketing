@@ -1,8 +1,10 @@
+import { EXTENSION_VERSION } from './extension-download';
+
 /**
  * 网页后台（agents C136；0.3 原型 https://claude.ai/artifact/EwGoS2XRCbMsKxySVXRcxd，Amos 2026-10-30 确认 D-1～D-4）。
- * 两页：跟帖评论清单（原"待回复清单"）、用量和限额。没登录显示密码框；手机、电脑都能用。
+ * 三页：跟帖评论清单（原"待回复清单"）、用量和限额、插件下载（Amos 2026-10-30）。没登录显示密码框；手机、电脑都能用。
  * 每个按钮都有处理中 / 成功 / 失败的反馈（C135）；删除先在页面上确认（删了不能恢复）。
- * 注意：整页是一个模板字符串，页面脚本里不能用反引号和 ${。
+ * 注意：整页是一个模板字符串，页面脚本里不能用反引号和 ${（只有插件版本号是在这里插进去的）。
  */
 export const ADMIN_PAGE = `<!doctype html>
 <html lang="zh-Hans"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
@@ -43,6 +45,7 @@ input[aria-invalid="true"]{border-color:var(--err);background:var(--err-soft)}
 .btn{font:inherit;font-size:14px;font-weight:700;border-radius:10px;padding:9px 12px;cursor:pointer;border:1px solid var(--line);background:var(--surface);color:var(--ink);text-align:center;text-decoration:none}
 .btn.primary{background:var(--teal);border-color:var(--teal);color:#0F1B33}.btn.danger{color:var(--err);border-color:var(--err)}.btn.small{font-size:13px;padding:5px 10px}
 .btn[aria-disabled="true"],.btn:disabled{opacity:.5;pointer-events:none}
+.steps{margin:6px 0 14px;padding-left:22px;line-height:1.7}.steps li{margin:2px 0}code{font-size:.92em;background:var(--bg);border:1px solid var(--line);border-radius:6px;padding:0 4px;word-break:break-all}
 .btn:focus-visible,.chip:focus-visible{outline:2px solid var(--amber);outline-offset:2px}
 .empty{padding:32px 12px;text-align:center;color:var(--muted)}
 .login{max-width:360px;margin:12vh auto 0;background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:20px;display:grid;gap:10px}
@@ -58,7 +61,7 @@ th{font-size:12px;color:var(--muted);font-weight:600}td.n{text-align:right}
 .cap-in{width:90px}
 .pad{padding:14px;display:grid;gap:10px}.hint{font-size:13px;color:var(--muted);margin:0}
 </style></head><body>
-<header class="top"><span class="logo" aria-hidden="true"><i style="height:16px;background:#2DD4BF"></i><i style="height:10px;background:#FBBF24"></i></span><b id="title">跟帖评论清单</b><span class="sp" id="count"></span><button id="nav" hidden>用量和限额 →</button><button id="logout" hidden>登出</button></header>
+<header class="top"><span class="logo" aria-hidden="true"><i style="height:16px;background:#2DD4BF"></i><i style="height:10px;background:#FBBF24"></i></span><b id="title">跟帖评论清单</b><span class="sp" id="count"></span><button id="nav" hidden>用量和限额 →</button><button id="extnav" hidden>插件下载</button><button id="logout" hidden>登出</button></header>
 <form class="login" id="login" hidden>
   <b>登录</b><label for="pw">密码</label><input id="pw" type="password" autocomplete="current-password" required>
   <button class="btn primary" id="go" type="submit">登录</button><p class="msg" id="lmsg" role="alert"></p>
@@ -82,6 +85,24 @@ th{font-size:12px;color:var(--muted);font-weight:600}td.n{text-align:right}
         <button class="btn primary" id="u-save" type="button">保存上限</button><p class="msg" id="u-msg" role="status"></p>
         <p class="hint">Gemini 的真实免费额度 Google 不提供查询，这里是我们自己数的次数和 token；Google 说用完（429）时状态会标出来。到了我们设的上限，这个模型今天先跳过，换下一个。Gemini 按次数（1～10,000），Workers AI 按 neurons（1～9,500；免费额度 10,000，超过不让保存）。"今天"按各家的重置时间算。</p></div></div>
   </section>
+  <section id="v-ext" hidden>
+    <div class="card"><div class="pad">
+      <p class="sum" style="margin:0">副驾驶插件 <b>${EXTENSION_VERSION}</b>（和这个后台是同一次部署，版本对得上）</p>
+      <button class="btn primary" id="dl" type="button">下载插件 ${EXTENSION_VERSION}</button><p class="msg" id="dl-msg" role="status"></p>
+      <b>第一次安装（电脑上的 Chrome）</b>
+      <ol class="steps">
+        <li>点上面的按钮下载，把 zip 解压到一个固定的地方（例如"文件"里），得到 <code>marketing-copilot</code> 文件夹。<b>以后不要移动或删除这个文件夹</b>，插件就从这里读。</li>
+        <li>Chrome 地址栏打开 <code>chrome://extensions</code>，打开右上角的"开发者模式"。</li>
+        <li>点"加载已解压的扩展程序"，选 <code>marketing-copilot</code> 文件夹。</li>
+        <li>打开 X 或 Threads，点插件图标打开侧边栏，到"设置"填中转服务地址 <code id="origin"></code> 和连接令牌（令牌只填在插件里，不要发到聊天里）。</li>
+      </ol>
+      <b>更新到新版本</b>
+      <ol class="steps">
+        <li>下载新版，解压后把里面的文件<b>覆盖</b>到原来的 <code>marketing-copilot</code> 文件夹（位置不变，插件的设置会保留）。</li>
+        <li>到 <code>chrome://extensions</code> 找到"Quick Come 副驾驶"，点刷新按钮 ↻，再刷新 X / Threads 页面。</li>
+      </ol>
+    </div></div>
+  </section>
 </main>
 <script>
 const $=(id)=>document.getElementById(id);
@@ -91,12 +112,21 @@ const tw=(ms)=>new Date(ms+8*3600e3).toISOString().replace('T',' ').slice(0,19);
 const twDay=(ms)=>tw(ms).slice(0,10);
 function toast(t,err){const e=$('toast');e.textContent=t;e.className='toast'+(err?' err':'');e.hidden=!t;}
 async function call(path,body){const r=await fetch(path,{method:body?'POST':'GET',headers:{'content-type':'application/json'},body:body?JSON.stringify(body):undefined,credentials:'same-origin'});const j=await r.json().catch(()=>({}));if(r.status===401&&path!=='/api/login'){showLogin('请重新登录');throw new Error('请重新登录');}if(!r.ok)throw new Error(j.error||('出错了（'+r.status+'）'));return j;}
-function showLogin(m){$('app').hidden=true;$('logout').hidden=true;$('nav').hidden=true;$('login').hidden=false;$('count').textContent='';$('lmsg').textContent=m||'';$('pw').focus();}
-function showApp(){$('app').hidden=false;$('logout').hidden=false;$('nav').hidden=false;}
+function showLogin(m){$('app').hidden=true;$('logout').hidden=true;$('nav').hidden=true;$('extnav').hidden=true;$('login').hidden=false;$('count').textContent='';$('lmsg').textContent=m||'';$('pw').focus();}
+function showApp(){$('app').hidden=false;$('logout').hidden=false;$('nav').hidden=false;$('extnav').hidden=view==='ext';}
 $('login').addEventListener('submit',async(e)=>{e.preventDefault();const b=$('go');b.disabled=true;b.textContent='正在登录…';$('lmsg').textContent='';
   try{await call('/api/login',{password:$('pw').value});$('pw').value='';$('login').hidden=true;await load();}catch(err){$('lmsg').textContent=err.message;}finally{b.disabled=false;b.textContent='登录';}});
 $('logout').addEventListener('click',async()=>{await call('/api/logout',{}).catch(()=>{});showLogin('已登出');});
-$('nav').addEventListener('click',()=>{view=view==='list'?'usage':'list';$('v-list').hidden=view!=='list';$('v-usage').hidden=view!=='usage';$('title').textContent=view==='list'?'跟帖评论清单':'用量和限额';$('nav').textContent=view==='list'?'用量和限额 →':'← 跟帖评论清单';document.title=$('title').textContent;usageTimer(view==='usage');if(view==='usage'){uEditing=false;loadUsage(true);}else load();});
+const TITLES={list:'跟帖评论清单',usage:'用量和限额',ext:'插件下载'};
+function go(v){view=v;$('v-list').hidden=v!=='list';$('v-usage').hidden=v!=='usage';$('v-ext').hidden=v!=='ext';$('title').textContent=TITLES[v];$('nav').textContent=v==='list'?'用量和限额 →':'← 跟帖评论清单';$('extnav').hidden=v==='ext';document.title=TITLES[v];usageTimer(v==='usage');if(v==='usage'){uEditing=false;loadUsage(true);}else if(v==='list')load();}
+$('nav').addEventListener('click',()=>go(view==='list'?'usage':'list'));
+$('extnav').addEventListener('click',()=>go('ext'));
+$('origin').textContent=location.origin;
+$('dl').addEventListener('click',async()=>{const b=$('dl'),m=$('dl-msg');b.disabled=true;b.textContent='下载中…';m.className='msg';m.textContent='';
+  try{const r=await fetch('/api/extension.zip',{credentials:'same-origin'});if(r.status===401){showLogin('请重新登录');return;}if(!r.ok)throw new Error('下载失败（'+r.status+'），稍后再试');
+    const name=(/filename="([^"]+)"/.exec(r.headers.get('content-disposition')||'')||[])[1]||'marketing-copilot.zip';const url=URL.createObjectURL(await r.blob());const a=document.createElement('a');a.href=url;a.download=name;document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),60000);
+    m.className='msg ok';m.textContent='✓ 已下载 '+name+'，按下面的步骤安装或更新';}
+  catch(e){m.className='msg';m.textContent=e.message;}finally{b.disabled=false;b.textContent='下载插件 ${EXTENSION_VERSION}';}});
 document.querySelectorAll('[data-f]').forEach(b=>b.addEventListener('click',()=>{filter=b.dataset.f;document.querySelectorAll('[data-f]').forEach(x=>x.setAttribute('aria-pressed',String(x===b)));toast('');load();}));
 function setRange(rg){document.querySelectorAll('[data-rg]').forEach(x=>x.setAttribute('aria-pressed',String(x.dataset.rg===rg)));const t=twDay(Date.now());
   if(rg==='today'){$('f-from').value=t;$('f-to').value=t;}else if(rg==='7'){$('f-from').value=twDay(Date.now()-6*864e5);$('f-to').value=t;}else{$('f-from').value='';$('f-to').value='';}load();}
