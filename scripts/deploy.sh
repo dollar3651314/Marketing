@@ -1,16 +1,16 @@
 #!/usr/bin/env bash
 # 部署 Marketing（副驾驶中转服务和网页后台，agents C133）：CI 的 deploy job 运行；可以重复运行。
-# 2026-10-30 从 new-forecast/site/copilot 搬过来（Amos K-4：Worker 和 D1 沿用 quickcome-copilot 的名字，密钥和数据都不用动）。
-#   bash scripts/deploy.sh staging      测试版 quickcome-copilot-staging
-#   bash scripts/deploy.sh production   正式版 quickcome-copilot
+# 2026-10-30 从 new-forecast/site/copilot 搬过来（Worker 和 D1 改名 marketing / marketing-staging，Amos 2026-10-30；密钥和数据都不用动）。
+#   bash scripts/deploy.sh staging      测试版 marketing-staging
+#   bash scripts/deploy.sh production   正式版 marketing
 # 步骤：D1 没有就建（ensure-d1.mjs）→ 执行没执行过的迁移 → 部署（带提交号）→ 打印健康检查（不含密钥）。
 # 没有 CLOUDFLARE_API_TOKEN / CLOUDFLARE_ACCOUNT_ID 时打印"跳过"并成功（C103）。
 set -euo pipefail
 cd "$(dirname "$0")/.."
 TARGET="${1:-}"
 case "$TARGET" in
-  staging) E="staging"; DB="quickcome-copilot-staging"; WORKER="quickcome-copilot-staging" ;;
-  production) E=""; DB="quickcome-copilot"; WORKER="quickcome-copilot" ;;
+  staging) E="staging"; DB="marketing-staging"; WORKER="marketing-staging" ;;
+  production) E=""; DB="marketing"; WORKER="marketing" ;;
   *) echo "用法：bash scripts/deploy.sh staging|production" >&2; exit 2 ;;
 esac
 if [ -z "${CLOUDFLARE_API_TOKEN:-}" ] || [ -z "${CLOUDFLARE_ACCOUNT_ID:-}" ]; then

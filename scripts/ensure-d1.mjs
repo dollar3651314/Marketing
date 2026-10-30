@@ -1,9 +1,9 @@
 #!/usr/bin/env node
 /**
  * D1 一键准备（CI 部署前运行，可以重复运行）：
- *   1. 按名字查这个账户的 D1（quickcome-copilot / quickcome-copilot-staging），没有就新建（位置提示 apac）；
+ *   1. 按名字查这个账户的 D1（marketing / marketing-staging），没有就新建（位置提示 apac）；
  *   2. 把编号写进本次部署用的配置 wrangler.deploy.toml（wrangler.toml 的副本，不进仓库）。
- * 名字沿用搬家前的（Amos 2026-10-30 K-4：Worker 和 D1 先不改名，密钥和数据都不用动）。
+ * 名字跟着项目改为 marketing（Amos 2026-10-30；原来是 quickcome-copilot）。
  * 需要环境变量 CLOUDFLARE_API_TOKEN、CLOUDFLARE_ACCOUNT_ID（GitHub Secrets）；令牌要有 D1 Edit 权限。输出里没有密钥。
  * 用法：node scripts/ensure-d1.mjs --env staging|production
  * 参照：new-forecast staging ea4482a site/scripts/ensure-d1.mjs。
@@ -13,7 +13,7 @@ import { readFileSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-export const DB_NAMES = { production: 'quickcome-copilot', staging: 'quickcome-copilot-staging' };
+export const DB_NAMES = { production: 'marketing', staging: 'marketing-staging' };
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 
 /** 把 database_name = "<name>" 那一段的 database_id 换成 uuid；找不到或不止一处时报错（配置被改坏了，宁可停下） */
