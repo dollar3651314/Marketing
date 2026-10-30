@@ -1,0 +1,69 @@
+{
+  "_说明": "项目地图和项目索引的检查配置（agents 规则 C53）。由 scripts/check-project-index.mjs 读取，CI 每次都运行。",
+  "map": "项目地图.md",
+  "index": "项目索引.md",
+  "entry": [
+    "CLAUDE.md",
+    "AGENTS.md"
+  ],
+  "external": [
+    {
+      "_说明": "内部文档（需求池、技术方案、状态清单、复盘）在 agents 仓库（C119），索引里写成 `agents/…`",
+      "prefix": "agents/",
+      "repo": "dollar3651314/agents"
+    }
+  ],
+  "files": {
+    "_说明": "include：必须写进索引的文件；exclude：锁文件",
+    "include": [
+      "*.md",
+      "*.json",
+      "*.ts",
+      "*.toml",
+      "src/**",
+      "rules/**",
+      "migrations/**",
+      "extension/**",
+      "test/**",
+      "scripts/**",
+      ".github/workflows/**"
+    ],
+    "exclude": [
+      "**/package-lock.json",
+      "**/.gitignore"
+    ]
+  },
+  "lists": [
+    {
+      "name": "环境变量",
+      "section": "5. 环境变量",
+      "sources": [
+        "src/",
+        "scripts/",
+        ".github/workflows/"
+      ],
+      "patterns": [
+        "\\benv\\.([A-Z][A-Z0-9_]+)",
+        "\\$\\{\\{\\s*(?:vars|secrets)\\.([A-Z][A-Z0-9_]+)"
+      ],
+      "ignore": [
+        "GITHUB_TOKEN"
+      ],
+      "match": "firstColumn",
+      "twoWay": "word",
+      "token": "^[A-Z][A-Z0-9_]+$"
+    },
+    {
+      "name": "数据库表",
+      "section": "4. 数据库表",
+      "sources": [
+        "migrations/"
+      ],
+      "patterns": [
+        "CREATE TABLE (?:IF NOT EXISTS )?(\\w+)"
+      ],
+      "match": "firstColumn",
+      "twoWay": "extracted"
+    }
+  ]
+}

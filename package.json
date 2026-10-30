@@ -1,0 +1,26 @@
+{
+  "name": "marketing",
+  "private": true,
+  "version": "0.3.5",
+  "type": "module",
+  "description": "Marketing：社媒副驾驶（Chrome 插件）+ 中转服务和网页后台（跟帖评论清单、用量和限额），Cloudflare Worker + D1",
+  "scripts": {
+    "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.test.json --noEmit",
+    "test": "vitest run",
+    "e2e:ext": "node scripts/e2e-ext.mjs",
+    "check-index": "node scripts/check-project-index.mjs",
+    "dry-run": "wrangler deploy --dry-run --env= --outdir .wrangler/dry-run && wrangler deploy --dry-run --env=staging --outdir .wrangler/dry-run-staging"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "5.20261006.1",
+    "@types/node": "22.20.5",
+    "jsdom": "26.1.0",
+    "playwright": "1.56.1",
+    "typescript": "5.9.3",
+    "vitest": "3.2.7",
+    "wrangler": "4.149.0"
+  },
+  "engines": {
+    "node": ">=22"
+  }
+}
