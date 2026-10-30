@@ -1,0 +1,24 @@
+# 一次性搬数据：旧测试版 quickcome-copilot-staging → 正式版 marketing（Amos 2026-10-30）。只能手动运行（Actions → migrate-once → Run workflow）。
+# 正式版这几张表已经有数据时脚本会停下，不会重复导入。搬完、Amos 确认后删掉本文件和 scripts/migrate-old-data.mjs。
+name: migrate-once
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  migrate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      WRANGLER_SEND_METRICS: 'false'
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci --no-audit --no-fund
+      - name: 搬数据并核对条数
+        run: node scripts/migrate-old-data.mjs
