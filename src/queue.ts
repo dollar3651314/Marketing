@@ -11,6 +11,7 @@ import type { Env } from './env';
 import { modelList } from './gemini';
 import { saveCaps, usageReport, WAI_KEY } from './usage';
 import { usedToday } from './workers-ai';
+import { extensionZip } from './extension-download';
 
 export const SESSION_MS = 12 * 3600_000;
 const LOCK = { ipWindow: 15 * 60_000, ipMax: 5, ipLock: 15 * 60_000, allWindow: 3600_000, allMax: 20, allLock: 3600_000 };
@@ -105,6 +106,7 @@ export async function adminApi(env: Env, req: Request, now: number): Promise<Res
   if (p === '/api/login' && req.method === 'POST') return login(env, req, now);
   if (p === '/api/logout' && req.method === 'POST') return json({ ok: true }, 200, { 'set-cookie': `${COOKIE}=; Path=/; HttpOnly; Secure; SameSite=Strict; Max-Age=0` });
   if (!(await sessionOk(env, req, now))) return json({ error: '请重新登录' }, 401);
+  if (p === '/api/extension.zip' && req.method === 'GET') return extensionZip();
   if (p === '/api/queue' && req.method === 'GET') {
     const q = url.searchParams;
     const status = ['pending', 'done', 'skip'].includes(q.get('status') ?? '') ? q.get('status')! : 'pending';

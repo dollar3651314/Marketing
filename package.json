@@ -5,10 +5,14 @@
   "type": "module",
   "description": "Marketing：社媒副驾驶（Chrome 插件）+ 中转服务和网页后台（跟帖评论清单、用量和限额），Cloudflare Worker + D1",
   "scripts": {
+    "build:ext": "node scripts/build-ext-zip.mjs",
+    "pretypecheck": "node scripts/build-ext-zip.mjs",
     "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.test.json --noEmit",
+    "pretest": "node scripts/build-ext-zip.mjs",
     "test": "vitest run",
     "e2e:ext": "node scripts/e2e-ext.mjs",
     "check-index": "node scripts/check-project-index.mjs",
+    "predry-run": "node scripts/build-ext-zip.mjs",
     "dry-run": "wrangler deploy --dry-run --env= --outdir .wrangler/dry-run && wrangler deploy --dry-run --env=staging --outdir .wrangler/dry-run-staging"
   },
   "devDependencies": {
