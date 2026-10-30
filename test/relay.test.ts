@@ -4,6 +4,7 @@
  */
 import { readdirSync, readFileSync } from 'node:fs';
 import path from 'node:path';
+import { inflateRawSync } from 'node:zlib';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { getPlatformProxy } from 'wrangler';
 import { checkDraft, xLength } from '../src/checks';
@@ -476,3 +477,43 @@ describe('0.3：清单的打分依据、筛选、删除；用量和限额', () =
   });
 });
 
+
+describe('插件下载（Amos 2026-10-30："让我可以在marketing后台下载"）', () => {
+  const page = (p: string, init: RequestInit & { cookie?: string } = {}) =>
+    new Request(`https://copilot.example.test${p}`, { ...init, headers: { 'content-type': 'application/json', origin: 'https://copilot.example.test', 'cf-connecting-ip': '203.0.113.9', ...(init.cookie ? { cookie: init.cookie } : {}) } });
+  async function loginCookie(): Promise<string> {
+    const r = await handle(page('/api/login', { method: 'POST', body: JSON.stringify({ password: PASS }) }), env(), T0);
+    return r.headers.get('set-cookie')!.split(';')[0];
+  }
+  /** 按本地文件头逐个读出 zip 里的文件 */
+  function unzip(buf: Uint8Array): Map<string, number[]> {
+    const out = new Map<string, number[]>();
+    const v = new DataView(buf.buffer, buf.byteOffset, buf.byteLength);
+    let i = 0;
+    while (i + 30 <= buf.length && v.getUint32(i, true) === 0x04034b50) {
+      const size = v.getUint32(i + 18, true), nameLen = v.getUint16(i + 26, true), extra = v.getUint16(i + 28, true);
+      const name = new TextDecoder().decode(buf.subarray(i + 30, i + 30 + nameLen));
+      const start = i + 30 + nameLen + extra;
+      out.set(name, Array.from(inflateRawSync(buf.subarray(start, start + size))));
+      i = start + size;
+    }
+    return out;
+  }
+
+  it('没登录 401；登录后下载 zip，文件名带版本号，里面是 marketing-copilot/ 和仓库里的插件逐字节一致；后台页面有"插件下载"', async () => {
+    expect((await handle(page('/api/extension.zip'), env(), T0)).status).toBe(401);
+    const ck = await loginCookie();
+    const r = await handle(page('/api/extension.zip', { cookie: ck }), env(), T0);
+    expect(r.status).toBe(200);
+    expect(r.headers.get('content-type')).toBe('application/zip');
+    const manifest = JSON.parse(readFileSync(path.join(ROOT, 'extension/manifest.json'), 'utf8')) as { version: string };
+    expect(r.headers.get('content-disposition')).toBe(`attachment; filename="marketing-copilot-${manifest.version}.zip"`);
+    const files = unzip(new Uint8Array(await r.arrayBuffer()));
+    const repo = readdirSync(path.join(ROOT, 'extension')).filter((n) => !n.startsWith('.')).sort();
+    expect([...files.keys()]).toEqual(repo.map((n) => 'marketing-copilot/' + n));
+    for (const n of repo) expect(files.get('marketing-copilot/' + n)).toEqual(Array.from(readFileSync(path.join(ROOT, 'extension', n))));
+    const html = await (await handle(page('/'), env(), T0)).text();
+    expect(html).toContain('插件下载');
+    expect(html).toContain(`下载插件 ${manifest.version}`);
+  });
+});
