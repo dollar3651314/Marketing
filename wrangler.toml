@@ -7,6 +7,9 @@ main = "src/index.ts"
 compatibility_date = "2026-10-01"
 workers_dev = true
 keep_vars = true
+# 正式版的地址（Amos 2026-10-30）：网页后台和插件的中转服务地址都用它；部署时自动建 DNS 记录和证书（令牌要有 quickcome.online 的 DNS Edit）。
+# routes 不会被 env.staging 继承：测试版继续用 workers.dev（Amos 选 B）。
+routes = [{ pattern = "marketing.quickcome.online", custom_domain = true }]
 
 [[d1_databases]]
 binding = "DB"
