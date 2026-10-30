@@ -1,16 +1,19 @@
-# Marketing 的中转服务和网页后台（agents C133、营销团队/副驾驶/技术方案.md）：独立的 Worker 和 D1。2026-10-30 从 new-forecast 搬来，名字沿用 quickcome-copilot（K-4）。
+# Marketing 的中转服务和网页后台（agents C133、营销团队/副驾驶/技术方案.md）：独立的 Worker 和 D1。2026-10-30 从 new-forecast 搬来；Worker 和 D1 改名 marketing / marketing-staging（Amos："既然项目的名字改为 marketing，那么在cloudflare中测试项目的名字也要跟着改"）。旧的 quickcome-copilot-staging 留着，确认后由 Amos 删除。
 # - 密钥不写在这里：GEMINI_API_KEY、COPILOT_TOKEN 由 Amos 在控制台 Settings → Variables and Secrets 填（C21）；没填时 /v1/* 全部 404（默认关着，C102）。
 # - D1 的 database_id 不写在这里：部署前由 scripts/ensure-d1.mjs 按名字查（没有就建）。
 # - 没有定时任务（全账号只有 5 个，C120）。
-name = "quickcome-copilot"
+name = "marketing"
 main = "src/index.ts"
 compatibility_date = "2026-10-01"
 workers_dev = true
 keep_vars = true
+# 正式版的地址（Amos 2026-10-30）：网页后台和插件的中转服务地址都用它；部署时自动建 DNS 记录和证书（令牌要有 quickcome.online 的 DNS Edit）。
+# 测试版继续用 workers.dev（Amos 选 B）：env.staging 里写了 routes = []，不然会继承这个子域名。
+routes = [{ pattern = "marketing.quickcome.online", custom_domain = true }]
 
 [[d1_databases]]
 binding = "DB"
-database_name = "quickcome-copilot"
+database_name = "marketing"
 database_id = "local-only"
 migrations_dir = "migrations"
 
@@ -25,13 +28,15 @@ WORKERS_AI_DAILY_NEURONS = "8000"
 DAILY_REPLY_CAP = "10"
 
 [env.staging]
-name = "quickcome-copilot-staging"
+name = "marketing-staging"
+# 测试版不绑子域名：routes 会被 env.staging 继承，必须写空（2026-10-30 曾经把 marketing.quickcome.online 绑到了测试版）
+routes = []
 workers_dev = true
 keep_vars = true
 
 [[env.staging.d1_databases]]
 binding = "DB"
-database_name = "quickcome-copilot-staging"
+database_name = "marketing-staging"
 database_id = "local-only"
 migrations_dir = "migrations"
 
