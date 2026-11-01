@@ -90,10 +90,21 @@ th{font-size:12px;color:var(--muted);font-weight:600}td.n{text-align:right}
 #v-company .co-empty{padding:20px 16px;color:var(--muted);text-align:center;margin:0}
 #v-company .msg{padding:0 16px}#v-company .msg:not(:empty){padding:8px 16px 0}
 #v-company .co-foot{padding:10px 16px;display:grid;gap:4px;border-top:1px solid var(--line)}
+/* 项目表（2026-11-01 Amos 截图：长数字把"本周"挤成一字一行、右边被截掉）：固定列宽，全部可换行；数字一条一行"名称 · 现在 → 目标"；本周最多 3 行，点一下展开 */
+#v-company table.co-proj{table-layout:fixed}
+#v-company table.co-proj td{white-space:normal;overflow-wrap:anywhere;word-break:normal}
+#v-company table.co-proj .pill{white-space:normal;overflow-wrap:anywhere}
+#v-company .co-m{margin:0 0 6px;line-height:1.45}#v-company .co-m:last-child{margin-bottom:0}
+#v-company .co-m .k{color:var(--ink)}#v-company .co-m .s{color:var(--muted)}#v-company .co-m .v{font-variant-numeric:tabular-nums;font-weight:600;color:var(--ink)}#v-company .co-m .to{color:var(--muted)}
+#v-company .co-week{display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:3;line-clamp:3;overflow:hidden;line-height:1.5}
+#v-company .co-week.can{cursor:pointer;border-radius:4px}#v-company .co-week:focus-visible{outline:2px solid var(--teal);outline-offset:2px}
+#v-company .co-week.open{display:block;-webkit-line-clamp:unset;line-clamp:none;overflow:visible}
+#v-company tr.co-plan td,#v-company tr.co-plan td b{color:var(--muted);font-weight:400}
 @media (max-width:600px){#v-company .list .who{flex-basis:100%;padding-top:0}#v-company .list li{flex-wrap:wrap}#v-company .list .act{justify-content:flex-start}
   #v-company table.stack thead{display:none}#v-company table.stack tr{display:block;padding:8px 6px;border-bottom:1px solid var(--line)}#v-company table.stack tr:last-child{border-bottom:0}
   #v-company table.stack td{display:block;border:0;padding:2px 10px}#v-company table.stack td.num{white-space:normal}
-  #v-company table.stack td[data-label]::before{content:attr(data-label) "：";color:var(--muted);font-size:12px;font-family:inherit}}
+  #v-company table.stack td[data-label]::before{content:attr(data-label) "：";color:var(--muted);font-size:12px;font-family:inherit}
+  #v-company table.co-proj{table-layout:auto}#v-company table.co-proj colgroup{display:none}}
 </style></head><body>
 <header class="top"><span class="logo" aria-hidden="true"><i style="height:16px;background:#2DD4BF"></i><i style="height:10px;background:#FBBF24"></i></span><b id="title">跟帖评论清单</b><span class="sp" id="count"></span><button id="nav" hidden>用量和限额 →</button><button id="extnav" hidden>插件下载</button><button id="conav" hidden>公司</button><button id="logout" hidden>登出</button></header>
 <form class="login" id="login" hidden>
@@ -282,7 +293,7 @@ function card(id,title,bs,label){const sec=el('section','card');sec.id=id;const 
   return {sec,h,sp};}
 const empty=(t)=>el('p','co-empty',t||'还没收到数据');
 function pill(text,cls){return el('span','pill '+cls,text);}
-function table(heads,rows){const w=el('div','tablewrap');const t=el('table','stack');const th=el('thead');const tr=el('tr');heads.forEach(h=>tr.append(el('th',null,h)));th.append(tr);const tb=el('tbody');rows.forEach(r=>tb.append(r));t.append(th,tb);w.append(t);return w;}
+function table(heads,rows,widths,cls){const w=el('div','tablewrap');const t=el('table','stack'+(cls?' '+cls:''));if(widths){const cg=el('colgroup');widths.forEach(x=>{const c=el('col');c.style.width=x;cg.append(c);});t.append(cg);}const th=el('thead');const tr=el('tr');heads.forEach(h=>tr.append(el('th',null,h)));th.append(tr);const tb=el('tbody');rows.forEach(r=>tb.append(r));t.append(th,tb);w.append(t);return w;}
 function td(label,content,cls){const c=el('td',cls||null);if(label)c.dataset.label=label;(Array.isArray(content)?content:[content]).forEach(x=>{if(x==null||x==='')return;c.append(x);});if(!c.childNodes.length)c.append('—');return c;}
 const lines=(parts)=>{const out=[];parts.filter(x=>x!=null&&x!=='').forEach((x,i)=>{if(i)out.push(el('br'));out.push(x);});return out;};
 function needItems(){const out=[];const add=(o)=>out.push(o);
@@ -316,19 +327,29 @@ async function markDone(it,done,b){const label=b.textContent;b.disabled=true;b.t
 function projectsCard(){const pj=blocks('projects')[0];const sts=blocks('status');const ver=pj&&pj.payload&&pj.payload.version;
   const c=card('co-projects','项目',[...(pj?[pj]:[]),...sts],'状态卡');if(ver)c.h.querySelector('.stamp').append(' · 项目版图 '+ver);
   if(!pj&&!sts.length){c.sec.append(empty());return c.sec;}
-  const items=(pj&&pj.payload&&pj.payload.items)||[];const used=new Set();const rows=[];
+  const items=(pj&&pj.payload&&pj.payload.items)||[];const used=new Set();
   const find=(name)=>sts.find(s=>!used.has(s)&&(s.key===name||(s.payload&&s.payload.product===name)));
-  const row=(it,s)=>{if(s)used.add(s);const p=(s&&s.payload)||{};const tr=el('tr');if(s&&s.stale)tr.classList.add('old');
+  const row=(it,s)=>{if(s)used.add(s);const p=(s&&s.payload)||{};const tr=el('tr');if(s&&s.stale)tr.classList.add('old');if(!s)tr.classList.add('co-plan');
     tr.append(td(null,lines([el('b',null,it.name||p.product||(s&&s.key)||''),it.sub?el('span','hint',it.sub):null])));
     tr.append(td('阶段',lines([it.stage||'',it.note?el('span','hint',it.note):null])));
-    const num=[];(p.metrics||[]).forEach((x,i)=>{if(i&&!(num[num.length-1]instanceof HTMLDivElement))num.push(el('br'));num.push((x.name?x.name+' ':'')+(x.now||'')+(x.target?' → '+x.target:''));if(typeof x.pct==='number'){const bar=el('div','bar');const fill=el('i');fill.style.width=Math.max(0,Math.min(100,x.pct))+'%';bar.append(fill);num.push(bar);}});
-    tr.append(td('数字 → 目标',num,'num'));
-    tr.append(td('本周',p.week||''));
-    const sc=[];if(!s)sc.push(pill('还没收到状态卡','p-mute'));else{if(p.state)sc.push(pill(p.state,'p-'+(p.level||'mute')));const stuck=(p.open||[]).filter(o=>o.stuck).length;if(stuck){sc.push(' ');sc.push(pill('卡住 '+stuck+' 件','p-err'));}
+    const num=(p.metrics||[]).map(x=>{const d=el('div','co-m');if(x.name)d.append(el('span','k',x.name),el('span','s',' · '));d.append(el('span','v',x.now||'—'));if(x.target)d.append(el('span','to',' → '),el('span','v',x.target));
+      if(typeof x.pct==='number'){const bar=el('div','bar');const fill=el('i');fill.style.width=Math.max(0,Math.min(100,x.pct))+'%';bar.append(fill);d.append(bar);}return d;});
+    tr.append(td('数字 → 目标',num));
+    tr.append(td('本周',p.week?el('div','co-week',p.week):''));
+    const sc=[];if(!s)sc.push(el('span','hint','还没有状态卡'));else{if(p.state)sc.push(pill(p.state,'p-'+(p.level||'mute')));const stuck=(p.open||[]).filter(o=>o.stuck).length;if(stuck){sc.push(' ');sc.push(pill('卡住 '+stuck+' 件','p-err'));}
       if(s.status==='error'){sc.push(el('br'));sc.push(el('span','hint co-err-t','解析失败：'+s.error));}if(s.stale){sc.push(el('br'));sc.push(el('span','hint','超过 7 天没更新'));}}
-    tr.append(td('状态',sc));rows.push(tr);};
-  items.forEach(it=>row(it,find(it.name)));sts.filter(s=>!used.has(s)).forEach(s=>row({},s));
-  c.sec.append(table(['项目','阶段','数字 → 目标','本周','状态'],rows));return c.sec;}
+    tr.append(td('状态',sc));return tr;};
+  // 有状态卡的在前（按项目版图顺序），再是只有状态卡没进版图的，最后是规划中、还没有状态卡的（次要色）
+  const withCard=[],plan=[];items.forEach(it=>{const s=find(it.name);(s?withCard:plan).push(row(it,s));});
+  sts.filter(s=>!used.has(s)).forEach(s=>withCard.push(row({},s)));
+  c.sec.append(table(['项目','阶段','数字 → 目标','本周','状态'],[...withCard,...plan],['16%','16%','32%','26%','10%'],'co-proj'));return c.sec;}
+/** "本周"超过 3 行的才能点开：点一下或按回车 / 空格展开、收起 */
+function fitWeek(){document.querySelectorAll('#v-company .co-week').forEach(w=>{if(w.classList.contains('open'))return;const can=w.scrollHeight>w.clientHeight+1;w.classList.toggle('can',can);
+  if(can){w.setAttribute('role','button');w.tabIndex=0;w.setAttribute('aria-expanded','false');w.title='点一下展开';}else{w.removeAttribute('role');w.removeAttribute('tabindex');w.removeAttribute('aria-expanded');w.removeAttribute('title');}});}
+function toggleWeek(w){if(!w.classList.contains('can'))return;const open=w.classList.toggle('open');w.setAttribute('aria-expanded',String(open));w.title=open?'点一下收起':'点一下展开';}
+$('co-body').addEventListener('click',e=>{const w=e.target.closest&&e.target.closest('.co-week');if(w&&!(window.getSelection&&String(window.getSelection())))toggleWeek(w);});
+$('co-body').addEventListener('keydown',e=>{const w=e.target.closest&&e.target.closest('.co-week');if(w&&(e.key==='Enter'||e.key===' ')){e.preventDefault();toggleWeek(w);}});
+let fitT=0;window.addEventListener('resize',()=>{clearTimeout(fitT);fitT=setTimeout(fitWeek,150);});
 function peopleCard(){const hs=blocks('handoff').slice().sort((a,b)=>{const i=(x)=>{const k=ROLES.indexOf((x.payload&&x.payload.role)||x.key);return k<0?99:k;};return i(a)-i(b);});
   const c=card('co-people','每个岗位这周',hs,'交接记录');if(!hs.length){c.sec.append(empty());return c.sec;}
   const rows=hs.map(b=>{const p=b.payload||{};const tr=el('tr');if(b.stale)tr.classList.add('old');tr.append(td(null,p.role||b.key),td('做了什么',p.done||''),td('下一步',p.next||''),td('重复犯错',typeof p.mistakes==='number'?String(p.mistakes):'','num'));return tr;});
@@ -361,7 +382,7 @@ function healthCard(){const order=['marketing','new-forecast','agents'];const cs
 function renderCompany(){const B=$('co-body');B.replaceChildren();
   if(!CO.data.configured&&!CO.data.blocks.length&&!CO.data.weekly){const c=card('co-off','还没开通',null);c.sec.append(el('p','co-empty','公司数据还没接上：等 Amos 填好连接各仓库的令牌后，各仓库合并或开、关 PR 时会自动把最新情况送来。'));B.append(c.sec);return;}
   const need=needItems();const two=el('div','two');two.append(peopleCard(),learnCard());
-  B.append(heroTiles(need),needCard(need),projectsCard(),two,nextCard(),healthCard());}
+  B.append(heroTiles(need),needCard(need),projectsCard(),two,nextCard(),healthCard());fitWeek();}
 async function loadCompany(week){const b=$('co-refresh');b.disabled=true;b.textContent='正在刷新…';
   try{const j=await call('/api/company'+(week?'?week='+encodeURIComponent(week):''));CO.data=j;CO.week=week||'';if(!week)CO.latest=j.weekly;CO.done=new Map(j.done.map(x=>[x.key,x.at]));
     $('co-at').textContent='读取于 '+tw(j.now).slice(11)+(j.configured?'':'（还没开通，显示的是以前收到的）');renderCompany();}
