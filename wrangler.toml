@@ -1,4 +1,4 @@
-# Marketing 的中转服务和网页后台（agents C133、营销团队/副驾驶/技术方案.md）：独立的 Worker 和 D1。2026-10-30 从 new-forecast 搬来；Worker 和 D1 改名 marketing / marketing-staging（Amos："既然项目的名字改为 marketing，那么在cloudflare中测试项目的名字也要跟着改"）。旧的 quickcome-copilot-staging 留着，确认后由 Amos 删除。
+# Marketing 的中转服务和网页后台（agents C133、公司平台/副驾驶/技术方案.md）：独立的 Worker 和 D1。2026-10-30 从 new-forecast 搬来；Worker 和 D1 改名 marketing / marketing-staging（Amos："既然项目的名字改为 marketing，那么在cloudflare中测试项目的名字也要跟着改"）。旧的 quickcome-copilot-staging 留着，确认后由 Amos 删除。
 # - 密钥不写在这里：GEMINI_API_KEY、COPILOT_TOKEN 由 Amos 在控制台 Settings → Variables and Secrets 填（C21）；没填时 /v1/* 全部 404（默认关着，C102）。
 # - D1 的 database_id 不写在这里：部署前由 scripts/ensure-d1.mjs 按名字查（没有就建）。
 # - 没有定时任务（全账号只有 5 个，C120）。

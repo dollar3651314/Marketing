@@ -1,5 +1,5 @@
 /**
- * 公司运营仪表盘（后台第四页"公司"；agents 产品/marketing/技术方案-运营仪表盘.md，Amos 2026-11-01 确认 B-3' B-5 B-7，B-6 不要定时兜底）。
+ * 公司运营仪表盘（后台第四页"公司"；agents 公司平台/技术方案-运营仪表盘.md，Amos 2026-11-01 确认 B-3' B-5 B-7，B-6 不要定时兜底）。
  * 推送模型：agents、new-forecast、Marketing 各自的自动检查在合并到 main、开 / 关 PR 时把解析好的块推进来；这里不读 GitHub、没有定时任务。
  * - POST /api/company/ingest  Bearer <COMPANY_INGEST_TOKEN>（≥ 32 个字符，常数时间比较；没填时 404，C103）。不要会话、只依赖这个令牌，
  *   所以在 adminApi() 的 adminEnabled 判断之前处理。{source, blocks:[{kind, key, payload, status, error, source_at}]}；
