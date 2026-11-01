@@ -10,8 +10,8 @@
 
 ## 底线（摘要，完整规则见 agents 仓库）
 - 方案先交 Amos 审核；有界面的需求先写《使用场景清单》（C138）、再做原型。
-- PR 的自动检查（CI）不通过不合并；上生产前必须在测试环境通过 Amos 验收；测试环境攒一批再发版（C142）。
-- 密钥、密码不经过 AI，也不进仓库（`COPILOT_TOKEN`、`GEMINI_API_KEY`、`COPILOT_PASSWORD` 由 Amos 在 Cloudflare 控制台填）。
+- PR 的自动检查（CI）不通过不合并；上生产前在测试环境通过 Amos 验收；已上线的需求先给 Amos 看计划，由他决定走测试环境还是直接上生产（直接上生产要附完整风险评估，C144）；测试环境攒一批再发版（C142）。
+- 密钥、密码不经过 AI，也不进仓库（`COPILOT_TOKEN`、`GEMINI_API_KEY`、`COPILOT_PASSWORD`、`COMPANY_INGEST_TOKEN` 由 Amos 在 Cloudflare 控制台填）。
 - 插件只读屏幕上已显示的帖子、只在 Amos 打开开关时滑动；不点赞、不关注、不私信、不自动发帖；回复由 Amos 本人按发送（C133、C136）。
 - 草稿先过程序检查（不能说的话、提产品、链接、政治、字数、数字要有出处、原帖没有的结论）；营销产出先过市场经理（C137）。
 - 新增费用先问 Amos（C117）：Workers AI 每天上限最多 9,500（免费额度 10,000）。
@@ -19,7 +19,7 @@
 
 ## 每次改动都要做
 - 在同一个 PR 里更新《项目地图》和《项目索引》（C53）。
-- 提交前在本地跑：`npm run typecheck && npm test && node scripts/e2e-ext.mjs && node scripts/check-project-index.mjs`。
+- 提交前在本地跑：`npm run typecheck && npm test && node scripts/e2e-ext.mjs && node scripts/e2e-admin.mjs && node scripts/check-project-index.mjs`。
 - 改了插件：`extension/manifest.json` 的版本号加一，打包发给 Amos；按状态清单走一遍并截图（C127、C141）。
 - 合并前确认 PR 页面的 CI 是绿的（C54）。
 - 每个任务一个开发分支，PR 到 `staging`；`staging` → `main` 要 Amos 说"合并"。

@@ -15,4 +15,6 @@ export interface Env {
   DAILY_REPLY_CAP?: string;
   /** 可选：只接受这个插件的来源（chrome-extension://<插件 ID>）；没填时接受任何 chrome-extension:// 来源 */
   ALLOWED_ORIGIN?: string;
+  /** 公司运营仪表盘：各仓库自动检查推数据用的令牌（Secret，≥ 32 个字符）；没填时 /api/company/ingest 404、后台"公司"页显示"还没开通"（C103） */
+  COMPANY_INGEST_TOKEN?: string;
 }

@@ -3,7 +3,7 @@
   "private": true,
   "version": "0.3.5",
   "type": "module",
-  "description": "Marketing：社媒副驾驶（Chrome 插件）+ 中转服务和网页后台（跟帖评论清单、用量和限额），Cloudflare Worker + D1",
+  "description": "Marketing：社媒副驾驶（Chrome 插件）+ 中转服务和网页后台（跟帖评论清单、用量和限额、插件下载、公司运营仪表盘），Cloudflare Worker + D1",
   "scripts": {
     "build:ext": "node scripts/build-ext-zip.mjs",
     "pretypecheck": "node scripts/build-ext-zip.mjs",
@@ -11,6 +11,7 @@
     "pretest": "node scripts/build-ext-zip.mjs",
     "test": "vitest run",
     "e2e:ext": "node scripts/e2e-ext.mjs",
+    "e2e:admin": "node scripts/e2e-admin.mjs",
     "check-index": "node scripts/check-project-index.mjs",
     "predry-run": "node scripts/build-ext-zip.mjs",
     "dry-run": "wrangler deploy --dry-run --env= --outdir .wrangler/dry-run && wrangler deploy --dry-run --env=staging --outdir .wrangler/dry-run-staging"

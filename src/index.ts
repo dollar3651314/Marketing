@@ -7,7 +7,8 @@
  * - GET  /v1/today   当天（台湾日期）的记录和计数，给插件"今天"页和晚上的小结
  * - GET  /v1/diag    每个 Gemini 模型和备用 AI 各发一个很小的请求，报状态和用时（设置页"测试 AI"；不含 Key）
  * - POST /v1/queue   {product, platform, post, score, reasons, draft, source}  存进跟帖评论清单（草稿再过一遍程序检查；同一条只存一次）
- * - GET  /           网页后台"跟帖评论清单"和"用量和限额"（COPILOT_PASSWORD 没填时 404）；接口在 /api/*（queue.ts、usage.ts）
+ * - POST /api/company/ingest  公司运营仪表盘：各仓库的自动检查推数据（COMPANY_INGEST_TOKEN，没填时 404；company.ts）
+ * - GET  /           网页后台：跟帖评论清单、用量和限额、插件下载、公司（COPILOT_PASSWORD 没填时 404）；接口在 /api/*（queue.ts、usage.ts、company.ts）
  * 令牌：Authorization: Bearer <COPILOT_TOKEN>（≥ 24 个字符）。COPILOT_TOKEN 或 GEMINI_API_KEY 没填时 /v1/* 全部 404（默认关着，C102）。
  * Gemini 都用不了时换备用 AI（Workers AI，ai.ts）；草稿带 engine 标出是哪个 AI 写的。
  * Gemini 超额（429）返回 503 + retryAfter，插件自动排队再试；其他 Gemini 错误返回 502 + detail（原因，不含 Key）。
@@ -20,6 +21,7 @@ import { GeminiBusy, GeminiError, type FetchLike } from './gemini';
 import { FORECAST_RULES } from '../rules/forecast';
 import { ADMIN_PAGE } from './admin-page';
 import { adminApi, adminEnabled, doneToday, saveToQueue } from './queue';
+import { companyEnabled, companyIngest } from './company';
 
 const RULES: Record<string, string> = { forecast: FORECAST_RULES };
 const PER_MINUTE = 60;
@@ -205,12 +207,15 @@ export async function handle(req: Request, env: Env, now: number, fetcher?: Fetc
   const url = new URL(req.url);
   const p = url.pathname;
   if (p === '/health' && req.method === 'GET') {
-    return json({ status: 'UP', environment: env.ENVIRONMENT ?? 'unknown', version: env.VERSION ?? 'dev', copilot: configured(env) ? 'ok' : 'not_configured', admin: adminEnabled(env) ? 'ok' : 'not_configured' });
+    return json({ status: 'UP', environment: env.ENVIRONMENT ?? 'unknown', version: env.VERSION ?? 'dev', copilot: configured(env) ? 'ok' : 'not_configured', admin: adminEnabled(env) ? 'ok' : 'not_configured', company: companyEnabled(env) ? 'ok' : 'not_configured' });
   }
   if ((p === '/' || p === '/queue') && req.method === 'GET') {
     if (!adminEnabled(env)) return notFound();
     return new Response(ADMIN_PAGE, { headers: { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-store', 'x-robots-tag': 'noindex', 'x-frame-options': 'DENY', 'referrer-policy': 'no-referrer' } });
   }
+  // 公司仪表盘的推送接口只依赖 COMPANY_INGEST_TOKEN，在后台（密码）判断之前处理
+  const ingest = await companyIngest(env, req, now);
+  if (ingest) return ingest;
   const admin = await adminApi(env, req, now);
   if (admin) return admin;
   if (!p.startsWith('/v1/') || !configured(env)) return notFound();

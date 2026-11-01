@@ -2,7 +2,9 @@ import { EXTENSION_VERSION } from './extension-download';
 
 /**
  * 网页后台（agents C136；0.3 原型 https://claude.ai/artifact/EwGoS2XRCbMsKxySVXRcxd，Amos 2026-10-30 确认 D-1～D-4）。
- * 三页：跟帖评论清单（原"待回复清单"）、用量和限额、插件下载（Amos 2026-10-30）。没登录显示密码框；手机、电脑都能用。
+ * 四页：跟帖评论清单（原"待回复清单"）、用量和限额、插件下载（Amos 2026-10-30）、公司（运营仪表盘，Amos 2026-11-01 确认原型；
+ * agents 产品/marketing/技术方案-运营仪表盘.md 第六节）。没登录显示密码框；手机、电脑都能用。
+ * 公司页的脚本单独放在第二个 <script> 里、整段 try/catch，只在打开这一页时读数据和渲染；出错只影响这一页，旧三页的代码不动。
  * 每个按钮都有处理中 / 成功 / 失败的反馈（C135）；删除先在页面上确认（删了不能恢复）。
  * 注意：整页是一个模板字符串，页面脚本里不能用反引号和 ${（只有插件版本号是在这里插进去的）。
  */
@@ -10,8 +12,8 @@ export const ADMIN_PAGE = `<!doctype html>
 <html lang="zh-Hans"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="robots" content="noindex, nofollow"><title>跟帖评论清单</title>
 <style>
-:root{--bg:#F4F6F9;--surface:#fff;--ink:#13203A;--muted:#5B6678;--line:#D9DEE7;--navy:#0F1B33;--teal:#14B8A6;--teal-soft:#D5F5F0;--amber:#B26B00;--amber-soft:#FDF1DC;--ok:#15803D;--err:#B91C1C;--err-soft:#FDE8E8;--th:#6B3FA0}
-@media (prefers-color-scheme: dark){:root{--bg:#0B1220;--surface:#131C2E;--ink:#E6EBF3;--muted:#9AA6BA;--line:#26324A;--navy:#0A1324;--teal:#2DD4BF;--teal-soft:#0F3B37;--amber:#E9A641;--amber-soft:#3A2C14;--ok:#4ADE80;--err:#F87171;--err-soft:#3A1717;--th:#B993E6;color-scheme:dark}}
+:root{--bg:#F4F6F9;--surface:#fff;--ink:#13203A;--muted:#5B6678;--line:#D9DEE7;--navy:#0F1B33;--teal:#14B8A6;--teal-soft:#D5F5F0;--amber:#B26B00;--amber-soft:#FDF1DC;--ok:#15803D;--err:#B91C1C;--err-soft:#FDE8E8;--th:#6B3FA0;--ok-soft:#DCFCE7;--stale:#8A94A6;--mono:ui-monospace,"SF Mono",Menlo,Consolas,monospace}
+@media (prefers-color-scheme: dark){:root{--bg:#0B1220;--surface:#131C2E;--ink:#E6EBF3;--muted:#9AA6BA;--line:#26324A;--navy:#0A1324;--teal:#2DD4BF;--teal-soft:#0F3B37;--amber:#E9A641;--amber-soft:#3A2C14;--ok:#4ADE80;--err:#F87171;--err-soft:#3A1717;--th:#B993E6;--ok-soft:#14321F;--stale:#6B7689;color-scheme:dark}}
 *{box-sizing:border-box}[hidden]{display:none!important}
 body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.6 "Noto Sans TC","PingFang TC","Microsoft JhengHei",sans-serif}
 .top{display:flex;align-items:center;gap:10px;padding:12px max(16px,env(safe-area-inset-left));background:var(--navy);color:#fff;flex-wrap:wrap}
@@ -60,8 +62,40 @@ th{font-size:12px;color:var(--muted);font-weight:600}td.n{text-align:right}
 .state{font-size:12px;font-weight:700;border-radius:99px;padding:2px 8px;background:var(--teal-soft)}.state.warn{background:var(--amber-soft);color:var(--amber)}
 .cap-in{width:90px}
 .pad{padding:14px;display:grid;gap:10px}.hint{font-size:13px;color:var(--muted);margin:0}
+/* 公司页（原型 2026-11-01）：样式都限定在 #v-company 里，不影响旧三页 */
+#v-company,#co-body{display:grid;gap:16px}
+#v-company .co-bar{display:flex;gap:10px;align-items:center;flex-wrap:wrap;font-size:13px;color:var(--muted);margin:0}#v-company .co-bar .sp{flex:1}
+#v-company .card{min-width:0}
+#v-company .card h2{font-size:14px;margin:0;padding:12px 16px;border-bottom:1px solid var(--line);display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+#v-company .card h2 .sp{flex:1}
+#v-company .stamp{font-size:12px;color:var(--muted);font-weight:400}
+#v-company .old{filter:grayscale(1);opacity:.62}#v-company .old .stamp{color:var(--stale)}
+#v-company .hero{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:12px}
+#v-company .tile{background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:12px 16px;min-width:0}
+#v-company .tile .n{font:700 28px/1.1 var(--mono);font-variant-numeric:tabular-nums}#v-company .tile .l{color:var(--muted);font-size:12px;margin-top:4px}
+#v-company .tile.need{border-color:var(--err);background:var(--err-soft)}#v-company .tile.need .n{color:var(--err)}
+#v-company .pill{display:inline-block;font-size:12px;border-radius:99px;padding:1px 8px;white-space:nowrap;text-decoration:none}
+#v-company .p-ok{background:var(--ok-soft);color:var(--ok)}#v-company .p-warn{background:var(--amber-soft);color:var(--amber)}#v-company .p-err{background:var(--err-soft);color:var(--err)}#v-company .p-mute{background:var(--bg);color:var(--muted);border:1px solid var(--line)}
+#v-company table{font-variant-numeric:normal}
+#v-company th,#v-company td{white-space:normal;vertical-align:top;padding:8px 10px}#v-company th{font-weight:500}#v-company tr:last-child td{border-bottom:0}
+#v-company td.num{font-family:var(--mono);font-variant-numeric:tabular-nums;white-space:nowrap}
+#v-company .btn{font-size:13px;padding:6px 10px;white-space:nowrap}
+#v-company .list{list-style:none;margin:0;padding:0}#v-company .list li{display:flex;gap:10px;align-items:flex-start;padding:10px 16px;border-bottom:1px solid var(--line)}#v-company .list li:last-child{border-bottom:0}
+#v-company .list .who{display:block;flex:0 0 72px;color:var(--muted);font-size:12px;padding-top:2px}#v-company .list .what{flex:1;min-width:0;overflow-wrap:anywhere}#v-company .list .act{flex:0 0 auto;display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end}
+#v-company .list li.done .what{color:var(--muted);text-decoration:line-through}#v-company .list li.done .what .hint{text-decoration:none}#v-company .co-done{color:var(--ok)!important}
+#v-company .two{display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:16px}
+#v-company .bar{height:6px;background:var(--bg);border-radius:3px;overflow:hidden;margin:4px 0 2px;max-width:160px}#v-company .bar i{display:block;height:100%;background:var(--teal)}
+#v-company .co-err{margin:0;padding:8px 16px;font-size:13px;color:var(--err);background:var(--err-soft);border-bottom:1px solid var(--line)}
+#v-company .co-err-t{color:var(--err)}
+#v-company .co-empty{padding:20px 16px;color:var(--muted);text-align:center;margin:0}
+#v-company .msg{padding:0 16px}#v-company .msg:not(:empty){padding:8px 16px 0}
+#v-company .co-foot{padding:10px 16px;display:grid;gap:4px;border-top:1px solid var(--line)}
+@media (max-width:600px){#v-company .list .who{flex-basis:100%;padding-top:0}#v-company .list li{flex-wrap:wrap}#v-company .list .act{justify-content:flex-start}
+  #v-company table.stack thead{display:none}#v-company table.stack tr{display:block;padding:8px 6px;border-bottom:1px solid var(--line)}#v-company table.stack tr:last-child{border-bottom:0}
+  #v-company table.stack td{display:block;border:0;padding:2px 10px}#v-company table.stack td.num{white-space:normal}
+  #v-company table.stack td[data-label]::before{content:attr(data-label) "：";color:var(--muted);font-size:12px;font-family:inherit}}
 </style></head><body>
-<header class="top"><span class="logo" aria-hidden="true"><i style="height:16px;background:#2DD4BF"></i><i style="height:10px;background:#FBBF24"></i></span><b id="title">跟帖评论清单</b><span class="sp" id="count"></span><button id="nav" hidden>用量和限额 →</button><button id="extnav" hidden>插件下载</button><button id="logout" hidden>登出</button></header>
+<header class="top"><span class="logo" aria-hidden="true"><i style="height:16px;background:#2DD4BF"></i><i style="height:10px;background:#FBBF24"></i></span><b id="title">跟帖评论清单</b><span class="sp" id="count"></span><button id="nav" hidden>用量和限额 →</button><button id="extnav" hidden>插件下载</button><button id="conav" hidden>公司</button><button id="logout" hidden>登出</button></header>
 <form class="login" id="login" hidden>
   <b>登录</b><label for="pw">密码</label><input id="pw" type="password" autocomplete="current-password" required>
   <button class="btn primary" id="go" type="submit">登录</button><p class="msg" id="lmsg" role="alert"></p>
@@ -103,6 +137,10 @@ th{font-size:12px;color:var(--muted);font-weight:600}td.n{text-align:right}
       </ol>
     </div></div>
   </section>
+  <section id="v-company" hidden>
+    <p class="co-bar"><span id="co-at">还没读取</span><span class="sp"></span><button class="btn small" id="co-refresh" type="button">刷新</button></p>
+    <div id="co-body"></div>
+  </section>
 </main>
 <script>
 const $=(id)=>document.getElementById(id);
@@ -112,15 +150,16 @@ const tw=(ms)=>new Date(ms+8*3600e3).toISOString().replace('T',' ').slice(0,19);
 const twDay=(ms)=>tw(ms).slice(0,10);
 function toast(t,err){const e=$('toast');e.textContent=t;e.className='toast'+(err?' err':'');e.hidden=!t;}
 async function call(path,body){const r=await fetch(path,{method:body?'POST':'GET',headers:{'content-type':'application/json'},body:body?JSON.stringify(body):undefined,credentials:'same-origin'});const j=await r.json().catch(()=>({}));if(r.status===401&&path!=='/api/login'){showLogin('请重新登录');throw new Error('请重新登录');}if(!r.ok)throw new Error(j.error||('出错了（'+r.status+'）'));return j;}
-function showLogin(m){$('app').hidden=true;$('logout').hidden=true;$('nav').hidden=true;$('extnav').hidden=true;$('login').hidden=false;$('count').textContent='';$('lmsg').textContent=m||'';$('pw').focus();}
-function showApp(){$('app').hidden=false;$('logout').hidden=false;$('nav').hidden=false;$('extnav').hidden=view==='ext';}
+function showLogin(m){$('app').hidden=true;$('logout').hidden=true;$('nav').hidden=true;$('extnav').hidden=true;$('conav').hidden=true;$('login').hidden=false;$('count').textContent='';$('lmsg').textContent=m||'';$('pw').focus();}
+function showApp(){$('app').hidden=false;$('logout').hidden=false;$('nav').hidden=false;$('extnav').hidden=view==='ext';$('conav').hidden=view==='company';}
 $('login').addEventListener('submit',async(e)=>{e.preventDefault();const b=$('go');b.disabled=true;b.textContent='正在登录…';$('lmsg').textContent='';
   try{await call('/api/login',{password:$('pw').value});$('pw').value='';$('login').hidden=true;await load();}catch(err){$('lmsg').textContent=err.message;}finally{b.disabled=false;b.textContent='登录';}});
 $('logout').addEventListener('click',async()=>{await call('/api/logout',{}).catch(()=>{});showLogin('已登出');});
-const TITLES={list:'跟帖评论清单',usage:'用量和限额',ext:'插件下载'};
-function go(v){view=v;$('v-list').hidden=v!=='list';$('v-usage').hidden=v!=='usage';$('v-ext').hidden=v!=='ext';$('title').textContent=TITLES[v];$('nav').textContent=v==='list'?'用量和限额 →':'← 跟帖评论清单';$('extnav').hidden=v==='ext';document.title=TITLES[v];usageTimer(v==='usage');if(v==='usage'){uEditing=false;loadUsage(true);}else if(v==='list')load();}
+const TITLES={list:'跟帖评论清单',usage:'用量和限额',ext:'插件下载',company:'公司'};
+function go(v){view=v;$('v-list').hidden=v!=='list';$('v-usage').hidden=v!=='usage';$('v-ext').hidden=v!=='ext';$('v-company').hidden=v!=='company';$('conav').hidden=v==='company';$('title').textContent=TITLES[v];$('nav').textContent=v==='list'?'用量和限额 →':'← 跟帖评论清单';$('extnav').hidden=v==='ext';document.title=TITLES[v];usageTimer(v==='usage');if(v==='usage'){uEditing=false;loadUsage(true);}else if(v==='list')load();else if(v==='company'){try{companyOpen();}catch(e){$('co-at').textContent='这一页出错了：'+e.message;}}}
 $('nav').addEventListener('click',()=>go(view==='list'?'usage':'list'));
 $('extnav').addEventListener('click',()=>go('ext'));
+$('conav').addEventListener('click',()=>go('company'));
 $('origin').textContent=location.origin;
 $('dl').addEventListener('click',async()=>{const b=$('dl'),m=$('dl-msg');b.disabled=true;b.textContent='下载中…';m.className='msg';m.textContent='';
   try{const r=await fetch('/api/extension.zip',{credentials:'same-origin'});if(r.status===401){showLogin('请重新登录');return;}if(!r.ok)throw new Error('下载失败（'+r.status+'），稍后再试');
@@ -224,4 +263,112 @@ $('u-save').addEventListener('click',async()=>{const b=$('u-save'),m=$('u-msg');
   b.disabled=true;b.textContent='正在保存…';m.textContent='';
   try{usage=(await call('/api/usage',{caps})).rows;uEditing=false;renderUsage();uStamp();m.className='msg ok';m.textContent='✓ 已保存，下一次请求开始生效';}catch(e){m.className='msg';m.textContent=e.message;}finally{b.disabled=false;b.textContent='保存上限';}});
 call(query()).then(j=>{state=j;showApp();render();}).catch(()=>{});
+</script>
+<script>
+// 公司页（运营仪表盘）：整段 try/catch；这里只定义函数，打开"公司"页（go('company')）时才读数据、渲染，出错只影响这一页
+try{
+const CO={data:null,latest:null,done:new Map(),week:''};
+const SRCN={agents:'agents','new-forecast':'new-forecast',marketing:'Marketing'};
+const KINDN={projects:'项目版图',status:'状态卡',handoff:'交接记录',todo:'Amos 待办',weekly:'周报',learning:'岗位学习',prs:'要你决定的 PR',ci:'自动检查'};
+const ROLES=['产品','市场','研发','测试','运维安全','运维','安全','经营'];
+const el=(tag,cls,text)=>{const e=document.createElement(tag);if(cls)e.className=cls;if(text!=null)e.textContent=String(text);return e;};
+const ago=(ms)=>{const m=Math.floor(Math.max(0,CO.data.now-ms)/60000);if(m<1)return '刚刚';if(m<60)return m+' 分钟前';const h=Math.floor(m/60);if(h<48)return h+' 小时前';return Math.floor(h/24)+' 天前';};
+const blocks=(kind)=>CO.data.blocks.filter(b=>b.kind===kind);
+const newest=(bs)=>bs.reduce((a,b)=>(!a||b.source_at>a.source_at)?b:a,null);
+function stamp(bs,label){const n=newest(bs);if(!n)return el('span','stamp',label||'');const s=el('span','stamp',(label?label+' ':'')+'更新于 '+ago(n.source_at)+(bs.every(b=>b.stale)?'（超过 7 天没更新）':''));s.title=tw(n.source_at);return s;}
+function card(id,title,bs,label){const sec=el('section','card');sec.id=id;const h=el('h2');h.append(title);const sp=el('span','sp');h.append(sp);if(bs)h.append(stamp(bs,label));sec.append(h);
+  if(bs&&bs.length&&bs.every(b=>b.stale))sec.classList.add('old');
+  if(bs)bs.filter(b=>b.status==='error').forEach(b=>sec.append(el('p','co-err','解析失败：'+b.error+'（'+KINDN[b.kind]+(b.key?' · '+b.key:'')+(b.payload?'，下面是上次成功的内容':'')+'）')));
+  return {sec,h,sp};}
+const empty=(t)=>el('p','co-empty',t||'还没收到数据');
+function pill(text,cls){return el('span','pill '+cls,text);}
+function table(heads,rows){const w=el('div','tablewrap');const t=el('table','stack');const th=el('thead');const tr=el('tr');heads.forEach(h=>tr.append(el('th',null,h)));th.append(tr);const tb=el('tbody');rows.forEach(r=>tb.append(r));t.append(th,tb);w.append(t);return w;}
+function td(label,content,cls){const c=el('td',cls||null);if(label)c.dataset.label=label;(Array.isArray(content)?content:[content]).forEach(x=>{if(x==null||x==='')return;c.append(x);});if(!c.childNodes.length)c.append('—');return c;}
+const lines=(parts)=>{const out=[];parts.filter(x=>x!=null&&x!=='').forEach((x,i)=>{if(i)out.push(el('br'));out.push(x);});return out;};
+function needItems(){const out=[];const add=(o)=>out.push(o);
+  blocks('todo').filter(b=>b.payload).forEach(b=>(b.payload.items||[]).filter(it=>it.type==='confirm').forEach((it,i)=>add({key:'todo:'+b.key+':'+(it.id||'c'+i),who:'决定'+(it.level?' · '+it.level:''),id:it.id,text:it.text,hint:it.hint,link:it.link,linkText:it.link_text})));
+  blocks('prs').filter(b=>b.payload).forEach(b=>(b.payload.items||[]).forEach(it=>add({key:'pr:'+b.source+':'+it.number,who:'PR 要你决定',id:'#'+it.number,text:it.title,hint:(SRCN[b.source]||b.source)+(typeof it.days==='number'?' · 开了 '+it.days+' 天':''),link:it.url,linkText:'看 PR'})));
+  blocks('status').filter(b=>b.payload).forEach(b=>(b.payload.waiting||[]).forEach(it=>add({key:'wait:'+b.key+':'+(it.id||String(it.text||'').slice(0,80)),who:'在等你',id:it.id,text:it.text,hint:(b.payload.product||b.key)+(it.hint?' · '+it.hint:''),link:it.link||b.payload.link,linkText:it.link?'打开':'看状态卡'})));
+  ['action','report'].forEach(t=>blocks('todo').filter(b=>b.payload).forEach(b=>(b.payload.items||[]).filter(it=>it.type===t).forEach((it,i)=>add({key:'todo:'+b.key+':'+(it.id||t[0]+i),who:t==='action'?'操作':'回报',id:it.id,text:it.text,hint:it.hint,link:it.link,linkText:it.link_text}))));
+  return out;}
+function heroTiles(need){const h=el('section','hero');h.setAttribute('aria-label','摘要');
+  const tile=(n,l,cls)=>{const t=el('div','tile'+(cls?' '+cls:''));t.append(el('div','n',n),el('div','l',l));h.append(t);};
+  const open=need.filter(x=>!CO.done.has(x.key)).length;tile(String(open),'需要我的事',open?'need':'');
+  const pj=blocks('projects')[0];const st=blocks('status').filter(b=>b.payload&&(b.payload.metrics||[]).some(x=>x.target));
+  const pn=pj&&pj.payload?(pj.payload.items||[]).length:blocks('status').length;tile(String(pn),'项目 · '+st.length+' 条业务线有数字目标');
+  const w=CO.latest&&CO.latest.payload;(w&&w.highlights||[]).slice(0,3).forEach(x=>{let v=x.value||'';if(x.until&&/^[0-9]{4}-[0-9]{2}-[0-9]{2}$/.test(x.until)){v=Math.round((Date.parse(x.until)-Date.parse(twDay(CO.data.now)))/864e5)+' 天';}tile(v||'—',x.label||'');});
+  return h;}
+function needCard(need){const bs=[...blocks('todo'),...blocks('prs'),...blocks('status')];const open=need.filter(x=>!CO.done.has(x.key)).length;
+  const c=card('co-need','需要我的事 ',bs);c.h.insertBefore(pill(String(open),open?'p-err':'p-ok'),c.sp);
+  const msg=el('p','msg');msg.id='co-msg';msg.setAttribute('role','status');c.sec.append(msg);
+  if(!bs.length){c.sec.append(empty());return c.sec;}
+  if(!need.length){c.sec.append(empty('现在没有要你处理的事'));return c.sec;}
+  const ul=el('ul','list');
+  need.forEach(it=>{const at=CO.done.get(it.key);const li=el('li',at?'done':'');li.dataset.key=it.key;li.append(el('span','who',it.who));
+    const w=el('span','what');if(it.id)w.append(el('b',null,it.id),' ');w.append(it.text||'');if(it.hint)w.append(el('br'),el('span','hint',it.hint));if(at)w.append(el('br'),el('span','hint co-done','✓ 已做 '+tw(at)));li.append(w);
+    const act=el('span','act');if(it.link){const a=el('a','btn',it.linkText||'打开');a.href=it.link;a.target='_blank';a.rel='noopener';act.append(a);}
+    const b=el('button','btn',at?'取消':'我做了');b.type='button';b.addEventListener('click',()=>markDone(it,!at,b));act.append(b);li.append(act);ul.append(li);});
+  c.sec.append(ul);return c.sec;}
+async function markDone(it,done,b){const label=b.textContent;b.disabled=true;b.textContent='处理中…';const m=$('co-msg');m.className='msg';m.textContent='';
+  try{const r=await call('/api/company/done',{key:it.key,done});if(done)CO.done.set(it.key,r.at);else CO.done.delete(it.key);renderCompany();
+    const m2=$('co-msg');m2.className='msg ok';m2.textContent=done?'✓ 已记下：'+(it.id?it.id+' ':'')+'做完了（'+tw(r.at)+'）':'已取消"我做了"：'+(it.id||it.text||'');}
+  catch(e){b.disabled=false;b.textContent=label;m.className='msg';m.textContent='没记上：'+e.message+'，请再点一次';}}
+function projectsCard(){const pj=blocks('projects')[0];const sts=blocks('status');const ver=pj&&pj.payload&&pj.payload.version;
+  const c=card('co-projects','项目',[...(pj?[pj]:[]),...sts],'状态卡');if(ver)c.h.querySelector('.stamp').append(' · 项目版图 '+ver);
+  if(!pj&&!sts.length){c.sec.append(empty());return c.sec;}
+  const items=(pj&&pj.payload&&pj.payload.items)||[];const used=new Set();const rows=[];
+  const find=(name)=>sts.find(s=>!used.has(s)&&(s.key===name||(s.payload&&s.payload.product===name)));
+  const row=(it,s)=>{if(s)used.add(s);const p=(s&&s.payload)||{};const tr=el('tr');if(s&&s.stale)tr.classList.add('old');
+    tr.append(td(null,lines([el('b',null,it.name||p.product||(s&&s.key)||''),it.sub?el('span','hint',it.sub):null])));
+    tr.append(td('阶段',lines([it.stage||'',it.note?el('span','hint',it.note):null])));
+    const num=[];(p.metrics||[]).forEach((x,i)=>{if(i&&!(num[num.length-1]instanceof HTMLDivElement))num.push(el('br'));num.push((x.name?x.name+' ':'')+(x.now||'')+(x.target?' → '+x.target:''));if(typeof x.pct==='number'){const bar=el('div','bar');const fill=el('i');fill.style.width=Math.max(0,Math.min(100,x.pct))+'%';bar.append(fill);num.push(bar);}});
+    tr.append(td('数字 → 目标',num,'num'));
+    tr.append(td('本周',p.week||''));
+    const sc=[];if(!s)sc.push(pill('还没收到状态卡','p-mute'));else{if(p.state)sc.push(pill(p.state,'p-'+(p.level||'mute')));const stuck=(p.open||[]).filter(o=>o.stuck).length;if(stuck){sc.push(' ');sc.push(pill('卡住 '+stuck+' 件','p-err'));}
+      if(s.status==='error'){sc.push(el('br'));sc.push(el('span','hint co-err-t','解析失败：'+s.error));}if(s.stale){sc.push(el('br'));sc.push(el('span','hint','超过 7 天没更新'));}}
+    tr.append(td('状态',sc));rows.push(tr);};
+  items.forEach(it=>row(it,find(it.name)));sts.filter(s=>!used.has(s)).forEach(s=>row({},s));
+  c.sec.append(table(['项目','阶段','数字 → 目标','本周','状态'],rows));return c.sec;}
+function peopleCard(){const hs=blocks('handoff').slice().sort((a,b)=>{const i=(x)=>{const k=ROLES.indexOf((x.payload&&x.payload.role)||x.key);return k<0?99:k;};return i(a)-i(b);});
+  const c=card('co-people','每个岗位这周',hs,'交接记录');if(!hs.length){c.sec.append(empty());return c.sec;}
+  const rows=hs.map(b=>{const p=b.payload||{};const tr=el('tr');if(b.stale)tr.classList.add('old');tr.append(td(null,p.role||b.key),td('做了什么',p.done||''),td('下一步',p.next||''),td('重复犯错',typeof p.mistakes==='number'?String(p.mistakes):'','num'));return tr;});
+  c.sec.append(table(['岗位','做了什么','下一步','重复犯错'],rows));return c.sec;}
+function learnCard(){const ri=(b)=>{const k=ROLES.indexOf((b.payload&&b.payload.role)||b.key);return k<0?99:k;};const ls=blocks('learning').slice().sort((a,b)=>ri(a)-ri(b));const items=[];ls.forEach(b=>{const p=b.payload||{};(p.items||[]).forEach(x=>items.push({role:p.role||b.key,title:x.title,link:x.link}));});
+  const note=ls.map(b=>b.payload&&b.payload.note).filter(Boolean)[0];
+  const c=card('co-learn','这周学到了什么 ',ls,note||'');if(ls.length)c.h.insertBefore(pill(items.length+' 条','p-mute'),c.sp);
+  if(!ls.length){c.sec.append(empty());return c.sec;}if(!items.length){c.sec.append(empty('这周还没有新的学习'));return c.sec;}
+  const ul=el('ul','list');items.forEach(x=>{const li=el('li');li.append(el('span','who',x.role));const w=el('span','what');if(x.link){const a=el('a',null,x.title);a.href=x.link;a.target='_blank';a.rel='noopener';w.append(a);}else w.append(x.title||'');li.append(w);ul.append(li);});
+  c.sec.append(ul);return c.sec;}
+const STP=(t)=>/完成|已做|done/i.test(t)?'p-ok':/进行|做中/.test(t)?'p-warn':/卡|延|风险/.test(t)?'p-err':'p-mute';
+function nextCard(){const w=CO.data.weekly;const p=(w&&w.payload)||{};const isLatest=!CO.data.weeks.length||!CO.week||CO.week===CO.data.weeks[0];
+  const c=card('co-next','下周'+(p.range?'（'+p.range+'）':'')+' ',w?[w]:[],p.title?'周报'+p.title:'周报');if(!isLatest)c.sec.classList.remove('old');
+  if(CO.data.weeks.length>1){const sel=el('select');sel.id='co-week';sel.setAttribute('aria-label','看哪一期周报');CO.data.weeks.forEach(k=>{const o=el('option',null,k);o.value=k;sel.append(o);});sel.value=w?w.key:CO.data.weeks[0];sel.addEventListener('change',()=>loadCompany(sel.value));c.h.insertBefore(sel,c.sp.nextSibling);}
+  if(!w){c.sec.append(empty());return c.sec;}
+  const rows=(p.next||[]).map(x=>{const tr=el('tr');tr.append(td(null,x.what||''),td('谁',x.who||''),td('何时',x.when||''),td('状态',pill(x.status||'—',STP(x.status||''))));return tr;});
+  if(!rows.length){c.sec.append(empty('这一期没有写下周的事'));return c.sec;}
+  c.sec.append(table(['事','谁','何时','状态'],rows));return c.sec;}
+const CIP={success:['绿','p-ok'],failure:['红','p-err'],cancelled:['已取消','p-warn'],running:['运行中','p-warn'],none:['无 CI','p-mute'],off:['已关','p-warn']};
+function healthCard(){const order=['marketing','new-forecast','agents'];const cs=blocks('ci').slice().sort((a,b)=>(a.key?1:0)-(b.key?1:0)||order.indexOf(a.source)-order.indexOf(b.source));
+  const c=card('co-health','做得怎么样',cs);
+  if(!cs.length)c.sec.append(empty());else{const rows=cs.map(b=>{const p=b.payload||{};const tr=el('tr');if(b.stale)tr.classList.add('old');const k=CIP[p.conclusion]||['—','p-mute'];
+    let ci=pill(k[0],k[1]);if(p.url){const a=el('a','pill '+k[1],k[0]);a.href=p.url;a.target='_blank';a.rel='noopener';ci=a;}
+    const dep=p.sha?(p.sha.slice(0,7)+(typeof p.at==='number'?' · '+tw(p.at).slice(5,10).replace('-','/'):'')):'';
+    tr.append(td(null,p.name||b.key||SRCN[b.source]||b.source),td('main 的 CI',ci),td('最近部署',dep,'num'),td('说明',p.note||''));return tr;});
+    c.sec.append(table(['仓库 / 任务','main 的 CI','最近部署','说明'],rows));}
+  const foot=el('div','co-foot');const w=CO.latest&&CO.latest.payload;
+  if(w){const parts=[];if(w.rules)parts.push('规则版本 '+w.rules);if(w.cost)parts.push('本周成本 '+w.cost);if(typeof w.mistakes==='number')parts.push('重复犯错 '+w.mistakes+' 次');if(parts.length)foot.append(el('p','hint',parts.join(' · ')));}
+  foot.append(el('p','hint','灰色 = 数据超过 7 天没更新。每块右上角写"更新于多久前"。合并或开、关 PR 后 1～2 分钟送到，点上面的"刷新"再看。'));c.sec.append(foot);return c.sec;}
+function renderCompany(){const B=$('co-body');B.replaceChildren();
+  if(!CO.data.configured&&!CO.data.blocks.length&&!CO.data.weekly){const c=card('co-off','还没开通',null);c.sec.append(el('p','co-empty','公司数据还没接上：等 Amos 填好连接各仓库的令牌后，各仓库合并或开、关 PR 时会自动把最新情况送来。'));B.append(c.sec);return;}
+  const need=needItems();const two=el('div','two');two.append(peopleCard(),learnCard());
+  B.append(heroTiles(need),needCard(need),projectsCard(),two,nextCard(),healthCard());}
+async function loadCompany(week){const b=$('co-refresh');b.disabled=true;b.textContent='正在刷新…';
+  try{const j=await call('/api/company'+(week?'?week='+encodeURIComponent(week):''));CO.data=j;CO.week=week||'';if(!week)CO.latest=j.weekly;CO.done=new Map(j.done.map(x=>[x.key,x.at]));
+    $('co-at').textContent='读取于 '+tw(j.now).slice(11)+(j.configured?'':'（还没开通，显示的是以前收到的）');renderCompany();}
+  catch(e){if(e.message==='请重新登录')return;$('co-at').textContent='暂时读不到：'+e.message+'，点"刷新"再试';
+    if(!CO.data){const B=$('co-body');B.replaceChildren();const c=card('co-fail','暂时读不到',null);c.sec.append(el('p','co-empty','暂时读不到：'+e.message));const r=el('button','btn','重试');r.type='button';r.addEventListener('click',()=>loadCompany(''));const p=el('p','co-empty');p.append(r);c.sec.append(p);B.append(c.sec);}}
+  finally{b.disabled=false;b.textContent='刷新';}}
+var companyOpen=function(){if(!CO.data)$('co-body').replaceChildren(el('p','co-empty','正在读取…'));loadCompany(CO.week);};
+$('co-refresh').addEventListener('click',()=>loadCompany(CO.week));
+}catch(e){var companyOpen=function(){$('co-at').textContent='这一页出错了：'+e.message;};}
 </script></body></html>`;
