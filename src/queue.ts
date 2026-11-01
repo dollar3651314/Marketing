@@ -3,6 +3,7 @@
  * - 插件用（令牌）：POST /v1/queue {product, platform, post:{id, author, text, ageMinutes}, score, reasons, draft, source}；同一条帖子只存一次。
  * - 后台用（密码登录后的会话 Cookie）：
  *   GET /api/queue?status=pending|done|skip&product=&platform=&from=YYYY-MM-DD&to=YYYY-MM-DD（按存进来的台湾日期）&sort=time|score、POST /api/queue/<id> {status}、
+ *   GET /api/company、POST /api/company/done（公司运营仪表盘，company.ts）、
  *   POST /api/queue/delete {ids}（Amos 自己删；记录不自动删，D-4 选 B）、GET /api/usage、POST /api/usage {caps}（用量和限额，usage.ts）、POST /api/login、POST /api/logout。
  * 登录：密钥 COPILOT_PASSWORD（≥ 16 个字符，没填时后台 404）；同一 IP 15 分钟错 5 次锁 15 分钟，全站 1 小时错 20 次锁 1 小时；
  * 失败一律回答同一句（不透露锁定规则，C128）；会话 12 小时，签名密钥由密码派生，改密码旧会话全部失效。
@@ -12,6 +13,7 @@ import { modelList } from './gemini';
 import { saveCaps, usageReport, WAI_KEY } from './usage';
 import { usedToday } from './workers-ai';
 import { extensionZip } from './extension-download';
+import { companyApi } from './company';
 
 export const SESSION_MS = 12 * 3600_000;
 const LOCK = { ipWindow: 15 * 60_000, ipMax: 5, ipLock: 15 * 60_000, allWindow: 3600_000, allMax: 20, allLock: 3600_000 };
@@ -107,6 +109,8 @@ export async function adminApi(env: Env, req: Request, now: number): Promise<Res
   if (p === '/api/logout' && req.method === 'POST') return json({ ok: true }, 200, { 'set-cookie': `${COOKIE}=; Path=/; HttpOnly; Secure; SameSite=Strict; Max-Age=0` });
   if (!(await sessionOk(env, req, now))) return json({ error: '请重新登录' }, 401);
   if (p === '/api/extension.zip' && req.method === 'GET') return extensionZip();
+  const company = await companyApi(env, req, now);
+  if (company) return company;
   if (p === '/api/queue' && req.method === 'GET') {
     const q = url.searchParams;
     const status = ['pending', 'done', 'skip'].includes(q.get('status') ?? '') ? q.get('status')! : 'pending';

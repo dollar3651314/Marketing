@@ -1,5 +1,5 @@
 # 每个 PR 的自动检查（agents 规则 C54），按"精简 CI"写（C74，模板 agents/模板/ci.yml）。
-#   - 每次都跑：索引检查（C53）、类型检查、单元测试、插件侧边栏的浏览器级测试（C141）。项目小，不按路径跳过。
+#   - 每次都跑：索引检查（C53）、类型检查、单元测试、插件侧边栏和网页后台的浏览器级测试（C141）。项目小，不按路径跳过。
 #   - 推送到 staging → 部署测试版 marketing-staging；推送到 main → 部署正式版 marketing（2026-10-30 由 quickcome-copilot 改名）。
 #   - 同一分支连续推送时取消旧的运行；缓存依赖和浏览器；每个 job 都有 timeout-minutes；不开定时任务。
 # 分支保护只把汇总 job "ci-ok" 设为"必须通过"。
@@ -44,6 +44,8 @@ jobs:
       - run: npx playwright install --with-deps chromium
       - name: 插件侧边栏（替身 chrome API；设置、存满就停、暂停和继续、切分页；agents C141）
         run: node scripts/e2e-ext.mjs
+      - name: 网页后台（本地 wrangler dev + 本地 D1：公司页各块、变灰、解析失败、"我做了"、旧三页照常；agents C141）
+        run: npm run e2e:admin
 
   # 汇总：分支保护只把这一项设为"必须通过"
   ci-ok:
