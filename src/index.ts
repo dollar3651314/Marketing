@@ -1,5 +1,5 @@
 /**
- * 副驾驶中转服务（agents C133，营销团队/副驾驶/技术方案.md）。接口：
+ * 副驾驶中转服务（agents C133，公司平台/副驾驶/技术方案.md）。接口：
  * - GET  /health                 不要令牌；不返回任何密钥的值
  * - POST /v1/score   {product, platform, posts:[{id, author, text, replies?, ageMinutes?}]}  最多 10 条 → {items:[{id, score, reasons}]}
  * - POST /v1/draft   {product, platform, post}  → {drafts:[{tone, text, source}], dropped}   只给通过程序检查的草稿
