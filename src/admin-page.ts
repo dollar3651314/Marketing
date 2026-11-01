@@ -1,26 +1,46 @@
 import { EXTENSION_VERSION } from './extension-download';
+import { PLATFORM_CONFIG } from './projects';
 
 /**
- * 网页后台（agents C136；0.3 原型 https://claude.ai/artifact/EwGoS2XRCbMsKxySVXRcxd，Amos 2026-10-30 确认 D-1～D-4）。
- * 四页：跟帖评论清单（原"待回复清单"）、用量和限额、插件下载（Amos 2026-10-30）、公司（运营仪表盘，Amos 2026-11-01 确认原型；
- * agents 公司平台/技术方案-运营仪表盘.md 第六节）。没登录显示密码框；手机、电脑都能用。
- * 公司页的脚本单独放在第二个 <script> 里、整段 try/catch，只在打开这一页时读数据和渲染；出错只影响这一页，旧三页的代码不动。
- * 每个按钮都有处理中 / 成功 / 失败的反馈（C135）；删除先在页面上确认（删了不能恢复）。
- * 注意：整页是一个模板字符串，页面脚本里不能用反引号和 ${（只有插件版本号是在这里插进去的）。
+ * 网页后台 = 公司平台（agents C136；公司平台批 1：原型 agents 公司平台/原型-公司平台-v2.html，技术方案 公司平台/技术方案-公司平台*.md，Amos 2026-11-01"都按建议"）。
+ * 外框：一级菜单"工作台 · 项目（forecast）· 公共工具"，二级菜单直通模块，地址用锚点 #/work/todo、#/forecast/guide、#/tools/queue，刷新停在原处；
+ * 登录后默认工作台（P-9），/queue 打开直接进清单。没登录显示密码框；手机、电脑都能用。
+ * 三段脚本：① 外框 + 清单、用量和限额、插件下载（这三块的脚本和接口没改，只换外框）；② "公司总览"（原运营仪表盘"公司"页，整段 try/catch）；
+ * ③ 工作台、forecast 项目页（整段 try/catch，出错只影响这两页）。每个按钮都有处理中 / 成功 / 失败的反馈（C135）；删除先在页面上确认（删了不能恢复）。
+ * 注意：整页是一个模板字符串，页面脚本里不能用反引号和 ${（只有插件版本号和 src/projects.ts 的对照表是在这里插进去的）。
  */
 export const ADMIN_PAGE = `<!doctype html>
 <html lang="zh-Hans"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="robots" content="noindex, nofollow"><title>跟帖评论清单</title>
+<meta name="robots" content="noindex, nofollow"><title>公司平台</title>
 <style>
 :root{--bg:#F4F6F9;--surface:#fff;--ink:#13203A;--muted:#5B6678;--line:#D9DEE7;--navy:#0F1B33;--teal:#14B8A6;--teal-soft:#D5F5F0;--amber:#B26B00;--amber-soft:#FDF1DC;--ok:#15803D;--err:#B91C1C;--err-soft:#FDE8E8;--th:#6B3FA0;--ok-soft:#DCFCE7;--stale:#8A94A6;--mono:ui-monospace,"SF Mono",Menlo,Consolas,monospace}
 @media (prefers-color-scheme: dark){:root{--bg:#0B1220;--surface:#131C2E;--ink:#E6EBF3;--muted:#9AA6BA;--line:#26324A;--navy:#0A1324;--teal:#2DD4BF;--teal-soft:#0F3B37;--amber:#E9A641;--amber-soft:#3A2C14;--ok:#4ADE80;--err:#F87171;--err-soft:#3A1717;--th:#B993E6;--ok-soft:#14321F;--stale:#6B7689;color-scheme:dark}}
 *{box-sizing:border-box}[hidden]{display:none!important}
 body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.6 "Noto Sans TC","PingFang TC","Microsoft JhengHei",sans-serif}
-.top{display:flex;align-items:center;gap:10px;padding:12px max(16px,env(safe-area-inset-left));background:var(--navy);color:#fff;flex-wrap:wrap}
-.logo{display:flex;gap:3px;align-items:flex-end}.logo i{display:block;width:6px;border-radius:2px}
-.top b{font-size:16px}.top .sp{margin-left:auto;font-size:13px;color:#9FB0CC}
-.top button{font:inherit;font-size:12px;background:none;border:1px solid #3A4A6A;color:#C9D4E6;border-radius:99px;padding:3px 10px;cursor:pointer}
-main{max-width:960px;margin:0 auto;padding:12px max(16px,env(safe-area-inset-right)) 40px max(16px,env(safe-area-inset-left))}
+/* 外框（公司平台批 1，原型 v2）：顶部一级菜单（工作台 · 项目 · 公共工具）、二级菜单直通模块，地址用 #/work/todo 这类锚点 */
+.top{position:sticky;top:0;z-index:30;display:flex;align-items:center;gap:6px 8px;padding:8px max(16px,env(safe-area-inset-left));background:var(--navy);color:#fff;min-height:48px;flex-wrap:wrap}
+.logo{display:flex;gap:3px;align-items:flex-end;flex:0 0 auto}.logo i{display:block;width:6px;border-radius:2px}
+.brand{font-size:16px;font-weight:700;margin-right:8px;white-space:nowrap}
+.sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
+.nav1{display:flex;gap:6px;align-items:center;min-width:0;flex-wrap:wrap}
+.nav1 a{font-size:14px;color:#C9D4E6;text-decoration:none;border-radius:99px;padding:5px 14px;border:1px solid transparent;white-space:nowrap}
+.nav1 a:hover{border-color:#3A4A6A}.nav1 a[aria-current="page"]{background:#fff;color:var(--navy);font-weight:700}
+.nav1 .grp-l{font-size:11px;color:#7E8DA8;margin-left:6px;white-space:nowrap}
+.nav1 .cnt{display:inline-block;min-width:18px;padding:0 5px;margin-left:5px;border-radius:99px;background:#E5484D;color:#fff;font-size:11px;font-weight:700;line-height:18px;text-align:center}
+.top .sp{flex:1}
+.top button{font:inherit;font-size:12px;background:none;border:1px solid #3A4A6A;color:#C9D4E6;border-radius:99px;padding:3px 10px;cursor:pointer;white-space:nowrap}
+.sub{position:sticky;top:48px;z-index:25;background:var(--surface);border-bottom:1px solid var(--line);box-shadow:0 2px 6px rgba(15,27,51,.05)}
+.sub .in{max-width:1120px;margin:0 auto;display:flex;gap:4px;overflow-x:auto;scrollbar-width:none;padding:0 max(12px,env(safe-area-inset-left))}
+.sub .in::-webkit-scrollbar{display:none}
+.sub a{flex:0 0 auto;display:inline-flex;align-items:center;gap:6px;padding:11px 12px 10px;font-size:14px;color:var(--muted);text-decoration:none;border-bottom:3px solid transparent;white-space:nowrap}
+.sub a:hover{color:var(--ink)}.sub a[aria-current="true"]{color:var(--ink);font-weight:700;border-bottom-color:var(--teal)}
+.sub .n{font-size:11px;font-weight:700;border-radius:99px;padding:0 6px;background:var(--bg);color:var(--muted);border:1px solid var(--line)}.sub .n.red{background:var(--err);color:#fff;border-color:var(--err)}
+main{max-width:1120px;margin:0 auto;padding:16px max(16px,env(safe-area-inset-right)) 40px max(16px,env(safe-area-inset-left));min-width:0}
+.page{display:grid;gap:18px;min-width:0}.page::after{content:"";display:block;height:60vh}
+.mod{scroll-margin-top:120px;min-width:0}
+.crumb{display:flex;gap:8px 10px;align-items:baseline;flex-wrap:wrap;margin:0}.crumb h1{font-size:22px;margin:0}
+.mh{font-size:16px;margin:0 0 10px;display:flex;align-items:center;gap:8px;flex-wrap:wrap}.mh .sp{flex:1}.mh #count{font-size:13px;font-weight:400;color:var(--muted)}
+@media (max-width:640px){.brand{display:none}.nav1{gap:2px}.nav1 a{padding:5px 10px}.nav1 .grp-l{display:none}.top{padding-left:12px;padding-right:12px}}
 .filters{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin:4px 0 10px}
 .chip{font:inherit;font-size:14px;padding:5px 12px;border-radius:99px;border:1px solid var(--line);background:var(--surface);color:var(--ink);cursor:pointer}
 .chip[aria-pressed="true"]{background:var(--teal-soft);border-color:var(--teal);font-weight:700}
@@ -105,13 +125,149 @@ th{font-size:12px;color:var(--muted);font-weight:600}td.n{text-align:right}
   #v-company table.stack td{display:block;border:0;padding:2px 10px}#v-company table.stack td.num{white-space:normal}
   #v-company table.stack td[data-label]::before{content:attr(data-label) "：";color:var(--muted);font-size:12px;font-family:inherit}
   #v-company table.co-proj{table-layout:auto}#v-company table.co-proj colgroup{display:none}}
+/* 工作台、项目页（公司平台批 1，原型 v2）：样式都限定在 .plat 里，不影响清单、用量、插件下载和"公司总览" */
+@media (max-width:640px){.sub{position:static}}
+.plat .card{background:var(--surface);border:1px solid var(--line);border-radius:14px;min-width:0;overflow:hidden}
+.plat .card>h2{font-size:16px;margin:0;padding:12px 16px;border-bottom:1px solid var(--line);display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.plat .card>h2 .sp{flex:1}.plat .stamp{font-size:12px;color:var(--muted);font-weight:400}
+.plat .lead{margin:0;padding:10px 16px;font-size:13px;color:var(--muted);border-bottom:1px solid var(--line);background:var(--bg)}
+.plat .pd{padding:12px 16px}.plat .hint{font-size:12px}
+.plat .foot-note{padding:8px 16px;border-top:1px solid var(--line)}
+.plat .pill{display:inline-block;font-size:12px;border-radius:99px;padding:1px 8px;white-space:nowrap;line-height:1.6}
+.plat .p-ok{background:var(--ok-soft);color:var(--ok)}.plat .p-warn{background:var(--amber-soft);color:var(--amber)}.plat .p-err{background:var(--err-soft);color:var(--err)}.plat .p-mute{background:var(--bg);color:var(--muted);border:1px solid var(--line)}.plat .p-teal{background:var(--teal-soft);color:var(--ink)}
+.plat .btn{font-size:14px;padding:8px 14px;white-space:nowrap;display:inline-block;line-height:1.4}.plat .btn.small{font-size:13px;padding:4px 10px;border-radius:8px}.plat .btn.big{font-size:17px;padding:12px 22px;border-radius:12px}
+.plat .warnbar{margin:0;padding:8px 12px;font-size:13px;border-radius:10px;background:var(--amber-soft);color:var(--amber)}
+.plat .hero{border-radius:16px;padding:20px 22px;background:var(--navy);color:#fff;display:grid;gap:10px;min-width:0}
+.plat .hero .k{font-size:13px;color:#9FB0CC;margin:0}.plat .hero .one{font-size:22px;font-weight:700;line-height:1.4;margin:0;overflow-wrap:anywhere}
+.plat .hero .when{display:flex;gap:8px;flex-wrap:wrap;align-items:center;font-size:14px;color:#C9D4E6}
+.plat .hero .why{margin:0;font-size:14px;color:#C9D4E6;overflow-wrap:anywhere;padding:0;background:none}
+.plat .hero .row{display:flex;gap:12px;flex-wrap:wrap;align-items:center;margin-top:4px}.plat .hero .row a.sec{color:#9FB0CC;font-size:13px}
+.plat .hero.calm{background:var(--surface);color:var(--ink);border:1px solid var(--line)}.plat .hero.calm .k,.plat .hero.calm .why{color:var(--muted)}
+.plat .glance{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,160px),1fr));gap:10px}
+.plat .gl{background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:10px 14px;text-decoration:none;color:inherit;min-width:0}
+.plat a.gl:hover{border-color:var(--teal)}.plat .gl .n{font:700 22px/1.2 var(--mono);overflow-wrap:anywhere}.plat .gl .l{font-size:12px;color:var(--muted)}.plat .gl.red .n{color:var(--err)}
+.plat .todos{list-style:none;margin:0;padding:0}
+.plat .todo{display:grid;grid-template-columns:auto minmax(0,1fr) auto;gap:6px 14px;align-items:start;padding:14px 16px;border-bottom:1px solid var(--line);border-left:4px solid transparent}
+.plat .todo:last-child{border-bottom:0}
+.plat .todo.over{border-left-color:var(--err);background:linear-gradient(90deg,var(--err-soft),transparent 40%)}
+.plat .todo.soon{border-left-color:var(--amber);background:linear-gradient(90deg,var(--amber-soft),transparent 40%)}
+.plat .todo.first .ttl{font-size:17px}
+.plat .tick{width:26px;height:26px;border-radius:50%;border:2px solid var(--line);background:var(--surface);cursor:pointer;margin-top:2px;display:grid;place-items:center;color:transparent;font-size:14px;padding:0}
+.plat .tick:hover{border-color:var(--ok);color:var(--ok)}.plat .tick:disabled{background:var(--ok);border-color:var(--ok);color:#fff}
+.plat .tick:focus-visible{outline:2px solid var(--amber);outline-offset:2px}
+.plat .todo .body{min-width:0;display:grid;gap:3px}
+.plat .todo .due{display:flex;gap:6px 8px;flex-wrap:wrap;align-items:center;font-size:13px;color:var(--muted)}
+.plat .todo .ttl{font-weight:700;font-size:15px;overflow-wrap:anywhere}
+.plat .todo .why{margin:0;padding:0;background:none;font-size:13px;color:var(--muted);overflow-wrap:anywhere}
+.plat .todo .go{align-self:center}
+.plat .form{display:flex;gap:6px 10px;flex-wrap:wrap;align-items:center;margin-top:6px}
+.plat .form label{font-size:13px;color:var(--muted);display:inline-flex;gap:4px;align-items:center}.plat .form input{width:84px}.plat .form .msg{width:100%}
+.plat .badge{font-size:12px;font-weight:700;border-radius:99px;padding:1px 9px;white-space:nowrap}
+.plat .b-over{background:var(--err-soft);color:var(--err);border:1px solid var(--err)}.plat .b-soon{background:var(--amber-soft);color:var(--amber);border:1px solid var(--amber)}
+.plat .b-later{background:var(--bg);color:var(--ink);border:1px solid var(--line)}.plat .b-none{background:var(--bg);color:var(--muted);border:1px dashed var(--line)}
+.plat .projtag{font-size:12px;border-radius:6px;padding:0 7px;background:var(--teal-soft);white-space:nowrap}.plat .projtag.company{background:var(--bg);color:var(--muted);border:1px solid var(--line)}
+.plat details.fold>summary{cursor:pointer;padding:10px 16px;font-size:14px;font-weight:700;list-style:none;display:flex;gap:8px;align-items:center;border-top:1px solid var(--line);color:var(--muted)}
+.plat details.fold>summary::-webkit-details-marker{display:none}.plat details.fold>summary::before{content:"▸"}.plat details.fold[open]>summary::before{content:"▾"}
+.plat .donelist{list-style:none;margin:0;padding:0 0 6px}
+.plat .donelist li{display:flex;gap:10px;align-items:center;padding:6px 16px;font-size:14px;color:var(--muted);flex-wrap:wrap}.plat .donelist li s{flex:1;min-width:0;overflow-wrap:anywhere}
+.plat .empty{padding:24px 16px;text-align:center;margin:0;display:grid;gap:6px;justify-items:center;color:var(--ink)}.plat .empty span{color:var(--muted);font-size:14px}
+.plat .gsteps{list-style:none;margin:0;padding:0}
+.plat .step{display:grid;grid-template-columns:auto minmax(0,1fr) auto;gap:6px 14px;padding:14px 16px;border-bottom:1px solid var(--line);align-items:start}
+.plat .step:last-child{border-bottom:0}
+.plat .step .no{width:32px;height:32px;border-radius:50%;background:var(--navy);color:#fff;display:grid;place-items:center;font-weight:700;font-size:14px}
+.plat .step.done .no{background:var(--ok)}.plat .step.done .st{color:var(--muted);text-decoration:line-through}.plat .step.cur{background:var(--teal-soft)}
+.plat .step .st{font-weight:700;overflow-wrap:anywhere}
+.plat .step .acts{display:flex;flex-direction:column;gap:6px;align-items:stretch;min-width:0}
+.plat .step label.ck{display:inline-flex;gap:6px;align-items:center;font-size:13px;cursor:pointer;white-space:nowrap;justify-content:center;border:1px solid var(--line);border-radius:8px;padding:4px 10px;background:var(--surface)}
+.plat .step label.ck input{width:18px;height:18px;margin:0;accent-color:var(--ok)}
+.plat .progress{display:flex;gap:10px;align-items:center;padding:10px 16px;border-bottom:1px solid var(--line);font-size:14px;flex-wrap:wrap}
+.plat .meter{height:6px;background:var(--bg);border:1px solid var(--line);border-radius:3px;overflow:hidden;margin-top:4px;max-width:140px;display:block;width:auto}.plat .meter i{display:block;height:100%;background:var(--teal);position:static}
+.plat .progress .meter{flex:1;max-width:none;min-width:80px;margin:0}
+.plat .bar-row{display:flex;gap:8px;flex-wrap:wrap;align-items:center;padding:10px 16px;border-bottom:1px solid var(--line);font-size:13px}
+.plat textarea{width:100%;min-height:120px;font:13px/1.5 var(--mono);border:1px solid var(--line);border-radius:8px;background:var(--bg);color:var(--ink);padding:8px}
+.plat table{table-layout:fixed;font-size:14px;font-variant-numeric:normal}
+.plat th,.plat td{white-space:normal;vertical-align:top;overflow-wrap:anywhere;word-break:normal;padding:8px 10px}.plat th{font-weight:500}.plat tr:last-child td{border-bottom:0}
+.plat td.num{font-family:var(--mono);font-variant-numeric:tabular-nums;white-space:nowrap}
+.plat .m{margin:0 0 4px;line-height:1.45}.plat .m:last-child{margin:0}.plat .m .v{font-weight:700}.plat .m .to{color:var(--muted)}
+.plat .two{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,340px),1fr));gap:18px}
+.plat .toolcard{border:1px solid var(--line);border-radius:12px;padding:12px 14px;display:grid;gap:8px;min-width:0}
+.plat .toolcard h3{margin:0;font-size:15px}.plat .toolcard .row{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+.plat .ul{margin:0;padding-left:20px}.plat .ul li{margin:3px 0}
+.plat .hand{list-style:none;margin:0;padding:0}.plat .hand li{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:4px 14px;padding:12px 16px;border-bottom:1px solid var(--line)}.plat .hand li:last-child{border-bottom:0}
+.plat .foot{font-size:12px;color:var(--muted);text-align:center;margin:0}
+#p-toast{position:fixed;left:16px;right:16px;bottom:20px;margin:0 auto;max-width:520px;background:var(--navy);color:#fff;padding:10px 16px;border-radius:10px;font-size:14px;z-index:50;box-shadow:0 6px 20px rgba(0,0,0,.25);text-align:center}
+#p-toast.err{background:var(--err)}
+@media (max-width:640px){
+  .plat .hero{padding:16px}.plat .hero .one{font-size:19px}.plat .hero .row .btn{width:100%}
+  .plat .todo{grid-template-columns:auto minmax(0,1fr);padding:12px}.plat .todo .go{grid-column:2;align-self:start}.plat .todo .go .btn{width:100%;white-space:normal}
+  .plat .step{grid-template-columns:auto minmax(0,1fr);padding:12px}.plat .step .acts{grid-column:2}.plat .step .btn{white-space:normal}
+  .plat .hand li{grid-template-columns:minmax(0,1fr)}
+  .plat table.stack{table-layout:auto}.plat table.stack colgroup{display:none}
+  .plat table.stack thead{display:none}.plat table.stack tr{display:block;padding:8px 6px;border-bottom:1px solid var(--line)}.plat table.stack tr:last-child{border-bottom:0}
+  .plat table.stack td{display:block;border:0;padding:2px 10px;text-align:left}.plat table.stack td.num{white-space:normal}
+  .plat table.stack td[data-label]::before{content:attr(data-label) "：";color:var(--muted);font-size:12px;font-family:inherit}
+}
 </style></head><body>
-<header class="top"><span class="logo" aria-hidden="true"><i style="height:16px;background:#2DD4BF"></i><i style="height:10px;background:#FBBF24"></i></span><b id="title">跟帖评论清单</b><span class="sp" id="count"></span><button id="nav" hidden>用量和限额 →</button><button id="extnav" hidden>插件下载</button><button id="conav" hidden>公司</button><button id="logout" hidden>登出</button></header>
+<header class="top" id="top"><span class="logo" aria-hidden="true"><i style="height:16px;background:#2DD4BF"></i><i style="height:10px;background:#FBBF24"></i></span><span class="brand">公司平台</span><b class="sr" id="title">工作台</b>
+  <nav class="nav1" id="nav1" aria-label="一级菜单" hidden><a href="#/work" data-p="work">工作台<span class="cnt" id="c-work" hidden></span></a><span class="grp-l">项目</span><a href="#/forecast" data-p="forecast">forecast<span class="cnt" id="c-forecast" hidden></span></a><a href="#/tools" data-p="tools">公共工具</a></nav>
+  <span class="sp"></span><button id="nav" hidden>用量和限额 →</button><button id="extnav" hidden>插件下载</button><button id="conav" hidden>公司</button><button id="logout" hidden>登出</button></header>
+<div id="subs" hidden>
+<nav class="sub" id="sub-work" aria-label="工作台模块" hidden><div class="in">
+  <a href="#/work/now" data-s="w-now">最该做的事</a><a href="#/work/todo" data-s="w-todo">全部待办<span class="n red" id="s-todo" hidden></span></a><a href="#/work/live" data-s="w-live">团队在做什么</a><a href="#/work/proj" data-s="w-proj">项目概况</a><a href="#/work/num" data-s="w-num">公司数字</a><a href="#/work/meet" data-s="w-meet">经营会</a>
+</div></nav>
+<nav class="sub" id="sub-forecast" aria-label="forecast 模块" hidden><div class="in">
+  <a href="#/forecast/next" data-s="f-next">下一步做什么<span class="n red" id="s-fnext" hidden></span></a><a href="#/forecast/guide" data-s="f-guide">操作指引<span class="n" id="s-guide" hidden></span></a><a href="#/forecast/live" data-s="f-live">团队在做什么</a><a href="#/forecast/card" data-s="f-card">数字和决定</a><a href="#/forecast/pack" data-s="f-pack">本周帖子</a><a href="#/forecast/match" data-s="f-match">焦点战</a><a href="#/forecast/tools" data-s="f-tools">用到的工具</a><a href="#/forecast/handoff" data-s="f-handoff">交接记录</a>
+</div></nav>
+<nav class="sub" id="sub-tools" aria-label="公共工具模块" hidden><div class="in">
+  <a href="#/tools/queue" data-s="t-queue">跟帖评论清单</a><a href="#/tools/usage" data-s="t-usage">用量和限额</a><a href="#/tools/ext" data-s="t-ext">插件下载</a>
+</div></nav>
+</div>
 <form class="login" id="login" hidden>
   <b>登录</b><label for="pw">密码</label><input id="pw" type="password" autocomplete="current-password" required>
   <button class="btn primary" id="go" type="submit">登录</button><p class="msg" id="lmsg" role="alert"></p>
 </form>
 <main id="app" hidden>
+  <!-- 工作台（P-9 默认页）：内容由第三段脚本读 /api/company 后渲染 -->
+  <section class="page plat" id="v-work" hidden>
+    <p class="warnbar" id="w-err" role="status" hidden></p>
+    <section class="mod" id="w-now"><div class="hero calm" id="hero"><p class="k">你现在最该做的一件事</p><p class="one">正在读取…</p></div></section>
+    <div class="glance" id="w-glance"></div>
+    <section class="card mod" id="w-todo">
+      <h2>全部待办 <span class="pill p-err" id="w-todo-n">0</span><span class="sp"></span><span class="stamp">最急的在最上面</span></h2>
+      <p class="lead">红色＝已经超时，橙色＝24 小时内到期。做完了点左边的圆圈打勾，它会收进最下面"做完的"；手机、电脑打的勾是同一份。</p>
+      <ul class="todos" id="w-todos"></ul>
+      <details class="fold" id="w-done"><summary>做完的 <span class="pill p-mute" id="w-done-n">0</span></summary><ul class="donelist" id="w-donelist"></ul></details>
+    </section>
+    <section class="card mod" id="w-live"><h2>团队在做什么</h2><div class="pd" id="w-live-body"></div></section>
+    <section class="card mod" id="w-proj"><h2>项目概况 <span class="sp"></span><span class="stamp" id="w-proj-at"></span></h2><div id="w-proj-body"></div><p class="hint foot-note">只列正在跑、有状态卡的项目。以后发了启动命令的新项目会多一行。</p></section>
+    <section class="card mod" id="w-num"><h2>公司数字 <span class="sp"></span><span class="stamp" id="w-num-at"></span></h2><div id="w-num-body"></div></section>
+    <section class="card mod" id="w-meet"><h2>经营会 <span class="sp"></span><span class="stamp">每周六晚上 8 点</span></h2><div class="pd" id="w-meet-body"></div></section>
+    <p class="foot">停在这一页时每 30 秒自动刷新；切到别的窗口时暂停，切回来马上刷新。</p>
+  </section>
+  <!-- forecast 项目页（PR 2）：只看 forecast 的 -->
+  <section class="page plat" id="v-forecast" hidden>
+    <div class="crumb"><h1>forecast</h1><span class="hint">Quick Come 官网 <a href="https://www.quickcome.online" target="_blank" rel="noopener">quickcome.online</a></span></div>
+    <p class="warnbar" id="f-err" role="status" hidden></p>
+    <section class="card mod" id="f-next">
+      <h2>下一步做什么 <span class="pill p-err" id="f-next-n">0</span><span class="sp"></span><span class="stamp">最急的在最上面</span></h2>
+      <p class="lead">从第一条开始做就行。红色＝已经超时，橙色＝24 小时内到期。每条只有一个按钮，点了直接带你去要操作的地方；做完点左边圆圈打勾。</p>
+      <ul class="todos" id="f-todos"></ul>
+      <details class="fold" id="f-done"><summary>做完的 <span class="pill p-mute" id="f-done-n">0</span></summary><ul class="donelist" id="f-donelist"></ul></details>
+    </section>
+    <section class="card mod" id="f-guide"><h2 id="f-guide-h">操作指引</h2><div id="f-guide-body"></div></section>
+    <section class="card mod" id="f-live"><h2>团队在做什么</h2><div class="pd" id="f-live-body"></div></section>
+    <section class="card mod" id="f-card"><h2>数字和决定 <span class="sp"></span><span class="stamp" id="f-card-at"></span></h2><div id="f-card-body"></div></section>
+    <div class="two">
+      <section class="card mod" id="f-pack"><h2 id="f-pack-h">本周帖子</h2><div id="f-pack-body"></div></section>
+      <section class="card mod" id="f-match"><h2 id="f-match-h">焦点战</h2><div id="f-match-body"></div></section>
+    </div>
+    <section class="card mod" id="f-tools"><h2>本项目用到的工具 <span class="sp"></span><span class="stamp">只算 forecast 的</span></h2><div class="pd two" id="f-tools-body"></div></section>
+    <section class="card mod" id="f-handoff"><h2>交接记录 <span class="sp"></span><span class="stamp">新的在上 · 换人接手时看</span></h2><div id="f-handoff-body"></div></section>
+  </section>
+  <!-- 公共工具：清单、用量和限额、插件下载三块的脚本和接口不动，只换外框 -->
+  <section class="page" id="v-tools" hidden>
+    <div class="crumb"><h1>公共工具</h1><span class="hint">各项目一起用的工具；上限只在这一页改</span></div>
+    <section class="mod" id="t-queue"><h2 class="mh">跟帖评论清单<span class="sp"></span><span id="count"></span></h2>
   <section id="v-list">
     <div class="filters" role="group" aria-label="状态"><button class="chip" data-f="pending" aria-pressed="true">待回</button><button class="chip" data-f="done" aria-pressed="false">已回</button><button class="chip" data-f="skip" aria-pressed="false">跳过</button>
       <label for="f-prod">项目</label><select id="f-prod"><option value="">全部</option></select>
@@ -123,14 +279,16 @@ th{font-size:12px;color:var(--muted);font-weight:600}td.n{text-align:right}
     <div class="confirm" id="bulk-confirm" role="alert" hidden><span id="bulk-text"></span><button class="btn small danger" id="bulk-yes" type="button">确认删除</button><button class="btn small" id="bulk-no" type="button">取消</button></div>
     <p class="toast" id="toast" role="status" hidden></p>
     <div id="list"></div>
-  </section>
-  <section id="v-usage" hidden>
+  </section></section>
+  <section class="mod" id="t-usage"><h2 class="mh">用量和限额</h2>
+  <section id="v-usage">
     <div class="card"><div class="tablewrap"><table><thead><tr><th>模型</th><th>今天请求</th><th>今天 token（入 / 出）</th><th>每天上限</th><th>用量</th><th>状态</th><th>下次重置（台湾时间）</th></tr></thead><tbody id="u-rows"></tbody></table></div>
       <div class="pad"><p class="sum" style="margin:0"><span id="u-at">还没读取</span><span class="sp"></span><button class="btn small" id="u-refresh" type="button">立即刷新</button></p>
         <button class="btn primary" id="u-save" type="button">保存上限</button><p class="msg" id="u-msg" role="status"></p>
         <p class="hint">Gemini 的真实免费额度 Google 不提供查询，这里是我们自己数的次数和 token；Google 说用完（429）时状态会标出来。到了我们设的上限，这个模型今天先跳过，换下一个。Gemini 按次数（1～10,000），Workers AI 按 neurons（1～9,500；免费额度 10,000，超过不让保存）。"今天"按各家的重置时间算。</p></div></div>
-  </section>
-  <section id="v-ext" hidden>
+  </section></section>
+  <section class="mod" id="t-ext"><h2 class="mh">插件下载</h2>
+  <section id="v-ext">
     <div class="card"><div class="pad">
       <p class="sum" style="margin:0">副驾驶插件 <b>${EXTENSION_VERSION}</b>（和这个后台是同一次部署，版本对得上）</p>
       <button class="btn primary" id="dl" type="button">下载插件 ${EXTENSION_VERSION}</button><p class="msg" id="dl-msg" role="status"></p>
@@ -147,7 +305,9 @@ th{font-size:12px;color:var(--muted);font-weight:600}td.n{text-align:right}
         <li>到 <code>chrome://extensions</code> 找到"Quick Come 副驾驶"，点刷新按钮 ↻，再刷新 X / Threads 页面。</li>
       </ol>
     </div></div>
+  </section></section>
   </section>
+  <!-- 公司总览：原运营仪表盘"公司"页（右上角"公司总览"进入，地址 #/company），脚本和样式都没改 -->
   <section id="v-company" hidden>
     <p class="co-bar"><span id="co-at">还没读取</span><span class="sp"></span><button class="btn small" id="co-refresh" type="button">刷新</button></p>
     <div id="co-body"></div>
@@ -161,13 +321,38 @@ const tw=(ms)=>new Date(ms+8*3600e3).toISOString().replace('T',' ').slice(0,19);
 const twDay=(ms)=>tw(ms).slice(0,10);
 function toast(t,err){const e=$('toast');e.textContent=t;e.className='toast'+(err?' err':'');e.hidden=!t;}
 async function call(path,body){const r=await fetch(path,{method:body?'POST':'GET',headers:{'content-type':'application/json'},body:body?JSON.stringify(body):undefined,credentials:'same-origin'});const j=await r.json().catch(()=>({}));if(r.status===401&&path!=='/api/login'){showLogin('请重新登录');throw new Error('请重新登录');}if(!r.ok)throw new Error(j.error||('出错了（'+r.status+'）'));return j;}
-function showLogin(m){$('app').hidden=true;$('logout').hidden=true;$('nav').hidden=true;$('extnav').hidden=true;$('conav').hidden=true;$('login').hidden=false;$('count').textContent='';$('lmsg').textContent=m||'';$('pw').focus();}
-function showApp(){$('app').hidden=false;$('logout').hidden=false;$('nav').hidden=false;$('extnav').hidden=view==='ext';$('conav').hidden=view==='company';}
+let authed=false;
+function showLogin(m){authed=false;$('app').hidden=true;$('subs').hidden=true;$('nav1').hidden=true;$('logout').hidden=true;$('nav').hidden=true;$('extnav').hidden=true;$('conav').hidden=true;$('login').hidden=false;$('count').textContent='';$('lmsg').textContent=m||'';$('pw').focus();try{platformStop();}catch(e){}}
+// #app 由 route() 决定什么时候显示：工作台、项目页等第一次读到数据再显示（免得看到空模块），清单、用量、插件下载、公司总览马上显示
+function showApp(){authed=true;$('subs').hidden=false;$('nav1').hidden=false;$('logout').hidden=false;frameButtons();}
 $('login').addEventListener('submit',async(e)=>{e.preventDefault();const b=$('go');b.disabled=true;b.textContent='正在登录…';$('lmsg').textContent='';
-  try{await call('/api/login',{password:$('pw').value});$('pw').value='';$('login').hidden=true;await load();}catch(err){$('lmsg').textContent=err.message;}finally{b.disabled=false;b.textContent='登录';}});
+  try{await call('/api/login',{password:$('pw').value});$('pw').value='';$('login').hidden=true;await load();route();}catch(err){$('lmsg').textContent=err.message;}finally{b.disabled=false;b.textContent='登录';}});
 $('logout').addEventListener('click',async()=>{await call('/api/logout',{}).catch(()=>{});showLogin('已登出');});
-const TITLES={list:'跟帖评论清单',usage:'用量和限额',ext:'插件下载',company:'公司'};
-function go(v){view=v;$('v-list').hidden=v!=='list';$('v-usage').hidden=v!=='usage';$('v-ext').hidden=v!=='ext';$('v-company').hidden=v!=='company';$('conav').hidden=v==='company';$('title').textContent=TITLES[v];$('nav').textContent=v==='list'?'用量和限额 →':'← 跟帖评论清单';$('extnav').hidden=v==='ext';document.title=TITLES[v];usageTimer(v==='usage');if(v==='usage'){uEditing=false;loadUsage(true);}else if(v==='list')load();else if(v==='company'){try{companyOpen();}catch(e){$('co-at').textContent='这一页出错了：'+e.message;}}}
+const TITLES={list:'跟帖评论清单',usage:'用量和限额',ext:'插件下载',company:'公司',work:'工作台',forecast:'forecast'};
+// 外框路由（公司平台批 1）：#/<页>/<模块>；页 = work / forecast / tools / company；模块 id = 页的前缀 + 模块名（#/work/todo → w-todo）
+let page='';
+const PFX={work:'w-',forecast:'f-',tools:'t-',company:''}, TOOLV={queue:'list',usage:'usage',ext:'ext'};
+function frameButtons(){const t=page==='tools'||page==='company';$('nav').hidden=!t;$('extnav').hidden=!t||view==='ext';$('conav').hidden=false;$('nav').textContent=view==='list'?'用量和限额 →':'← 跟帖评论清单';}
+function hashOf(){const m=/^#\\/([a-z]+)(?:\\/([a-z0-9-]+))?/.exec(location.hash);return m&&Object.prototype.hasOwnProperty.call(PFX,m[1])?{p:m[1],m:m[2]||''}:null;}
+function route(){if(!authed)return;let h=hashOf();
+  if(!h){history.replaceState(null,'',location.pathname+location.search+(location.pathname==='/queue'?'#/tools/queue':'#/work'));h=hashOf();}
+  const prev=page;page=h.p;view=page==='tools'?(TOOLV[h.m]||'list'):page;
+  const mod=h.m&&PFX[page]?PFX[page]+h.m:'';
+  const ready=(typeof platformReady!=='function')||platformReady();
+  $('app').hidden=(page==='work'||page==='forecast')&&!ready;
+  ['work','forecast','tools','company'].forEach(x=>{$('v-'+x).hidden=x!==page;const sb=$('sub-'+x);if(sb)sb.hidden=x!==page;});
+  document.querySelectorAll('#nav1 a[data-p]').forEach(a=>{if(a.dataset.p===page)a.setAttribute('aria-current','page');else a.removeAttribute('aria-current');});
+  document.querySelectorAll('nav.sub a[data-s]').forEach(a=>a.setAttribute('aria-current',String(a.dataset.s===mod)));
+  const t=TITLES[view]||TITLES[page];$('title').textContent=t;document.title=t+' · 公司平台';frameButtons();
+  usageTimer(page==='tools');
+  if(page==='tools'){if(prev!==''&&prev!=='tools')load();else if(prev==='tools'&&view==='list')load();if(view==='usage'||prev!=='tools'){uEditing=false;loadUsage(true);}}
+  if(page==='company'){try{companyOpen();}catch(e){$('co-at').textContent='这一页出错了：'+e.message;}}
+  if(page==='work'||page==='forecast'){try{platformOpen(page,mod);}catch(e){}}else{try{platformStop();}catch(e){}}
+  const el=mod&&$(mod);if(el&&!el.closest('[hidden]'))el.scrollIntoView({block:'start'});else if(prev!==page)window.scrollTo(0,0);}
+window.addEventListener('hashchange',route);
+document.querySelectorAll('nav.sub a[data-s], #nav1 a[data-p]').forEach(a=>a.addEventListener('click',()=>{if(a.getAttribute('href')===location.hash)setTimeout(route,0);}));
+/** 旧的三个按钮（用量和限额、插件下载、公司总览）：跳到公共工具里的模块或公司总览 */
+function go(v){const h=v==='company'?'#/company':'#/tools/'+({list:'queue',usage:'usage',ext:'ext'}[v]||'queue');if(location.hash===h)route();else location.hash=h;}
 $('nav').addEventListener('click',()=>go(view==='list'?'usage':'list'));
 $('extnav').addEventListener('click',()=>go('ext'));
 $('conav').addEventListener('click',()=>go('company'));
@@ -256,7 +441,7 @@ async function loadUsage(manual){const b=$('u-refresh');if(manual){b.disabled=tr
   try{const rows=(await call('/api/usage')).rows;if(!uEditing||manual){usage=rows;renderUsage();}uStamp();if(manual)$('u-msg').textContent='';}
   catch(e){$('u-at').textContent='刷新失败：'+e.message+'（30 秒后再试）';}
   finally{if(manual){b.disabled=false;b.textContent='立即刷新';}}}
-function usageTimer(on){clearInterval(uTimer);uTimer=on?setInterval(()=>{if(view==='usage'&&document.visibilityState==='visible')loadUsage(false);},30000):null;}
+function usageTimer(on){clearInterval(uTimer);uTimer=on?setInterval(()=>{if(page==='tools'&&document.visibilityState==='visible')loadUsage(false);},30000):null;}
 $('u-refresh').addEventListener('click',()=>loadUsage(true));
 $('u-rows').addEventListener('input',()=>{uEditing=true;});
 function renderUsage(){const T=$('u-rows');T.replaceChildren();
@@ -273,7 +458,7 @@ $('u-save').addEventListener('click',async()=>{const b=$('u-save'),m=$('u-msg');
   if(bad.length){m.className='msg';m.textContent='没保存：'+bad.join('；');return;}
   b.disabled=true;b.textContent='正在保存…';m.textContent='';
   try{usage=(await call('/api/usage',{caps})).rows;uEditing=false;renderUsage();uStamp();m.className='msg ok';m.textContent='✓ 已保存，下一次请求开始生效';}catch(e){m.className='msg';m.textContent=e.message;}finally{b.disabled=false;b.textContent='保存上限';}});
-call(query()).then(j=>{state=j;showApp();render();}).catch(()=>{});
+call(query()).then(j=>{state=j;showApp();render();route();}).catch(()=>{});
 </script>
 <script>
 // 公司页（运营仪表盘）：整段 try/catch；这里只定义函数，打开"公司"页（go('company')）时才读数据、渲染，出错只影响这一页
@@ -392,4 +577,208 @@ async function loadCompany(week){const b=$('co-refresh');b.disabled=true;b.textC
 var companyOpen=function(){if(!CO.data)$('co-body').replaceChildren(el('p','co-empty','正在读取…'));loadCompany(CO.week);};
 $('co-refresh').addEventListener('click',()=>loadCompany(CO.week));
 }catch(e){var companyOpen=function(){$('co-at').textContent='这一页出错了：'+e.message;};}
-</script></body></html>`;
+</script>
+<script>
+// 工作台、forecast 项目页（公司平台批 1：PR 1、PR 2）：整段 try/catch，出错只影响这两页（同"公司总览"页的做法）；清单、用量、插件下载的脚本不动。
+// 数据：GET /api/company（块、打勾、填的数字）+ GET /api/queue（清单条数）。打勾 POST /api/company/done 带 seen（另一处改过就 409）；填数字 POST /api/company/report。
+// 时间一律用浏览器的 Date.now()（台湾时间显示）；停在这两页时每 30 秒重读一次，切走停、切回马上读。
+try{
+const CFG=${JSON.stringify(PLATFORM_CONFIG)};
+const PL={data:null,qAll:null,qProj:{},done:new Map(),reports:[],page:'',scroll:'',timer:null,busy:false,again:false,err:'',at:0,want:new Map(),copy:null,open:new Set(),vals:{}};
+const HR=3600e3,DY=864e5,WD='日一二三四五六';
+const SRC={agents:'agents','new-forecast':'new-forecast',marketing:'Marketing'};
+const pe=(tag,cls,text)=>{const e=document.createElement(tag);if(cls)e.className=cls;if(text!=null)e.textContent=String(text);return e;};
+const link=(text,href,cls,ext)=>{const a=pe('a',cls||null,text);a.href=href;if(ext!==false&&/^https:/.test(href)){a.target='_blank';a.rel='noopener';}return a;};
+const p2=(n)=>String(n).padStart(2,'0');
+const tp=(ms)=>{const d=new Date(ms+8*HR);return {y:d.getUTCFullYear(),mo:d.getUTCMonth()+1,d:d.getUTCDate(),h:d.getUTCHours(),mi:d.getUTCMinutes(),wd:d.getUTCDay()};};
+const md=(ms)=>{const t=tp(ms);return t.mo+'/'+t.d;};
+const dateL=(ms)=>{const t=tp(ms);return t.mo+'/'+t.d+'（周'+WD[t.wd]+'）'+p2(t.h)+':'+p2(t.mi);};
+function dur(ms){const m=Math.floor(Math.abs(ms)/6e4);const day=Math.floor(m/1440),h=Math.floor(m%1440/60),mi=m%60;if(day)return day+' 天'+(h?' '+h+' 小时':'');if(h)return h+' 小时'+(mi?' '+mi+' 分':'');return Math.max(1,mi)+' 分钟';}
+function toastP(t,err){let e=$('p-toast');if(!e){e=pe('p');e.id='p-toast';e.setAttribute('role','status');document.body.append(e);}e.textContent=t;e.className=err?'err':'';e.hidden=false;clearTimeout(toastP.t);toastP.t=setTimeout(()=>{e.hidden=true;},err?8000:3000);}
+// 填数字：和服务端 src/projects.ts normReport 同一套规则（C108）
+function normReport(name,raw){const f=CFG.REPORT_FIELDS[name];if(!f)return {why:'不认识这一格'};const s=String(raw==null?'':raw).replace(/[０-９]/g,(c)=>String.fromCharCode(c.charCodeAt(0)-0xfee0)).replace(/[\\s　]+/g,'');
+  if(!s)return {why:'还没填（不知道就填 0）'};if(!/^\\d{1,9}$/.test(s))return {why:'要填 0 或正整数，不带小数点和负号'};const n=Number(s);if(f.max!=null&&n>f.max)return {why:'要在 0～'+f.max+' 之间'};return {value:String(n)};}
+const blocks=(kind)=>PL.data?PL.data.blocks.filter((b)=>b.kind===kind):[];
+const okBlocks=(kind)=>blocks(kind).filter((b)=>b.payload);
+/** 在跑的项目：有状态卡、又不是工具层的（公司平台、Marketing） */
+function projects(){return okBlocks('status').map((b)=>b.key).filter((k)=>CFG.NOT_PROJECTS.indexOf(k)<0);}
+const repoProj=(src)=>CFG.REPO_PROJECT[src]||'公司';
+const packKey=(p)=>'pack:'+p.project+':'+p.date;
+const stepKey=(p,n)=>'step:'+p.project+':'+p.date+':'+n;
+const isDone=(key)=>PL.want.has(key)?PL.want.get(key):PL.done.has(key);
+function formFor(text){for(const f of CFG.REPORT_FORMS)if(new RegExp(f.match).test(text||''))return f.fields;return null;}
+/** 全部待办（各来源合在一起）：{key, proj, title, why, due, urgent, href/btn 或 form 或 go} */
+function items(){const out=[];const pj=projects();const projOf=(k)=>pj.indexOf(k)>=0?k:'公司';
+  okBlocks('ci').forEach((b)=>{const p=b.payload;if(p.conclusion!=='failure')return;
+    out.push({key:'ci:'+b.source+':'+(b.key||'')+':'+(p.sha||p.at||b.source_at),urgent:true,proj:repoProj(b.source),title:(SRC[b.source]||b.source)+(b.key?' · '+b.key:'')+'：有一项改动没通过自动检查',why:'没通过前不能合并，团队会先修；你看一眼就行。'+(p.note?'（'+p.note+'）':''),href:p.url,btn:'看哪里出错'});});
+  okBlocks('todo').forEach((b)=>{const n={};(b.payload.items||[]).forEach((it)=>{const t=it.type||'action';n[t]=n[t]==null?0:n[t]+1;
+    const o={key:'todo:'+b.key+':'+(it.id||(t==='confirm'?'c':t.charAt(0))+n[t]),proj:projOf(b.key),title:it.text||'',why:[t==='confirm'?'要你决定'+(it.level?'（'+it.level+'）':''):'',it.hint||''].filter(Boolean).join(' · '),due:typeof it.due==='number'?it.due:null};
+    const f=t==='report'?formFor(it.text):null;if(f){o.form=f;o.btn='去填数字';}else if(it.link){o.href=it.link;o.btn=it.link_text||'打开';}out.push(o);});});
+  okBlocks('prs').forEach((b)=>(b.payload.items||[]).forEach((it)=>{const look=it.tag==='look';
+    out.push({key:'pr:'+b.source+':'+it.number,proj:repoProj(b.source),title:it.title||'',why:(look?'只要看，不用回；你不反对的话开 PR 后 48 小时自动生效。':'要你决定：看完在 PR 里回复。')+'（'+(SRC[b.source]||b.source)+' #'+it.number+'）',due:look&&typeof it.opened_at==='number'?it.opened_at+48*HR:null,href:it.url,btn:look?'去看这份改动':'看 PR'});}));
+  okBlocks('status').forEach((b)=>(b.payload.waiting||[]).forEach((it)=>out.push({key:'wait:'+b.key+':'+(it.id||String(it.text||'').slice(0,80)),proj:projOf(b.key),title:it.text||'',why:'状态卡"在等谁"'+(it.hint?' · '+it.hint:''),due:null,href:it.link||b.payload.link,btn:it.link?'打开':'看状态卡'})));
+  okBlocks('pack').forEach((b)=>{const p=b.payload;if(!p.project||!p.date)return;const first=(p.posts||[])[0];
+    const o={key:packKey(p),proj:p.project,title:'照操作指引做完这周的 '+(p.steps||[]).length+' 步（周包 '+p.date.slice(5).replace('-','/')+'）',why:(first?'第 1 条帖子要在 '+(first.at_text||'')+' 发出。':'')+'跟着指引一步步做，每步做完打勾；都勾了这件自动打勾。',due:typeof p.due==='number'?p.due:null};
+    if(CFG.PROJECT_PAGES.indexOf(p.project)>=0){o.go='#/'+p.project+'/guide';o.btn='打开分步指引';}else if(p.link){o.href=p.link;o.btn='看周包';}out.push(o);});
+  return out;}
+function sorted(list){const v=(x)=>x.urgent?-Infinity:x.due==null?Infinity:x.due;return list.map((x,i)=>[x,i]).sort((a,b)=>{const p=v(a[0]),q=v(b[0]);return p===q?a[1]-b[1]:p<q?-1:1;}).map((x)=>x[0]);}
+function lvl(x,now){if(x.urgent)return 'over';if(x.due==null)return 'none';const d=x.due-now;return d<0?'over':d<DY?'soon':'later';}
+function badge(x,now){const l=lvl(x,now);const t=x.urgent?'没通过':l==='none'?'没定截止时间':(x.due<now?'已超时 ':'还剩 ')+dur(x.due-now);return pe('span','badge b-'+l,t);}
+const dueText=(x)=>x.urgent?'现在就看':x.due==null?'有空就做':'截止 '+dateL(x.due);
+// ---- 打勾（带 seen：页面上次看到的完成时间；另一处改过就 409，刷新后提示） ----
+async function post(path,body){try{const r=await fetch(path,{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(body),credentials:'same-origin'});const j=await r.json().catch(()=>({}));if(r.status===401)showLogin('请重新登录');return {ok:r.ok,status:r.status,j};}
+  catch(e){return {ok:false,status:0,j:{error:'连不上服务（'+e.message+'），稍后再试'}};}}
+async function setDone(key,done){const seen=PL.done.has(key)?PL.done.get(key):null;PL.want.set(key,done);
+  const r=await post('/api/company/done',{key,done,seen});PL.want.delete(key);
+  if(r.status===409){toastP('已被另一处改过，已刷新',true);await refresh();return false;}
+  if(!r.ok){toastP('没记上：'+(r.j.error||'出错了（'+r.status+'）')+'，请再点一次',true);renderAll();return false;}
+  if(done)PL.done.set(key,r.j.at);else PL.done.delete(key);return true;}
+async function tick(x,b){b.disabled=true;if(await setDone(x.key,true)){toastP('已打勾，收进"做完的"。点"撤销"可以放回来。');renderAll();}}
+async function undo(x,b){b.disabled=true;b.textContent='处理中…';if(await setDone(x.key,false)){toastP('已放回待办');renderAll();}}
+// ---- 待办列表 ----
+function todoLi(x,first,now){const l=lvl(x,now);const li=pe('li','todo '+l+(first?' first':''));li.dataset.key=x.key;
+  const t=pe('button','tick','✓');t.type='button';t.setAttribute('aria-label','做完了，打勾');t.title='做完了点这里';t.addEventListener('click',()=>tick(x,t));
+  const body=pe('div','body');const due=pe('div','due');due.append(badge(x,now),pe('span',null,dueText(x)),pe('span','projtag'+(x.proj==='公司'?' company':''),x.proj));
+  body.append(due,pe('div','ttl',x.title));if(x.why)body.append(pe('p','why',x.why));
+  const go=pe('div','go');
+  if(x.form){const f=formEl(x);body.append(f);const b=pe('button','btn primary',x.btn+' →');b.type='button';b.dataset.act=x.key;b.addEventListener('click',()=>{f.hidden=false;PL.open.add(x.key);const i=f.querySelector('input');if(i)i.focus();});go.append(b);}
+  else if(x.go)go.append(link(x.btn+' →',x.go,'btn primary'));else if(x.href)go.append(link(x.btn+' →',x.href,'btn primary'));
+  li.append(t,body,go);return li;}
+function formEl(x){const f=pe('div','form');f.hidden=!PL.open.has(x.key);const ins=x.form.map((name)=>{const l=pe('label',null,name+(CFG.REPORT_FIELDS[name]&&CFG.REPORT_FIELDS[name].max?'（0～'+CFG.REPORT_FIELDS[name].max+'）':'')+' ');const i=pe('input');i.inputMode='numeric';i.dataset.name=name;i.placeholder='不知道填 0';
+    i.value=(PL.vals[x.key]||{})[name]||'';i.addEventListener('input',()=>{(PL.vals[x.key]=PL.vals[x.key]||{})[name]=i.value;});l.append(i);f.append(l);return i;});
+  const b=pe('button','btn small primary','保存');b.type='button';const m=pe('span','msg');m.setAttribute('role','status');f.append(b,m);
+  b.addEventListener('click',async()=>{const bad=[],values={};ins.forEach((i)=>{const r=normReport(i.dataset.name,i.value);i.setAttribute('aria-invalid',String(!!r.why));if(r.why)bad.push(i.dataset.name+'：'+r.why);else values[i.dataset.name]=i.value;});
+    if(bad.length){m.className='msg';m.textContent='没保存：'+bad.join('；');return;}
+    b.disabled=true;b.textContent='保存中…';m.textContent='';const r=await post('/api/company/report',{key:x.key,project:x.proj,values});
+    if(!r.ok){b.disabled=false;b.textContent='保存';const bb=(r.j&&r.j.bad)||[];ins.forEach((i)=>{if(bb.some((y)=>y.name===i.dataset.name))i.setAttribute('aria-invalid','true');});m.className='msg';m.textContent='没保存：'+(bb.length?bb.map((y)=>y.name+'：'+y.why).join('；'):(r.j.error||'出错了（'+r.status+'）'));return;}
+    PL.open.delete(x.key);delete PL.vals[x.key];PL.done.set(x.key,r.j.at);toastP('已保存，这件事自动打勾了。');await refresh();});
+  return f;}
+function doneLi(x){const li=pe('li');li.append(pe('span','pill p-ok','✓'),pe('s',null,x.title),pe('span','hint','做完 '+md(PL.done.get(x.key))));const b=pe('button','btn small','撤销');b.type='button';b.dataset.undo=x.key;b.addEventListener('click',()=>undo(x,b));li.append(b);return li;}
+function fillList(ulId,doneId,nId,dnId,list,now,emptyB,emptyS){const open=list.filter((x)=>!isDone(x.key)),closed=list.filter((x)=>isDone(x.key)&&PL.done.has(x.key));
+  const ul=$(ulId);ul.replaceChildren(...open.map((x,i)=>todoLi(x,i===0,now)));if(!open.length){const e=pe('li','empty');e.append(pe('b',null,emptyB),pe('span',null,emptyS));ul.append(e);}
+  $(doneId).replaceChildren(...closed.map(doneLi));if(!closed.length)$(doneId).append(pe('li','none','还没有'));$(nId).textContent=open.length;$(dnId).textContent=closed.length;return open;}
+const setCnt=(id,n,txt)=>{const e=$(id);if(!e)return;e.textContent=txt!=null?txt:String(n);e.hidden=!n&&txt==null;};
+// ---- 填的数字：状态卡写"见公司平台"的那一格换成平台里的最新值 ----
+const latest=(proj,name)=>PL.reports.find((r)=>r.project===proj&&r.name===name)||null;
+function fromReports(proj,metric){const names=CFG.METRIC_FROM_REPORT[metric];if(!names)return null;const rs=names.map((n)=>latest(proj,n));if(rs.some((r)=>!r))return {missing:true};
+  return {value:String(rs.reduce((a,r)=>a+Number(r.value),0)),detail:names.length>1?names.map((n,i)=>n.replace(' 关注','')+' '+rs[i].value).join('、'):'',at:Math.max.apply(null,rs.map((r)=>r.at))};}
+function metricNow(proj,m,srcAt){const see=String(m.now||'').indexOf(CFG.SEE_PLATFORM)>=0;const r=fromReports(proj,m.name);
+  if(see){if(!r||r.missing)return {now:[pe('span','pill p-warn','还没填'),' ',link('去填 →','#/work/todo')],src:'平台里还没有'};
+    const out=[pe('b',null,r.value)];if(r.detail)out.push(' ',pe('span','hint',r.detail));return {now:out,src:'你 '+md(r.at)+' 填的',v:r.value};}
+  const out=[pe('b',null,m.now||'—')];let src='状态卡';if(r&&!r.missing&&r.at>srcAt){out.push(pe('br'),pe('span','hint','平台里有你 '+md(r.at)+' 填的新值 '+r.value+'（状态卡还是旧值）'));}return {now:out,src};}
+function table(heads,rows,widths){const w=pe('div','tablewrap');const t=pe('table','stack');if(widths){const cg=pe('colgroup');widths.forEach((x)=>{const c=pe('col');c.style.width=x;cg.append(c);});t.append(cg);}
+  if(heads){const th=pe('thead'),tr=pe('tr');heads.forEach((h)=>tr.append(pe('th',null,h)));th.append(tr);t.append(th);}const tb=pe('tbody');rows.forEach((r)=>tb.append(r));t.append(tb);w.append(t);return w;}
+function td(label,content,cls){const c=pe('td',cls||null);if(label)c.dataset.label=label;(Array.isArray(content)?content:[content]).forEach((x)=>{if(x!=null&&x!=='')c.append(x);});if(!c.childNodes.length)c.append('—');return c;}
+const tr=(...cells)=>{const r=pe('tr');r.append(...cells);return r;};
+const emptyP=(t)=>pe('p','empty',t);
+const stampOf=(b)=>b?'更新于 '+md(b.source_at)+' '+p2(tp(b.source_at).h)+':'+p2(tp(b.source_at).mi):'';
+const liveText=()=>{const d=pe('div');d.append(pe('p','hint','团队实时进度还没接上：等 GitHub 的通知接好（公司平台批 3）以后，这里显示每个岗位正在做的事。现在可以先看交接记录。'));return d;};
+// ---- 工作台 ----
+function renderWork(all,now){const open=fillList('w-todos','w-donelist','w-todo-n','w-done-n',all,now,'现在没事要做','有新的事会出现在这里。');
+  setCnt('c-work',open.length);setCnt('s-todo',open.length);
+  const h=$('hero');h.replaceChildren(pe('p','k','你现在最该做的一件事'));
+  if(!open.length){h.className='hero calm';h.append(pe('p','one','现在没事要做'),pe('p','why','有新的事会出现在这里。团队在做的事可以往下看。'));}
+  else{const x=open[0];h.className='hero';const w=pe('div','when');w.append(badge(x,now),pe('span',null,dueText(x)));h.append(pe('p','one',x.title),w);if(x.why)h.append(pe('p','why',x.why));
+    const row=pe('div','row');if(x.form)row.append(link(x.btn+' →','#/work/todo','btn primary big'));else if(x.go)row.append(link(x.btn+' →',x.go,'btn primary big'));else if(x.href)row.append(link(x.btn+' →',x.href,'btn primary big'));
+    if(open.length>1)row.append(link('做完了？后面还有 '+(open.length-1)+' 件，已经按截止时间排好 ↓','#/work/todo','sec'));h.append(row);}
+  const g=$('w-glance');g.replaceChildren();const tile=(n,l,href,cls)=>{const a=href?link('',href,'gl'+(cls?' '+cls:'')):pe('div','gl'+(cls?' '+cls:''));a.append(pe('div','n',n),pe('div','l',l));g.append(a);};
+  tile(String(open.length),'件事等你处理','#/work/todo',open.length?'red':'');
+  tile(PL.qAll?String(PL.qAll.total):'—','跟帖评论清单 · 条待回'+(PL.qAll?'（今天已回 '+PL.qAll.doneToday+' / '+PL.qAll.cap+'）':''),'#/tools/queue');
+  const w=PL.data.weekly&&PL.data.weekly.payload;(w&&w.highlights||[]).filter((x)=>x.until).slice(0,1).forEach((x)=>{const d=Math.round((Date.parse(x.until+'T23:59:59+08:00')-now)/DY);tile(d+' 天',x.label||'');});
+  $('w-live-body').replaceChildren(liveText());
+  renderProj(now);renderNum();renderMeet(now);}
+function renderProj(now){const sts=okBlocks('status').filter((b)=>CFG.NOT_PROJECTS.indexOf(b.key)<0);const B=$('w-proj-body');$('w-proj-at').textContent=sts.length?'状态卡 '+stampOf(sts[0]):'';
+  if(!sts.length){B.replaceChildren(emptyP('还没收到项目的状态卡'));return;}
+  const all=items();const rows=sts.map((b)=>{const p=b.payload;const name=CFG.PROJECT_PAGES.indexOf(b.key)>=0?link('','#/'+b.key):pe('span');name.append(pe('b',null,b.key));
+    const nums=(p.metrics||[]).map((m)=>{const v=metricNow(b.key,m,b.source_at);const d=pe('p','m');d.append(m.name+' ');v.now.forEach((x)=>d.append(x));if(m.target)d.append(pe('span','to',' → '+m.target));return d;});
+    const waiting=all.filter((x)=>x.proj===b.key&&!isDone(x.key)).length;const wk=[p.week||''];if(waiting){wk.push(pe('br'),pe('span','pill p-warn','在等你：'+waiting+' 件'),' ');if(CFG.PROJECT_PAGES.indexOf(b.key)>=0)wk.push(link('去看 →','#/'+b.key+'/next'));}
+    return tr(td('项目',[name,pe('br'),pe('span','hint',p.state||'')]),td('数字 → 目标',nums),td('这周在做 · 在等谁',wk));});
+  B.replaceChildren(table(['项目','数字 → 目标','这周在做 · 在等谁'],rows,['22%','40%','38%']));}
+function renderNum(){const B=$('w-num-body');const wb=PL.data.weekly;const w=wb&&wb.payload;$('w-num-at').textContent=w?'周报'+(w.title||'')+(w.range?' · '+w.range:''):'';const rows=[];
+  if(w){(w.highlights||[]).filter((x)=>!x.until).forEach((x)=>rows.push(tr(td('指标',x.label||''),td('数',pe('b',null,x.value||'—')))));
+    if(w.cost)rows.push(tr(td('指标','花了多少钱'),td('数',w.cost)));if(typeof w.mistakes==='number')rows.push(tr(td('指标','同类错误又犯'),td('数',pe('b',null,w.mistakes+' 次'))));if(w.rules)rows.push(tr(td('指标','公司规则'),td('数',w.rules)));}
+  const projs=[...new Set(PL.reports.map((r)=>r.project))].filter((p)=>p!=='公司');
+  projs.forEach((pj)=>Object.keys(CFG.METRIC_FROM_REPORT).forEach((name)=>{const r=fromReports(pj,name);if(!r||r.missing)return;const c=[pe('b',null,r.value)];if(r.detail)c.push(' ',pe('span','hint',r.detail));c.push(' ',pe('span','hint','你 '+md(r.at)+' 填的'));rows.push(tr(td('指标',pj+' · '+name),td('数',c)));}));
+  const use=PL.reports.filter((r)=>r.name==='Claude 用量').sort((a,b)=>b.at-a.at)[0];
+  rows.push(tr(td('指标','Claude 用量'),td('数',use?[pe('b',null,use.value+'%'),' ',pe('span','hint','你 '+md(use.at)+' 填的')]:[pe('span','pill p-warn','还没报'),' ',link('去报 →','#/work/todo')])));
+  B.replaceChildren(table(null,rows,['34%','66%']));if(!w)B.prepend(pe('p','lead','还没收到周报'));}
+function renderMeet(now){const B=$('w-meet-body');B.replaceChildren();const t=tp(now);let next=Date.UTC(t.y,t.mo-1,t.d+((6-t.wd+7)%7),20,0)-8*HR;if(next<now)next+=7*DY;
+  const mb=okBlocks('todo').find((b)=>b.key==='经营会');const open=mb?(mb.payload.items||[]).filter((x,i)=>!isDone('todo:经营会:'+(x.id||'c'+i))).length:0;
+  const a=pe('div');a.append(pe('p','hint','下一次'),pe('p',null,dateL(next)),pe('p','hint','还剩 '+dur(next-now)+' · 周报当天 17:00 前到'));
+  if(mb)a.append(pe('p','hint','上次会议要你定的事：还有 '+open+' 件没打勾'));
+  const r=pe('p');r.style.display='flex';r.style.gap='8px';r.style.flexWrap='wrap';if(mb&&mb.payload.link)r.append(link('看上次会议记录',mb.payload.link,'btn small'));
+  const wb=PL.data.weekly;if(wb&&wb.payload&&wb.payload.link)r.append(link('看周报'+(wb.payload.title||''),wb.payload.link,'btn small'));a.append(r);B.append(a);}
+// ---- forecast 项目页 ----
+function renderProject(pj,all,now){const mine=all.filter((x)=>x.proj===pj);const open=fillList('f-todos','f-donelist','f-next-n','f-done-n',mine,now,pj+' 现在没事要做','有新的事会出现在这里。');
+  setCnt('c-'+pj,open.length);setCnt('s-fnext',open.length);
+  const pb=okBlocks('pack').find((b)=>b.key===pj);const p=pb&&pb.payload;renderGuide(p,now);renderPack(p);
+  $('f-live-body').replaceChildren(liveText());renderCard(pj);renderTools(pj);renderHandoff(pj);}
+function renderGuide(p,now){const B=$('f-guide-body');const H=$('f-guide-h');
+  if(!p||!(p.steps||[]).length){H.textContent='操作指引';B.replaceChildren(emptyP('本周还没有周包：市场经理交了周包以后，这里一步步列出要你做的事。'));setCnt('s-guide',0);return;}
+  const steps=p.steps;const c=steps.filter((s)=>isDone(stepKey(p,s.n))).length;H.replaceChildren('操作指引'+(typeof p.due==='number'?' · '+dateL(p.due):''),pe('span','sp'),pe('span','stamp','周包 '+p.date+' · '+steps.length+' 步'));
+  const cur=steps.find((s)=>!isDone(stepKey(p,s.n)));
+  const pr=pe('div','progress');const g=pe('span',null,'完成 '+c+' / '+steps.length+(cur?' · 现在做第 '+cur.n+' 步':''));g.id='g-prog';const mt=pe('div','meter');const fill=pe('i');fill.style.width=Math.round(c/steps.length*100)+'%';mt.append(fill);pr.append(g,mt);
+  const bar=pe('div','bar-row');const cb=pe('button','btn small','复制 '+(p.matches||[]).length+' 场焦点战');cb.type='button';cb.id='copy-match';const cm=pe('span','msg');cm.id='copy-msg';cm.setAttribute('role','status');
+  bar.append(cb,cm,link('看周包全文',p.link||'#','btn small'));const ta=pe('textarea');ta.readOnly=true;ta.hidden=true;ta.setAttribute('aria-label','焦点战（手动复制）');
+  if(PL.copy){cm.className='msg'+(PL.copy.ok?' ok':'');cm.textContent=PL.copy.msg;if(!PL.copy.ok){ta.hidden=false;ta.value=PL.copy.text;}}
+  if(!(p.matches||[]).length)cb.hidden=true;
+  cb.addEventListener('click',()=>copyMatches(p,cb,cm,ta));
+  const ol=pe('ol','gsteps');ol.id='g-steps';
+  steps.forEach((s)=>{const k=stepKey(p,s.n);const on=isDone(k);const li=pe('li','step'+(on?' done':'')+(cur===s?' cur':''));li.dataset.step=s.n;
+    const d=pe('div');d.append(pe('div','st',s.text));const acts=pe('div','acts');if(s.link)acts.append(link('打开文案',s.link,'btn primary small'));
+    const l=pe('label','ck');const i=pe('input');i.type='checkbox';i.checked=on;l.append(i,' 这步做完了');acts.append(l);
+    i.addEventListener('change',()=>stepChange(p,s,i.checked));li.append(pe('span','no',s.n),d,acts);ol.append(li);});
+  const fin=pe('p','msg ok',steps.length+' 步都做完了，待办里的这件已自动打勾。');fin.style.padding='10px 16px';fin.hidden=c<steps.length;
+  B.replaceChildren(pr,bar,ta,ol,fin);setCnt('s-guide',1,c+'/'+steps.length);}
+async function stepChange(p,s,on){const ok=await setDone(stepKey(p,s.n),on);if(!ok)return;
+  const all=p.steps.every((x)=>isDone(stepKey(p,x.n)));const pk=packKey(p);
+  if(all&&!PL.done.has(pk))await setDone(pk,true);else if(!all&&PL.done.has(pk))await setDone(pk,false);
+  renderAll();if(on)toastP(all?p.steps.length+' 步都做完了！':'第 '+s.n+' 步打勾了，接着做下一步。');}
+function copyMatches(p,b,m,ta){const text=(p.matches||[]).map((x)=>[x.league,x.home,x.away,x.time,x.note||''].join('\\t')).join('\\n');b.disabled=true;
+  const fin=(ok)=>{b.disabled=false;PL.copy={ok,text,msg:ok?'已复制 '+p.matches.length+' 场。到官网名单页的"导入"里粘贴就行。':'没复制成功（浏览器不让）。下面整段已经选好，请手动复制（Ctrl+C / ⌘C）。'};
+    m.className='msg'+(ok?' ok':'');m.textContent=PL.copy.msg;if(!ok){ta.hidden=false;ta.value=text;ta.focus();ta.select();}else ta.hidden=true;};
+  try{if(!navigator.clipboard||!navigator.clipboard.writeText)throw new Error('no clipboard');navigator.clipboard.writeText(text).then(()=>fin(true),()=>fin(false));}catch(e){fin(false);}}
+function renderPack(p){const none='本周还没有周包';
+  if(!p){$('f-pack-h').textContent='本周帖子';$('f-match-h').textContent='焦点战';$('f-pack-body').replaceChildren(emptyP(none));$('f-match-body').replaceChildren(emptyP(none));return;}
+  const d0=Date.parse(p.date+'T12:00:00+08:00');$('f-pack-h').replaceChildren('本周帖子 · '+md(d0)+'～'+md(d0+6*DY),pe('span','sp'),pe('span','stamp',(p.posts||[]).length+' 条'));
+  $('f-pack-body').replaceChildren((p.posts||[]).length?table(['第几条','写的什么','几点发','最晚'],p.posts.map((x)=>tr(td('第几条',String(x.n),'num'),td('写的什么',x.title),td('几点发',x.at_text||(x.at?dateL(x.at):'')),td('最晚',x.deadline||''))),['13%','40%','22%','25%']):emptyP('这一包没有帖子'));
+  $('f-match-h').replaceChildren('焦点战 · '+(p.matches||[]).length+' 场',pe('span','sp'),pe('span','stamp','导入官网名单页'));
+  $('f-match-body').replaceChildren((p.matches||[]).length?table(['联赛','对阵','开赛（台湾）'],p.matches.map((x)=>tr(td('联赛',x.league),td('对阵',[x.home+' vs '+x.away,x.note?pe('br'):null,x.note?pe('span','hint',x.note):null]),td('开赛',x.time,'num'))),['16%','52%','32%']):emptyP('这一包没有焦点战'));}
+function renderCard(pj){const b=okBlocks('status').find((x)=>x.key===pj);const B=$('f-card-body');$('f-card-at').textContent=b?'状态卡 '+stampOf(b):'';
+  if(!b){B.replaceChildren(emptyP('还没收到 '+pj+' 的状态卡'));return;}const p=b.payload;
+  const rows=(p.metrics||[]).map((m)=>{const v=metricNow(pj,m,b.source_at);return tr(td('看什么',m.name),td('现在',v.now),td('目标',m.target||'—'),td('从哪来',v.src));});
+  const out=[table(['看什么','现在','目标','从哪来'],rows,['28%','30%','20%','22%'])];const pd=pe('div','pd');pd.style.borderTop='1px solid var(--line)';
+  if(p.state)pd.append(pe('p',null,'现在的阶段：'+p.state));if(p.week)pd.append(pe('p',null,'这周：'+p.week));
+  const ws=(p.waiting||[]);if(ws.length){const ul=pe('ul','ul');ws.forEach((w)=>ul.append(pe('li',null,'在等你：'+(w.text||''))));pd.append(ul);}
+  if(p.link)pd.append(link('看状态卡全文',p.link,'btn small'));out.push(pd);B.replaceChildren(...out);}
+function renderTools(pj){const q=PL.qProj[pj];const B=$('f-tools-body');const a=pe('div','toolcard');a.append(pe('h3',null,'副驾驶 · 跟帖评论清单'));
+  a.append(pe('p',null,q?'等你回 '+q.total+' 条 · 今天已回 '+q.doneToday+' / '+q.cap:'清单条数暂时读不到'));const r=pe('div','row');r.append(link('去跟帖评论清单 →','#/tools/queue','btn primary'));a.append(r);
+  const u=pe('div','toolcard');u.append(pe('h3',null,'AI 用量'),pe('p','hint','额度是所有项目一起用的；按项目分开记要等公共工具那一批上线。'));const r2=pe('div','row');r2.append(link('去看用量和限额 →','#/tools/usage','btn'));u.append(r2);B.replaceChildren(a,u);}
+function renderHandoff(pj){const hs=okBlocks('handoff').filter((b)=>b.key.indexOf(pj+'/')===0).sort((a,b)=>String(b.payload.date||'').localeCompare(String(a.payload.date||''))||b.source_at-a.source_at);const B=$('f-handoff-body');
+  if(!hs.length){B.replaceChildren(emptyP('还没有 '+pj+' 的交接记录'));return;}const ul=pe('ul','hand');
+  hs.forEach((b)=>{const p=b.payload;const li=pe('li');const d=pe('div');d.append(pe('div','hint',(p.date||'')+' · '+(p.role||b.key.split('/').pop())),pe('div',null,p.done||''));if(p.next)d.append(pe('div','hint','下一步：'+p.next));li.append(d);
+    const g=pe('div');if(p.link)g.append(link('看全文',p.link,'btn small'));li.append(g);ul.append(li);});B.replaceChildren(ul);}
+// ---- 读数据、渲染、30 秒刷新 ----
+function renderAll(){if(!PL.data)return;const now=Date.now();const all=sorted(items());
+  ['w-err','f-err'].forEach((id)=>{$(id).hidden=!PL.err;$(id).textContent=PL.err;});
+  try{renderWork(all,now);}catch(e){$('w-err').hidden=false;$('w-err').textContent='工作台这一页出错了：'+e.message;}
+  try{renderProject('forecast',all,now);}catch(e){$('f-err').hidden=false;$('f-err').textContent='项目页出错了：'+e.message;}
+  if(PL.page){$('app').hidden=false;}
+  if(PL.scroll){const el=$(PL.scroll);PL.scroll='';if(el)el.scrollIntoView({block:'start'});}}
+async function getJ(u){const r=await fetch(u,{credentials:'same-origin'});if(r.status===401){showLogin('请重新登录');throw new Error('请重新登录');}if(!r.ok){const j=await r.json().catch(()=>({}));throw new Error(j.error||'出错了（'+r.status+'）');}return r.json();}
+async function refresh(){if(PL.busy){PL.again=true;return;}PL.busy=true;
+  try{const [c,qa,qp]=await Promise.all([getJ('/api/company'),getJ('/api/queue?status=pending').catch(()=>null),getJ('/api/queue?status=pending&product=forecast').catch(()=>null)]);
+    PL.data=c;PL.done=new Map((c.done||[]).map((x)=>[x.key,x.at]));PL.reports=c.reports||[];PL.qAll=qa;PL.qProj.forecast=qp;PL.err='';PL.at=Date.now();}
+  catch(e){if(e.message==='请重新登录'){PL.busy=false;return;}PL.err='暂时读不到最新情况：'+e.message+'（30 秒后自动再试）';if(!PL.data)PL.data={blocks:[],done:[],reports:[],weekly:null};}
+  finally{PL.busy=false;}
+  renderAll();if(PL.again){PL.again=false;refresh();}}
+function tickTimer(){clearInterval(PL.timer);PL.timer=setInterval(()=>{if(PL.page&&document.visibilityState==='visible')refresh();},30000);}
+document.addEventListener('visibilitychange',()=>{if(PL.page&&document.visibilityState==='visible')refresh();});
+var platformOpen=function(p,mod){const changed=PL.page!==p;PL.page=p;if(!PL.timer)tickTimer();
+  if(!PL.data||changed||Date.now()-PL.at>30000){PL.scroll=mod||'';refresh();}};
+var platformStop=function(){PL.page='';};
+/** 第一次读到数据之前，工作台、项目页先不显示（免得看到空的模块） */
+var platformReady=function(){return !!PL.data;};
+}catch(e){var platformReady=function(){return true;};var platformOpen=function(){['w-err','f-err'].forEach((id)=>{const x=document.getElementById(id);if(x){x.hidden=false;x.textContent='这一页出错了：'+e.message;}});};var platformStop=function(){};}
+</script>
+</body></html>`;

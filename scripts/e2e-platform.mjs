@@ -135,6 +135,8 @@ try {
         check(`二级菜单 ${p} → ${m}：模块在屏幕里、地址带上模块`, !!st && st.shown && st.top >= -2 && st.top < st.h && st.hash.startsWith(`#/${p}/`), st);
       }
     }
+    // 研发补的一步（不改断言）：二级菜单只在本页显示（原型 v2），从公共工具回工作台要先点一级菜单
+    await page.click('nav.nav1 a[data-p="work"]', { timeout: WAIT });
     await page.click('#sub-work a[data-s="w-todo"]', { timeout: WAIT });
     const h0 = await page.evaluate(() => location.hash);
     await page.reload();
