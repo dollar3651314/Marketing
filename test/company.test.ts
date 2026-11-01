@@ -9,6 +9,8 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { getPlatformProxy } from 'wrangler';
 import type { Env } from '../src/env';
 import { handle } from '../src/index';
+// @ts-expect-error 脚本是 .mjs，没有类型
+import { buildReport } from '../scripts/company-report.mjs';
 import { ROOT, T0 } from './helpers';
 
 const PASS = 'ci_only_copilot_password_01';
@@ -186,5 +188,50 @@ describe('后台读取 GET /api/company 和"我做了"', () => {
     // 页面上不出现技术词（C128）：公司页的固定文字里没有 JSON、payload、token
     const co = html.slice(html.indexOf('<section id="v-company"'), html.indexOf('</main>'));
     expect(co).not.toMatch(/JSON|payload|token|source/i);
+  });
+});
+
+describe('和上报脚本对拍（scripts/company-report.mjs，new-forecast 用同一份）', () => {
+  const REPO = 'dollar3651314/Marketing';
+  const iso = (ms: number) => new Date(ms).toISOString();
+  const res = (data: unknown, status = 200) => new Response(JSON.stringify(data), { status });
+  /** GitHub API 替身：两个 PR（一个要你决定、标题很长）、main 两次运行（最新的失败、上一次部署成功） */
+  const github = (fail = false) => async (url: string) => {
+    const p = new URL(url).pathname;
+    if (fail && p.includes('/actions/')) return res({ message: 'Forbidden' }, 403);
+    if (p.endsWith('/pulls')) return res([
+      { number: 11, title: '【要你决定】' + '很长的标题'.repeat(60), html_url: `https://github.com/${REPO}/pull/11`, created_at: iso(T0 - 2 * DAY) },
+      { number: 12, title: '普通 PR', html_url: `https://github.com/${REPO}/pull/12`, created_at: iso(T0) },
+    ]);
+    if (p.endsWith('/actions/workflows/ci.yml/runs')) return res({ workflow_runs: [
+      { id: 2, head_sha: 'b'.repeat(40), head_branch: 'main', event: 'push', status: 'completed', conclusion: 'failure', html_url: `https://github.com/${REPO}/actions/runs/2`, run_started_at: iso(T0 - 3600_000) },
+      { id: 1, head_sha: 'a'.repeat(40), head_branch: 'main', event: 'push', status: 'completed', conclusion: 'success', html_url: `https://github.com/${REPO}/actions/runs/1`, run_started_at: iso(T0 - DAY) },
+    ] });
+    if (p.endsWith('/runs/1/jobs')) return res({ jobs: [{ name: 'deploy', conclusion: 'success', completed_at: iso(T0 - DAY + 300_000) }] });
+    return res({ message: 'Not Found' }, 404);
+  };
+
+  it('new-forecast、marketing 两个来源的输出都能写进去（不会 400），读回来和发的一样（没有字段被白名单丢掉）', async () => {
+    for (const source of ['new-forecast', 'marketing']) {
+      const report = await buildReport({ env: { COMPANY_SOURCE: source, GITHUB_REPOSITORY: REPO, GITHUB_TOKEN: 'ghs_fake' }, fetch: github(), now: T0 });
+      const r = await ingest(report);
+      expect(r.status, JSON.stringify(await r.clone().json())).toBe(200);
+      expect(await r.json()).toEqual({ ok: true, written: 2 });
+      const got = (await read(await cookie())).blocks.filter((b) => b.source === source);
+      expect(got.map((b) => [b.kind, b.key, b.status, b.source_at])).toEqual([['ci', '', 'ok', T0], ['prs', '', 'ok', T0]]);
+      for (const b of report.blocks) expect(got.find((x) => x.kind === b.kind)!.payload).toEqual(b.payload);
+      expect(got.find((x) => x.kind === 'ci')!.payload).toMatchObject({ conclusion: 'failure', sha: 'a'.repeat(40), at: T0 - DAY + 300_000 });
+    }
+  });
+
+  it('读 GitHub 失败的块（status = error）也能写进去：保留上次成功的内容，显示原因', async () => {
+    const env0 = { COMPANY_SOURCE: 'marketing', GITHUB_REPOSITORY: REPO, GITHUB_TOKEN: 'ghs_fake' };
+    expect((await ingest(await buildReport({ env: env0, fetch: github(), now: T0 }))).status).toBe(200);
+    const r = await ingest(await buildReport({ env: env0, fetch: github(true), now: T0 + 60_000 }), T0 + 60_000);
+    expect(r.status).toBe(200);
+    const ci = (await read(await cookie(), '', T0 + 60_000)).blocks.find((b) => b.source === 'marketing' && b.kind === 'ci')!;
+    expect(ci.status).toBe('error');
+    expect(ci.error).toContain('读 GitHub 失败');
+    expect(ci.payload).toMatchObject({ conclusion: 'failure' });
   });
 });
