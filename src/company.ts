@@ -14,7 +14,9 @@
  *   GET /api/company 多一项 reports：每个 项目 + 名称 最新的一行。
  */
 import type { Env } from './env';
-import { normReport } from './projects';
+import { normReport, PROJECT_PAGES } from './projects';
+/** 填数字的 project 只能是有项目页的项目或"公司"（审查 P-7） */
+const REPORT_PROJECTS = [...PROJECT_PAGES, '公司'];
 
 export const STALE_MS = 7 * 24 * 3600_000;
 const DONE_KEEP_MS = 90 * 24 * 3600_000;
@@ -266,7 +268,7 @@ async function report(env: Env, req: Request, now: number): Promise<Response> {
   const project = typeof b.project === 'string' ? b.project.trim() : '';
   const values = b.values && typeof b.values === 'object' && !Array.isArray(b.values) ? Object.entries(b.values as Record<string, unknown>) : [];
   if (!key) return json({ error: '请求不对：key 要是 1～200 个字', bad: [] }, 400);
-  if (!project || project.length > 64 || CTRL.test(project)) return json({ error: '请求不对：project 要是 1～64 个字', bad: [] }, 400);
+  if (!REPORT_PROJECTS.includes(project)) return json({ error: `请求不对：project 只能是 ${REPORT_PROJECTS.join(' / ')}`, bad: [] }, 400);
   if (!values.length || values.length > 10) return json({ error: '请求不对：values 要有 1～10 格', bad: [] }, 400);
   const bad: { name: string; why: string }[] = [];
   const ok: [string, string][] = [];

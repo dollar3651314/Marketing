@@ -250,6 +250,14 @@ describe('填数字 POST /api/company/report（只存 D1）', () => {
     }
   });
 
+  // 研发补（批 1 审查 P-7）：project 只能是有项目页的项目（PROJECT_PAGES）或"公司"
+  it('project 不在白名单：400，一行都不写', async () => {
+    const ck = await cookie();
+    for (const project of ['报价', 'forecast2', '', 'x'.repeat(65)]) expect((await post('/api/company/report', { ...REP, project, values: { 'X 关注': '1' } }, ck)).status, project).toBe(400);
+    expect((await db.prepare('SELECT COUNT(*) AS n FROM company_report').first<{ n: number }>())!.n).toBe(0);
+    expect((await post('/api/company/report', { ...REP, project: '公司', values: { 'X 关注': '1' } }, ck)).status).toBe(200);
+  });
+
   it('没登录 401、跨站 403', async () => {
     const ck = await cookie();
     expect((await handle(page('/api/company/report', { method: 'POST', body: JSON.stringify({ ...REP, values: { 'X 关注': '1' } }) }), env(), T0)).status).toBe(401);
