@@ -123,7 +123,7 @@ async function playTts(which,btn,outId){
     var ms=Number(r.headers.get('x-ms')),by=Number(r.headers.get('x-bytes')),ne=Number(r.headers.get('x-neurons')),mo=r.headers.get('x-model')||which;
     var blob=await r.blob();
     au.src=URL.createObjectURL(blob);
-    try{await au.play()}catch(e){note(outId,'已生成，请点上面的播放条自己播一下。')}
+    try{await au.play()}catch(e){note(outId,'已生成：浏览器挡住了自动播放，请点页面下方那条播放条播放。')}
     add({步骤:outId==='o1'?'1 听A':'2 听B',模型:mo,生成毫秒:ms,音频字节:by,本次估算neurons:ne});
     note(outId,'已播放。生成用了 '+ms+' 毫秒。听完在上面选一下你的感受。');
   }catch(e){fail(outId,String(e&&e.message||e))}
@@ -140,7 +140,7 @@ async function toggleRec(btn,mode,outId){
     rec.ondataavailable=function(e){chunks.push(e.data)};
     rec.onstop=async function(){
       s.getTracks().forEach(function(x){x.stop()});
-      btn.classList.remove('rec');lock(btn,'正在识别，请稍候…');
+      btn.classList.remove('rec');lock(btn,'正在识别，请稍候…');btn.dataset.old=btn.dataset.start;
       try{
         var wav=await toWav(await new Blob(chunks).arrayBuffer());
         var r=await fetch(mode==='chain'?'chain':'asr',{method:'POST',body:wav,headers:{'content-type':'audio/wav'}});
@@ -159,7 +159,7 @@ async function toggleRec(btn,mode,outId){
       }catch(e){fail(outId,String(e&&e.message||e))}
       finally{unlock(btn);rec=null}
     };
-    rec.start();btn.classList.add('rec');btn.textContent='■ 说完了，点这里结束';
+    rec.start();btn.classList.add('rec');btn.dataset.start=btn.dataset.start||btn.textContent;btn.textContent='■ 说完了，点这里结束';
     note(outId,'正在录音…说完再点一次上面的按钮。');
   }catch(e){fail(outId,'打不开麦克风：'+String(e&&e.message||e)+'\\n请在浏览器地址栏左边允许使用麦克风，然后再点一次。')}
 }
