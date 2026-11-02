@@ -12,6 +12,10 @@
  *   B. 每天回帖上限按项目（D-2；样例直接在 settings 写 reply_cap:forecast = 2）：清单按项目筛时"今天已回 N / 上限"是这个项目的数、和接口一致；
  *      forecast 到上限后 forecast 的"一键回复"变灰，别的项目不变灰、照样能"我回了"；
  *      公共工具 → 每天回帖上限（#t-reply）显示 forecast 的上限和今天已回；填错不保存、填对保存后刷新还在、清单马上跟着变。
+ *   D.（批 2 追加，Amos 2026-11-02："看待办 加载的不就是文字吗"）工作台、forecast 页的待办点"看待办"或主按钮：正文在当前页面展开，不跳 GitHub、不开新窗口；
+ *      PR 说明正文 + 问题表（每条带建议）；长正文先折叠、点"展开全文"展开；正文里的 HTML 只当文字（textContent）；被截断的写明"已截断"；
+ *      旁边留小链接"在 GitHub 打开"；要到外部平台操作的（去 X 发帖）保留原来的外链。
+ *      页面约定：li.todo 里主按钮 .go .btn.primary；展开后 .detail（正文 .detail-text、问题表 .qs li、折叠按钮 [data-more] 带 aria-expanded、小链接 a.gh）
  *   C. 按项目看用量（D-3）：#t-byproj 每个项目一行，Gemini 次数加起来 = 用量总额度里 Gemini 的请求数；写着以前没分项目、"测试 AI"那行是平台自己。
  *
  * 页面约定（照原型 v2；研发要改名就同一个 PR 改这里并在 PR 描述写明）：
@@ -207,7 +211,76 @@ try {
     await page.context().close();
   });
 
-  check('A、B 段没有脚本错误', errors.length === 0, errors);
+  // ---------- D.（批 2 追加）待办正文在当前页面展开，不跳 GitHub ----------
+  await section('待办正文', async () => {
+    const XSS = '<script>window.__xss=1</script><img src=x onerror="window.__xss=2">';
+    const LONG = XSS + '这是 PR 的说明正文。'.repeat(150) + '正文最后一句';
+    const QS = [{ q: '要不要改首页文案？', advice: '建议改，理由见正文' }, { q: '上线时间？', advice: '建议周三晚上' }];
+    const PR_URL = 'https://github.com/dollar3651314/agents/pull/101';
+    const W = { pr: '【要你决定】换首页文案（样例）', look: '样例待办四：看待办里的说明', cut: '样例待办五：看周包那一段', ext: '样例待办六：去 X 发置顶帖' };
+    const r = await srv.ingest('agents', [
+      { kind: 'prs', key: '', source_at: now, payload: { items: [{ number: 101, title: W.pr, url: PR_URL, days: 0, tag: 'decide', body: LONG, questions: QS }] } },
+      { kind: 'todo', key: 'forecast', source_at: now, payload: { product: 'forecast', items: [
+        { id: 'T4', type: 'action', text: W.look, link: 'https://github.com/dollar3651314/agents/blob/main/项目/forecast/Amos待办.md', link_text: '看待办', body: '待办这一行的说明：先在 X 简介里加官网链接，再截图发群。' },
+        { id: 'T5', type: 'action', text: W.cut, link: 'https://github.com/dollar3651314/agents/blob/main/项目/forecast/周包.md', link_text: '看周包', body: '周包里对应的那一段（样例）', body_cut: true },
+        { id: 'T6', type: 'action', text: W.ext, link: 'https://x.com/compose/post', link_text: '去 X 发帖' },
+      ] } },
+    ]);
+    check('推送带正文的样例（PR 正文 + 问题表、看待办、被截断的、外部平台的）', r.status === 200, r);
+    for (const [at, width, sel] of [['/#/work/todo', 1440, '#w-todos'], ['/#/forecast/next', 375, '#f-todos']]) {
+      const page = await open({ width, height: width < 600 ? 812 : 900 });
+      let popups = 0, ghReq = 0;
+      page.context().on('page', () => { popups += 1; });
+      page.on('request', (q2) => { if (/^https:\/\/github\.com\//.test(q2.url())) ghReq += 1; });
+      await login(page, at);
+      await waitFor(page, `${sel} li.todo`);
+      const li = (t) => page.locator(`${sel} li.todo`, { hasText: t });
+      const tag = `${at}（${width} 宽）`;
+      const openDetail = async (t) => {
+        const url0 = page.url();
+        await li(t).locator('.go .btn.primary').first().click();
+        const shown = await li(t).locator('.detail').first().waitFor({ state: 'visible', timeout: WAIT }).then(() => true, () => false);
+        await page.waitForTimeout(300);
+        return { shown, sameUrl: page.url() === url0, popups, ghReq };
+      };
+      // 看待办：正文在当前页面显示，没有跳转、没开新窗口、没去 GitHub
+      const o1 = await openDetail(W.look);
+      check(`${tag} 点"看待办"：正文在当前页面展开，没有跳转、没开新窗口、没请求 GitHub`, o1.shown && o1.sameUrl && o1.popups === 0 && o1.ghReq === 0 && /先在 X 简介里加官网链接/.test((await li(W.look).locator('.detail').innerText().catch(() => '')) || ''), o1);
+      const gh = li(W.look).locator('.detail a.gh');
+      check(`${tag} 正文旁边留一个小链接"在 GitHub 打开"（新窗口、原来的地址）`, (await gh.innerText().catch(() => null)) === '在 GitHub 打开' && (await gh.getAttribute('href').catch(() => null)) === 'https://github.com/dollar3651314/agents/blob/main/项目/forecast/Amos待办.md' && (await gh.getAttribute('target').catch(() => null)) === '_blank', await gh.evaluate((a) => a.outerHTML).catch(() => null));
+      // 被截断的：看得出来
+      const o2 = await openDetail(W.cut);
+      check(`${tag} 正文被截断过（body_cut）：展开后写明"已截断"`, o2.shown && o2.sameUrl && /已截断/.test((await li(W.cut).locator('.detail').innerText().catch(() => '')) || ''), await li(W.cut).locator('.detail').innerText().catch(() => null));
+      // 外部平台的：保留原来的外链，不展开
+      const ext = li(W.ext).locator('.go a.btn.primary');
+      check(`${tag} 要到外部平台操作的（去 X 发帖）：还是外链、新窗口打开，没有正文框`, (await ext.getAttribute('href').catch(() => null)) === 'https://x.com/compose/post' && (await ext.getAttribute('target').catch(() => null)) === '_blank' && (await li(W.ext).locator('.detail').count()) === 0, await ext.evaluate((a) => a.outerHTML).catch(() => null));
+      if (sel === '#w-todos') {
+        // PR：说明正文 + 问题表（每条带建议）；长正文先折叠，点了展开；HTML 只当文字
+        const o3 = await openDetail(W.pr);
+        const d = li(W.pr).locator('.detail');
+        check(`${tag} 点 PR 的主按钮：说明正文在当前页面展开，没有跳转`, o3.shown && o3.sameUrl && o3.popups === 0 && o3.ghReq === 0, o3);
+        const qs = await d.locator('.qs li').allInnerTexts().catch(() => []);
+        check(`${tag} 要你决定的问题表：每条都带建议`, qs.length === 2 && qs[0].includes(QS[0].q) && qs[0].includes(QS[0].advice) && qs[1].includes(QS[1].q) && qs[1].includes(QS[1].advice), qs);
+        const fold = async () => d.locator('.detail-text').evaluate((e) => ({ h: e.clientHeight, sh: e.scrollHeight })).catch(() => null);
+        const more = d.locator('[data-more]');
+        const f0 = await fold();
+        check(`${tag} 长正文默认折叠（"展开全文"按钮，aria-expanded=false，只露出一部分）`, (await more.getAttribute('aria-expanded').catch(() => null)) === 'false' && !!f0 && f0.sh > f0.h + 20, { f0, btn: await more.innerText().catch(() => null) });
+        await more.click().catch(() => {});
+        await page.waitForTimeout(200);
+        const f1 = await fold();
+        check(`${tag} 点"展开全文"：全部显示（aria-expanded=true），能看到最后一句`, (await more.getAttribute('aria-expanded').catch(() => null)) === 'true' && !!f1 && f1.sh <= f1.h + 2 && /正文最后一句/.test((await d.innerText().catch(() => '')) || ''), f1);
+        const x = await page.evaluate(() => ({ xss: window.__xss ?? null, script: document.querySelectorAll('.detail script, .detail img').length, text: document.querySelector('.detail .detail-text')?.textContent?.slice(0, 80) ?? null }));
+        check(`${tag} 正文里的 <script>、<img onerror> 只当文字显示，不执行、不生成元素`, x.xss === null && x.script === 0 && !!x.text && x.text.startsWith('<script>window.__xss=1</script>'), x);
+        const gh2 = d.locator('a.gh');
+        check(`${tag} PR 正文旁边的"在 GitHub 打开"指向这个 PR`, (await gh2.getAttribute('href').catch(() => null)) === PR_URL, await gh2.getAttribute('href').catch(() => null));
+        if (SHOTS) { mkdirSync(SHOTS, { recursive: true }); await page.screenshot({ path: path.join(SHOTS, `todo-detail-${width}.png`), fullPage: true }); }
+      }
+      check(`${tag} 整段没开新窗口、没请求 GitHub`, popups === 0 && ghReq === 0, { popups, ghReq });
+      await page.context().close();
+    }
+  });
+
+  check('A、B、D 段没有脚本错误', errors.length === 0, errors);
 } catch (e) {
   check('脚本跑完（没有中途出错）', false, String(e && e.stack || e));
 } finally {

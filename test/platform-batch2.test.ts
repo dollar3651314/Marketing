@@ -409,3 +409,89 @@ const GOLDEN_MODEL_USAGE: unknown[] = [
   { day: '2026-10-29', model: 'workers-ai', req: 2, tok_in: 110, tok_out: 55, last_status: 200, last_at: T0 },
 ];
 const GOLDEN_AI_USAGE = { day: '2026-10-29', neurons: 2.184875 };
+
+// ======================================================================
+// 批 2 追加（Amos 2026-11-02："一键发帖都可以直接在页面操作，为什么'看待办'就要跳转到GitHub呢，看待办 加载的不就是文字吗"）
+// 待办正文由上报脚本一起推：PR 说明正文、要 Amos 决定的问题表（每条带建议）、周包 / 交接记录 / 状态卡里对应的那一段。
+// 接口约定（测试先提；研发要改名就同一个 PR 改这里并在 PR 描述写明）：
+//   prs.items[]、todo.items[]、status.waiting[] 多三个字段：body（正文，纯文字，≤ BODY_MAX = 4000 字）、body_cut（true = 正文被截断过）、
+//   questions（[{q, advice}]，≤ 20 条，q、advice 各 ≤ 500 字）
+//   服务端：不在白名单里的字段一律丢掉（不存）；body 超过 4000 字的不原样存——截到 4000 字并标 body_cut: true
+// ======================================================================
+describe('待办正文：服务端字段白名单和长度上限（批 2 追加）', () => {
+  const INGEST = 'ci_only_company_ingest_token_0123456789';
+  const BODY_MAX = 4000;
+  const ingest = (source: string, blocks: unknown[]) =>
+    handle(new Request(`${HOST}/api/company/ingest`, { method: 'POST', headers: { authorization: `Bearer ${INGEST}`, 'content-type': 'application/json' }, body: JSON.stringify({ source, blocks }) }), env({ COMPANY_INGEST_TOKEN: INGEST }), T0);
+  const blocksOf = async () => {
+    const e = env({ COMPANY_INGEST_TOKEN: INGEST });
+    const ck = await cookie(e);
+    return (await getJson<{ blocks: { source: string; kind: string; key: string; payload: Record<string, unknown> | null }[] }>(handle(page('/api/company', { cookie: ck }), e, T0))).blocks;
+  };
+  const XSS = '正文<script>window.__xss=1</script><img src=x onerror="window.__xss=2">结尾';
+  const QS = [{ q: '要不要改首页文案？', advice: '建议改，理由见正文' }, { q: '上线时间？', advice: '建议周三' }];
+
+  it('prs、todo、status.waiting 的条目收下 body、body_cut、questions；HTML 原样当文字存（不转义、不删）', async () => {
+    const r = await ingest('agents', [
+      { kind: 'prs', key: '', payload: { items: [{ number: 101, title: '【要你决定】换首页文案', url: 'https://github.com/dollar3651314/agents/pull/101', days: 0, tag: 'decide', body: XSS, questions: QS }] } },
+      { kind: 'todo', key: 'forecast', payload: { product: 'forecast', items: [{ id: 'T7', type: 'confirm', text: '看周包', link: 'https://github.com/dollar3651314/agents/blob/main/x.md', link_text: '看待办', body: '周包里这一段', body_cut: true, questions: QS }] } },
+      { kind: 'status', key: 'forecast', payload: { product: 'forecast', waiting: [{ text: '等你定价', body: '状态卡"在等谁"那一段的全文' }] } },
+    ]);
+    expect(r.status).toBe(200);
+    const bs = await blocksOf();
+    const pr = (bs.find((b) => b.kind === 'prs')!.payload as { items: Record<string, unknown>[] }).items[0];
+    expect(pr).toMatchObject({ number: 101, body: XSS, questions: QS });
+    const todo = (bs.find((b) => b.kind === 'todo')!.payload as { items: Record<string, unknown>[] }).items[0];
+    expect(todo).toMatchObject({ id: 'T7', body: '周包里这一段', body_cut: true, questions: QS });
+    const st = (bs.find((b) => b.kind === 'status')!.payload as { waiting: Record<string, unknown>[] }).waiting[0];
+    expect(st).toMatchObject({ text: '等你定价', body: '状态卡"在等谁"那一段的全文' });
+  });
+
+  it('new-forecast、marketing 推的 PR 也能带 body、questions', async () => {
+    for (const src of ['new-forecast', 'marketing']) {
+      expect((await ingest(src, [{ kind: 'prs', key: '', payload: { items: [{ number: 5, title: '【要你决定】x', url: 'https://github.com/o/r/pull/5', days: 1, body: src + ' 的正文', questions: [QS[0]] }] } }])).status).toBe(200);
+    }
+    const bs = await blocksOf();
+    for (const src of ['new-forecast', 'marketing']) {
+      const it = (bs.find((b) => b.kind === 'prs' && b.source === src)!.payload as { items: Record<string, unknown>[] }).items[0];
+      expect(it).toMatchObject({ body: src + ' 的正文', questions: [QS[0]] });
+    }
+  });
+
+  it('超长的不原样存：body 超过 4000 字截到 4000 并标 body_cut；questions 最多 20 条、每格最多 500 字', async () => {
+    const long = '长'.repeat(BODY_MAX + 1500);
+    const many = Array.from({ length: 30 }, (_, i) => ({ q: '问'.repeat(800) + i, advice: '议'.repeat(800) }));
+    expect((await ingest('agents', [
+      { kind: 'prs', key: '', payload: { items: [{ number: 102, title: '【要你决定】长', url: 'https://github.com/dollar3651314/agents/pull/102', days: 0, body: long, questions: many }] } },
+      { kind: 'todo', key: 'forecast', payload: { product: 'forecast', items: [{ id: 'T8', type: 'action', text: '长', body: long }] } },
+    ])).status).toBe(200);
+    const bs = await blocksOf();
+    const pr = (bs.find((b) => b.kind === 'prs')!.payload as { items: { body: string; body_cut?: boolean; questions: { q: string; advice: string }[] }[] }).items[0];
+    expect(pr.body.length).toBeLessThanOrEqual(BODY_MAX);
+    expect(pr.body.length).toBeGreaterThan(BODY_MAX - 50);
+    expect(pr.body_cut).toBe(true);
+    expect(pr.questions.length).toBe(20);
+    for (const x of pr.questions) { expect(x.q.length).toBeLessThanOrEqual(500); expect(x.advice.length).toBeLessThanOrEqual(500); }
+    const todo = (bs.find((b) => b.kind === 'todo')!.payload as { items: { body: string; body_cut?: boolean }[] }).items[0];
+    expect(todo.body.length).toBeLessThanOrEqual(BODY_MAX);
+    expect(todo.body_cut).toBe(true);
+    // 没超长的不标
+    expect((await ingest('agents', [{ kind: 'todo', key: 'forecast', payload: { product: 'forecast', items: [{ id: 'T9', type: 'action', text: '短', body: '短正文' }] } }])).status).toBe(200);
+    const t9 = ((await blocksOf()).find((b) => b.kind === 'todo')!.payload as { items: Record<string, unknown>[] }).items[0];
+    expect(t9.body).toBe('短正文');
+    expect(t9.body_cut).toBeUndefined();
+  });
+
+  it('不在白名单里的字段一律不存：body_html、html、script、questions 里多的字段、类型不对的 body', async () => {
+    expect((await ingest('agents', [
+      { kind: 'prs', key: '', payload: { items: [{ number: 103, title: '【要你决定】x', url: 'https://github.com/dollar3651314/agents/pull/103', days: 0, body: 12345, body_html: '<b>x</b>', html: '<i>y</i>', script: 'alert(1)', questions: [{ q: '问', advice: '议', onclick: 'alert(1)' }, 'not-an-object'] }] } },
+      { kind: 'todo', key: 'forecast', payload: { product: 'forecast', items: [{ id: 'T1', type: 'action', text: 'x', body: ['数组不是字符串'], body_cut: 'yes', render: 'html' }] } },
+    ])).status).toBe(200);
+    const bs = await blocksOf();
+    const pr = (bs.find((b) => b.kind === 'prs')!.payload as { items: Record<string, unknown>[] }).items[0];
+    expect(Object.keys(pr).sort()).toEqual(['days', 'number', 'questions', 'title', 'url']);
+    expect(pr.questions).toEqual([{ q: '问', advice: '议' }]);
+    const todo = (bs.find((b) => b.kind === 'todo')!.payload as { items: Record<string, unknown>[] }).items[0];
+    expect(Object.keys(todo).sort()).toEqual(['id', 'text', 'type']);
+  });
+});
