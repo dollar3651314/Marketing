@@ -447,15 +447,24 @@ describe('待办正文：服务端字段白名单和长度上限（批 2 追加�
     expect(st).toMatchObject({ text: '等你定价', body: '状态卡"在等谁"那一段的全文' });
   });
 
-  it('new-forecast、marketing 推的 PR 也能带 body、questions', async () => {
+  // 批 2 新口径（Amos 2026-11-02："只有agents才是公司……其他项目内不保留这些资料也不认被其他人提交上来的东西"）：测试用例修正，原来这条是"也能带 body、questions"
+  it('new-forecast、marketing 推的 PR：body、body_cut、questions 一律不存（正文只认 agents）；external: true 收下', async () => {
     for (const src of ['new-forecast', 'marketing']) {
-      expect((await ingest(src, [{ kind: 'prs', key: '', payload: { items: [{ number: 5, title: '【要你决定】x', url: 'https://github.com/o/r/pull/5', days: 1, body: src + ' 的正文', questions: [QS[0]] }] } }])).status).toBe(200);
+      expect((await ingest(src, [{ kind: 'prs', key: '', payload: { items: [
+        { number: 5, title: '【要你决定】x', url: 'https://github.com/o/r/pull/5', days: 1, tag: 'decide', body: src + ' 的正文', body_cut: true, questions: [QS[0]] },
+        { number: 6, title: '外部人改 README', url: 'https://github.com/o/r/pull/6', days: 0, external: true },
+      ] } }])).status).toBe(200);
     }
     const bs = await blocksOf();
     for (const src of ['new-forecast', 'marketing']) {
-      const it = (bs.find((b) => b.kind === 'prs' && b.source === src)!.payload as { items: Record<string, unknown>[] }).items[0];
-      expect(it).toMatchObject({ body: src + ' 的正文', questions: [QS[0]] });
+      const items = (bs.find((b) => b.kind === 'prs' && b.source === src)!.payload as { items: Record<string, unknown>[] }).items;
+      expect(items[0], src).toEqual({ number: 5, title: '【要你决定】x', url: 'https://github.com/o/r/pull/5', days: 1, tag: 'decide' });
+      expect(items[1], src).toEqual({ number: 6, title: '外部人改 README', url: 'https://github.com/o/r/pull/6', days: 0, external: true });
     }
+    // agents 推的照样收正文
+    expect((await ingest('agents', [{ kind: 'prs', key: '', payload: { items: [{ number: 7, title: '【要你决定】y', url: 'https://github.com/dollar3651314/agents/pull/7', days: 0, body: 'agents 的正文' }] } }])).status).toBe(200);
+    const ag = ((await blocksOf()).find((b) => b.kind === 'prs' && b.source === 'agents')!.payload as { items: Record<string, unknown>[] }).items[0];
+    expect(ag.body).toBe('agents 的正文');
   });
 
   it('超长的不原样存：body 超过 4000 字截到 4000 并标 body_cut；questions 最多 20 条、每格最多 500 字', async () => {

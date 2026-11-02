@@ -19,6 +19,11 @@
  *   E.（批 2 追加，Amos 2026-11-02："主菜单和子菜单都要固定"）工作台、forecast 页、公共工具页、清单页滚到最底部后，一级菜单（nav.nav1）和二级菜单（#sub-<页>）
  *      还固定在屏幕顶部、看得到、没被挡住；在底部点二级菜单跳到模块、点一级菜单跳到别的页，模块 / 页面顶端不被固定菜单挡住；
  *      手机上两层菜单加起来 ≤ 屏幕高度 25%。375、1440 宽。
+ *   F.（批 2 审查"改完再审"）R5 公司总览页的待办有正文的在当前页展开、外部平台照旧外链；R6 不再出现"看完在 PR 里回复"、改成"看完在 Claude 窗口里回复"；
+ *      R8 375 宽公共工具二级菜单的"插件下载"不用横滑就看得到，或右边缘有能横滑的提示（[data-scroll-hint]、mask-image、::after 任一种）；
+ *      R9 667×375 横屏两层固定菜单 ≤ 屏幕高度 25%；R10 停在公共工具页 30 秒后一级菜单数字会刷新，第一次读取失败后会重试。
+ *   G.（批 2 新口径，Amos 2026-11-02："只有agents才是公司"）代码仓库的外部 PR 单独一条"外部提交，给你看一下"，只有标题和"在 GitHub 打开"，不当"要你决定"、不展开；
+ *      自己在代码仓库开的 PR 也只显示标题和链接；代码仓库推上来的正文一个字都不显示。
  *   C. 按项目看用量（D-3）：#t-byproj 每个项目一行，Gemini 次数加起来 = 用量总额度里 Gemini 的请求数；写着以前没分项目、"测试 AI"那行是平台自己。
  *
  * 页面约定（照原型 v2；研发要改名就同一个 PR 改这里并在 PR 描述写明）：
@@ -342,7 +347,146 @@ try {
     }
   }
 
-  check('A、B、D、E 段没有脚本错误', errors.length === 0, errors);
+  // ---------- F.（批 2 审查"改完再审"，测试先写）R5、R6、R8、R9、R10 ----------
+  // R5 公司总览页的待办：有正文的点了在当前页展开（同工作台），去 X 这类外部平台的照旧外链
+  await section('R5 公司总览的待办正文', async () => {
+    const page = await open();
+    let popups = 0;
+    page.context().on('page', () => { popups += 1; });
+    await login(page, '/#/company');
+    await waitFor(page, '#v-company li');
+    const li = (t) => page.locator('#v-company li', { hasText: t }).first();
+    const PR_T = '【要你决定】换首页文案（样例）', LOOK_T = '样例待办四：看待办里的说明', EXT_T = '样例待办六：去 X 发置顶帖';
+    check('R5 先确认：公司总览列出了带正文的 PR 和待办', (await li(PR_T).count()) === 1 && (await li(LOOK_T).count()) === 1, [await li(PR_T).count(), await li(LOOK_T).count()]);
+    for (const t of [PR_T, LOOK_T]) {
+      const url0 = page.url();
+      await li(t).locator('.act .btn').first().click();
+      const shown = await li(t).locator('.detail').first().waitFor({ state: 'visible', timeout: WAIT }).then(() => true, () => false);
+      await page.waitForTimeout(300);
+      check(`R5 公司总览点"${t.slice(0, 12)}…"的按钮：正文在当前页展开，没跳转、没开新窗口`, shown && page.url() === url0 && popups === 0 && ((await li(t).locator('.detail').innerText().catch(() => '')) || '').length > 10, { shown, url: page.url(), popups });
+      check(`R5 公司总览"${t.slice(0, 12)}…"：正文旁边留"在 GitHub 打开"`, (await li(t).locator('.detail a.gh').innerText().catch(() => null)) === '在 GitHub 打开', null);
+    }
+    const x = await page.evaluate(() => ({ xss: window.__xss ?? null, n: document.querySelectorAll('#v-company .detail script, #v-company .detail img').length }));
+    check('R5 公司总览：正文里的 HTML 只当文字，不执行', x.xss === null && x.n === 0, x);
+    const ext = li(EXT_T).locator('.act a.btn').first();
+    check('R5 公司总览：去 X 发帖的照旧是外链（新窗口），没有正文框', (await ext.getAttribute('href').catch(() => null)) === 'https://x.com/compose/post' && (await ext.getAttribute('target').catch(() => null)) === '_blank' && (await li(EXT_T).locator('.detail').count()) === 0, await ext.evaluate((a) => a.outerHTML).catch(() => null));
+    await page.context().close();
+  });
+
+  // R6 页面上不再出现"看完在 PR 里回复"，改成"看完在 Claude 窗口里回复"
+  await section('R6 回复的地方', async () => {
+    const page = await open();
+    await login(page, '/#/work/todo');
+    await waitFor(page, '#w-todos li.todo');
+    const prLi = page.locator('#w-todos li.todo', { hasText: '【要你决定】换首页文案（样例）' });
+    const t = (await prLi.innerText().catch(() => '')) || '';
+    const html = await page.evaluate(async () => (await fetch('/', { credentials: 'same-origin' })).text());
+    check('R6 【要你决定】的 PR 写"看完在 Claude 窗口里回复"', t.includes('看完在 Claude 窗口里回复'), t.slice(0, 200));
+    check('R6 页面和页面源码里都不再出现"在 PR 里回复"', !(await page.evaluate(() => document.body.innerText.includes('在 PR 里回复'))) && !html.includes('在 PR 里回复'), null);
+    await page.context().close();
+  });
+
+  // R8 375 宽：公共工具的二级菜单里"插件下载"不用横滑就看得到；或者菜单右边缘有能横滑的提示（两种都算过）
+  await section('R8 手机上的插件下载菜单', async () => {
+    const page = await open({ width: 375, height: 812 });
+    await login(page, '/#/tools');
+    await waitFor(page, '#sub-tools a[data-s="t-ext"]', { state: 'attached' });
+    const r = await page.evaluate(() => {
+      const nav = document.getElementById('sub-tools'), a = nav && nav.querySelector('a[data-s="t-ext"]');
+      if (!nav || !a) return null;
+      const scrollers = [nav, ...nav.querySelectorAll('*')].filter((e) => e.scrollWidth > e.clientWidth + 1 && /auto|scroll/.test(getComputedStyle(e).overflowX));
+      scrollers.forEach((e) => { e.scrollLeft = 0; });
+      const b = a.getBoundingClientRect();
+      const fits = b.width > 0 && b.left >= 0 && b.right <= innerWidth && b.top >= 0 && b.bottom <= innerHeight;
+      const hit = (() => { const e = document.elementFromPoint(Math.min(b.left + b.width / 2, innerWidth - 1), b.top + b.height / 2); return !!e && (e === a || a.contains(e)); })();
+      // 提示：能横滑的容器上有可见的 [data-scroll-hint]，或右边缘有渐隐遮罩（mask-image），或 ::after 画了东西
+      const hint = scrollers.length > 0 && scrollers.some((e) => {
+        const h = e.querySelector('[data-scroll-hint]') || e.parentElement?.querySelector('[data-scroll-hint]');
+        const hv = !!h && h.getBoundingClientRect().width > 0 && getComputedStyle(h).visibility !== 'hidden';
+        const cs = getComputedStyle(e), af = getComputedStyle(e, '::after');
+        const mask = (cs.maskImage && cs.maskImage !== 'none') || (cs.webkitMaskImage && cs.webkitMaskImage !== 'none');
+        const after = af.content && af.content !== 'none' && af.content !== 'normal' && af.display !== 'none';
+        return hv || mask || after;
+      });
+      return { fits: fits && hit, hint, scrollers: scrollers.length, box: [Math.round(b.left), Math.round(b.right)], vw: innerWidth };
+    });
+    check('R8 375 宽：公共工具二级菜单的"插件下载"不用横滑就看得到，或者菜单右边缘有能横滑的提示', !!r && (r.fits || r.hint), r);
+    await page.context().close();
+  });
+
+  // R9 667×375 横屏：两层固定菜单加起来不超过屏幕高度的 25%
+  for (const at of ['/#/work', '/#/forecast', '/#/tools']) {
+    await section(`R9 横屏 ${at}`, async () => {
+      const page = await open({ width: 667, height: 375 });
+      await login(page, at);
+      const p = at.split('/')[2];
+      await waitFor(page, `#sub-${p}`);
+      await page.evaluate(() => window.scrollTo(0, document.documentElement.scrollHeight));
+      await page.waitForTimeout(300);
+      const m = await page.evaluate((sub) => { const n1 = document.querySelector('nav.nav1').getBoundingClientRect(), s2 = document.querySelector(sub).getBoundingClientRect(); return { scrollY: Math.round(scrollY), n1top: Math.round(n1.top), s2top: Math.round(s2.top), bottom: Math.round(Math.max(n1.bottom, s2.bottom)), vh: innerHeight }; }, `#sub-${p}`);
+      check(`R9 667×375 横屏 ${at}：滚动后两层菜单都在顶部，加起来 ≤ 屏幕高度 25%（${375 * 0.25}px）`, m.scrollY > 0 && m.n1top >= 0 && m.s2top >= 0 && m.bottom <= m.vh * 0.25, m);
+      await page.context().close();
+    });
+  }
+
+  // R10 停在公共工具页超过 30 秒，一级菜单的数字会刷新；第一次读取失败，下次要重试
+  await section('R10 公共工具页上菜单数字的刷新', async () => {
+    const t0 = Date.now();
+    const page = await open();
+    await page.clock.install({ time: t0 });
+    await login(page, '/#/tools');
+    await page.waitForFunction(() => /^\d+$/.test(document.getElementById('c-work')?.textContent?.trim() || '') && !document.getElementById('c-work').hidden, null, { timeout: WAIT }).catch(() => {});
+    const before = (await badges(page)).work;
+    check('R10 先确认：停在公共工具页，工作台菜单上有数字', typeof before === 'number' && before > 0, before);
+    const r = await srv.ingest('agents', [{ kind: 'todo', key: '经营会', source_at: Date.now(), payload: { product: '经营会', items: [{ id: 'M1·11/1', type: 'confirm', text: '样例待办三：挑一天开局沟通' }, { id: 'M8·11/1', type: 'confirm', text: '样例待办七：R10 新加的一条' }] } }]);
+    check('R10 服务器上多了一条待办', r.status === 200, r);
+    await page.clock.fastForward(31_000);
+    const up = await page.waitForFunction((b) => Number(document.getElementById('c-work')?.textContent) === b + 1, before, { timeout: WAIT }).then(() => true, () => false);
+    check('R10 停在公共工具页 30 秒后，工作台菜单的数字自动 +1（没切页、没刷新）', up, { before, now: (await badges(page)).work });
+    await page.context().close();
+
+    const p2 = await open();
+    await p2.clock.install({ time: Date.now() });
+    let fail = 1;
+    await p2.route('**/api/company', (rt) => (fail-- > 0 ? rt.fulfill({ status: 500, contentType: 'application/json', body: '{"error":"样例：第一次读失败"}' }) : rt.continue()));
+    await login(p2, '/#/tools');
+    await p2.waitForTimeout(800);
+    await p2.clock.fastForward(31_000);
+    const got = await p2.waitForFunction(() => /^\d+$/.test(document.getElementById('c-work')?.textContent?.trim() || '') && !document.getElementById('c-work').hidden, null, { timeout: WAIT }).then(() => true, () => false);
+    check('R10 第一次读 /api/company 失败：之后会重试，30 秒内菜单数字出来，不会一直空着', fail < 0 && got, { retried: fail < 0, badge: await badges(p2) });
+    await p2.context().close();
+  });
+
+  // ---------- G.（批 2 新口径，Amos 2026-11-02："只有agents才是公司……如果真有人提交了，只需要给我看就好"）代码仓库的 PR 只显示标题和链接 ----------
+  await section('G 代码仓库的 PR', async () => {
+    const EXT = { number: 21, title: '外部样例：改 README', url: 'https://github.com/dollar3651314/Marketing/pull/21' };
+    const OWNPR = { number: 22, title: '【要你决定】代码仓库自己的样例', url: 'https://github.com/dollar3651314/Marketing/pull/22' };
+    const r = await srv.ingest('marketing', [{ kind: 'prs', key: '', payload: { items: [
+      { ...EXT, days: 0, external: true },
+      { ...OWNPR, days: 1, tag: 'decide', body: 'marketing 推上来的正文（不该显示）', questions: [{ q: '代码仓库的问题', advice: '不该显示' }] },
+    ] } }]);
+    check('G 推送 Marketing 仓库的两个 PR（一个外部提交、一个自己开的）', r.status === 200, r);
+    const page = await open();
+    let popups = 0;
+    page.context().on('page', () => { popups += 1; });
+    await login(page, '/#/work/todo');
+    await waitFor(page, '#w-todos li.todo');
+    const ext = page.locator('#w-todos li.todo', { hasText: EXT.title });
+    const t = (await ext.innerText().catch(() => '')) || '';
+    check('G 外部提交的 PR 在工作台单独一条，写"外部提交，给你看一下"', (await ext.count()) === 1 && t.includes('外部提交，给你看一下'), t.slice(0, 200));
+    check('G 外部提交的 PR 不当成"要你决定"的事', !t.includes('要你决定'), t.slice(0, 200));
+    const gh = ext.locator('a.gh');
+    check('G 外部提交的 PR 只有"在 GitHub 打开"（新窗口、PR 地址），没有展开正文的按钮', (await gh.innerText().catch(() => null)) === '在 GitHub 打开' && (await gh.getAttribute('href').catch(() => null)) === EXT.url && (await gh.getAttribute('target').catch(() => null)) === '_blank' && (await ext.locator('.detail, [data-more], button.btn.primary').count()) === 0, await ext.evaluate((li) => li.outerHTML.slice(0, 400)).catch(() => null));
+    const own = page.locator('#w-todos li.todo', { hasText: OWNPR.title });
+    const prim = own.locator('.go .btn.primary').first();
+    check('G 自己在代码仓库开的 PR：只有标题和链接（主按钮是指向 PR 的外链，不是展开按钮）', (await own.count()) === 1 && (await prim.evaluate((e) => e.tagName).catch(() => null)) === 'A' && (await prim.getAttribute('href').catch(() => null)) === OWNPR.url, await own.evaluate((li) => li.outerHTML.slice(0, 400)).catch(() => null));
+    const all = (await page.evaluate(() => document.body.innerText)) || '';
+    check('G 代码仓库推上来的正文、问题表一个字都不显示（正文只认 agents）', !all.includes('marketing 推上来的正文') && !all.includes('代码仓库的问题') && (await own.locator('.detail').count()) === 0, null);
+    check('G 整段没开新窗口', popups === 0, popups);
+    await page.context().close();
+  });
+
+  check('A、B、D、E、F、G 段没有脚本错误', errors.length === 0, errors);
 } catch (e) {
   check('脚本跑完（没有中途出错）', false, String(e && e.stack || e));
 } finally {
