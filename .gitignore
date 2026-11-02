@@ -4,3 +4,4 @@ wrangler.deploy.toml
 .dev.vars
 *.zip
 src/generated/
+e2e-artifacts/

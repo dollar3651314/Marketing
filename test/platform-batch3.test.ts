@@ -971,3 +971,77 @@ describe('审查 R6："最近结束"只显示 7 天内的（原型 v2 第 274 �
     expect(await logs()).toBe(1);
   });
 });
+
+// ======================================================================
+// 批 3 复审（🔴 R1b、🟡 R2 的 catch 抓得太宽）：测试先写，研发再改
+describe('复审 R1b：外部人开着 PR 时删了 fork（head.repo = null），之后的 closed / synchronize 不能改内部同名分支那一行', () => {
+  const BR = 'claude/dev-platform-gone';
+  const all = (a: Active) => [...a.items.map((x) => ({ ...x, _in: 'items' })), ...a.ended.map((x) => ({ ...x, _in: 'ended' }))];
+  const inner = (a: Active) => { const x = all(a).filter((i) => i.repo === 'marketing' && i.branch === BR && !i.external); expect(x.length, '内部那一行正好一条').toBe(1); return x[0]; };
+  const keep = (x: Item & { _in: string }) => ({ pr: x.pr, title: x.title, decide: x.decide, ci: x.ci, end: x.end, external: x.external, _in: x._in });
+  async function seedInner() {
+    await hook({ event: 'push', body: push({ repo: 'marketing', branch: BR, msg: '开工', created: true, at: T0 }), now: T0 });
+    await hook({ event: 'pull_request', body: pr({ repo: 'marketing', branch: BR, number: 5, title: '【要你决定】【研发·platform】内部的', at: T0 + M }), now: T0 + M });
+    await hook({ event: 'workflow_run', body: run({ repo: 'marketing', branch: BR, conclusion: 'success', at: T0 + 2 * M }), now: T0 + 2 * M });
+    const x = inner(await active(T0 + 3 * M));
+    expect(x).toMatchObject({ pr: 5, decide: true, ci: 'success', end: null, _in: 'items' });
+    return keep(x);
+  }
+  /** fork 删掉以后 GitHub 发的 PR 事件：head.repo 是 null，head.label / head.user 还在 */
+  const gone = (action: string, at: number) => {
+    const ev = pr({ repo: 'marketing', branch: BR, number: 99, title: '外部人的 PR', action, assoc: 'NONE', fork: true, user: 'evil', forkOwner: 'evil', at }) as { pull_request: { head: Record<string, unknown> } };
+    ev.pull_request.head.repo = null;
+    return ev;
+  };
+
+  it('fork 还在时开了 PR，删 fork 后 closed：内部那一行 pr、title、decide、ci、end 都不变', async () => {
+    const before = await seedInner();
+    await hook({ event: 'pull_request', body: pr({ repo: 'marketing', branch: BR, number: 99, title: '外部人的 PR', assoc: 'NONE', fork: true, user: 'evil', forkOwner: 'evil', at: T0 + 4 * M }), now: T0 + 4 * M });
+    await hook({ event: 'pull_request', body: gone('closed', T0 + 6 * M), now: T0 + 6 * M });
+    expect(keep(inner(await active(T0 + 7 * M)))).toEqual(before);
+  });
+
+  it('删 fork 后 synchronize：内部那一行不变', async () => {
+    const before = await seedInner();
+    await hook({ event: 'pull_request', body: gone('synchronize', T0 + 5 * M), now: T0 + 5 * M });
+    expect(keep(inner(await active(T0 + 6 * M)))).toEqual(before);
+  });
+
+  it('只收到删 fork 后的事件（synchronize 再 closed，之前没见过这个 PR）：内部那一行不变；外部那一条（pr 99）标 external、不进"需要我的事"', async () => {
+    const before = await seedInner();
+    await hook({ event: 'pull_request', body: gone('synchronize', T0 + 5 * M), now: T0 + 5 * M });
+    await hook({ event: 'pull_request', body: gone('closed', T0 + 6 * M), now: T0 + 6 * M });
+    const a = await active(T0 + 7 * M);
+    expect(keep(inner(a))).toEqual(before);
+    for (const x of all(a).filter((i) => i.pr === 99)) expect(x).toMatchObject({ external: true, decide: false });
+  });
+});
+
+describe('复审 R2：处理时出别的约束错误（例如 NOT NULL constraint failed），要回 503、不能当重复回 200；重送同一编号能写进去', () => {
+  /** batch 第一次调用抛 D1 的 NOT NULL 约束错误，其余照常 */
+  function notNullOnce(d: D1Database): D1Database {
+    let failed = false;
+    return new Proxy(d, {
+      get(t, k) {
+        if (k === 'batch') return async (st: D1PreparedStatement[]) => {
+          if (!failed) { failed = true; throw new Error('D1_ERROR: NOT NULL constraint failed: active_item.role: SQLITE_CONSTRAINT'); }
+          return t.batch(st);
+        };
+        const v = Reflect.get(t, k);
+        return typeof v === 'function' ? v.bind(t) : v;
+      },
+    });
+  }
+  it('NOT NULL 约束错误：503（不是 200 duplicate）；同一投递编号重送 200、不是 duplicate、库里有这一条', async () => {
+    const id = randomUUID();
+    const body = push({ repo: 'marketing', branch: 'claude/dev-platform-nn', msg: '开工', created: true });
+    const r1 = await hook({ event: 'push', body, delivery: id, e: env({}, notNullOnce(db)) });
+    const j1 = (await r1.json().catch(() => ({}))) as Record<string, unknown>;
+    expect({ status: r1.status, duplicate: j1.duplicate ?? null }).toEqual({ status: 503, duplicate: null });
+    expect(await count('active_item')).toBe(0);
+    const r2 = await hook({ event: 'push', body, delivery: id, now: T0 + M });
+    expect(r2.status).toBe(200);
+    expect(((await r2.json()) as Record<string, unknown>).duplicate, '重送不能当成重复').toBeFalsy();
+    expect(find(await active(T0 + 2 * M), 'claude/dev-platform-nn', 'marketing')).toMatchObject({ _in: 'items' });
+  });
+});
