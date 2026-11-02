@@ -12,7 +12,7 @@
  * - POST /api/hook {on}  （会话 + 本站来源）切开关。
  * C147：代码仓库（new-forecast、marketing）只给分支名、PR 标题、CI；提交说明和 PR 正文不显示也不存。agents 只存自己人提交说明的第一行。
  *   外部：PR 的 author_association 不是 OWNER / MEMBER / COLLABORATOR、user.type = Bot、或 fork 来的；推送的 sender 不是仓库主人。
- *   fork 来的 PR 和 CI 单独成行（键 "<fork 所有者>:<分支>"），不碰内部同名分支。外部的不显示提交说明、不进"需要我的事"。
+ *   fork 来的（含 fork 已删、head.repo 为 null 的）PR 和 CI 单独成行（键 "<fork 所有者>:<分支>"），不碰内部同名分支。外部的不显示提交说明、不进"需要我的事"。
  * 接口约定和测试在 test/platform-batch3.test.ts 文件头；页面在 src/admin-page.ts 第三段脚本（团队在做什么、#ci-alert、#hook-toggle）。
  */
 import type { Env } from './env';
@@ -182,7 +182,11 @@ function onPullRequest(env: Env, repo: Repo, b: O, now: number): St[] {
   const ref = s(head.ref, 300);
   const number = typeof p.number === 'number' && Number.isInteger(p.number) ? p.number : null;
   if (!ref || number === null) return [];
-  const fork = forkOwner(obj(head.repo));
+  // head.repo 是 null（外部人开着 PR 时删了 fork）：认不出是不是我们仓库的分支，一律当外部、单独成行（复审 R1b），
+  // 前缀按 head.user / head.label / PR 作者，都没有写 unknown
+  const headRepo = head.repo && typeof head.repo === 'object' ? obj(head.repo) : null;
+  const fork = headRepo ? forkOwner(headRepo)
+    : s(obj(head.user).login, 100) || s(head.label, 300).split(':')[0] || s(obj(p.user).login, 100) || 'unknown';
   const branch = fork ? `${fork}:${ref}` : ref;
   const action = s(b.action, 40);
   const title = s(p.title, 200); // C147：只要标题；正文 body 不读、不存
@@ -281,7 +285,8 @@ export async function githubHook(env: Env, req: Request, now: number): Promise<R
     ]);
   } catch (e) {
     // 两个相同编号并发：后一个撞主键，整批回滚，当重复处理
-    if (/UNIQUE|PRIMARY KEY|constraint/i.test(String(e))) return json({ ok: true, duplicate: true });
+    // 只认投递编号的主键冲突；别的约束错误（NOT NULL 等）是真的写失败，回 503 让 GitHub 重送（复审 R2）
+    if (/UNIQUE constraint failed: gh_delivery\.id\b/.test(String(e))) return json({ ok: true, duplicate: true });
     console.log(JSON.stringify({ event: 'hook.write_failed', detail: String(e).slice(0, 200) }));
     return json({ error: 'write failed, please redeliver' }, 503);
   }
