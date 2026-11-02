@@ -6,20 +6,22 @@
 import type { Env } from './env';
 import { askJson as askGemini, diagnose as diagnoseGemini, GeminiBusy, GeminiError, type FetchLike } from './gemini';
 import { askWorkersAi, dailyCap, usedToday, WAI_MODEL, WorkersAiCap } from './workers-ai';
+import { PLATFORM_PROJECT } from './usage';
 
 export type Engine = 'gemini' | 'workers-ai';
 
-export async function ask(env: Env, system: string, user: string, now: number, fetcher?: FetchLike): Promise<{ data: unknown; engine: Engine }> {
+/** project：这次调用算哪个项目的（用量按项目记，D-3；只记、不当限额） */
+export async function ask(env: Env, system: string, user: string, now: number, fetcher?: FetchLike, project?: string): Promise<{ data: unknown; engine: Engine }> {
   let first: Error;
   try {
-    return { data: await askGemini(env, system, user, fetcher, now), engine: 'gemini' };
+    return { data: await askGemini(env, system, user, fetcher, now, project), engine: 'gemini' };
   } catch (e) {
     if (!(e instanceof GeminiBusy || e instanceof GeminiError)) throw e;
     first = e;
   }
   if (!env.AI) throw first;
   try {
-    const data = await askWorkersAi(env, system, user, now);
+    const data = await askWorkersAi(env, system, user, now, project);
     console.log(JSON.stringify({ event: 'copilot.fallback_workers_ai', reason: first.message }));
     return { data, engine: 'workers-ai' };
   } catch (e) {
@@ -28,13 +30,13 @@ export async function ask(env: Env, system: string, user: string, now: number, f
   }
 }
 
-/** 设置页"测试 AI"：每个 Gemini 模型一行，再加备用 AI 一行（带今天用了多少额度） */
+/** 设置页"测试 AI"：每个 Gemini 模型一行，再加备用 AI 一行（带今天用了多少额度）；用量记在 _platform（平台自己，不算到 forecast 头上） */
 export async function diagnose(env: Env, now: number, fetcher?: FetchLike): Promise<{ model: string; ok: boolean; ms: number; detail: string }[]> {
-  const out = await diagnoseGemini(env, fetcher, now);
+  const out = await diagnoseGemini(env, fetcher, now, PLATFORM_PROJECT);
   if (!env.AI) return [...out, { model: '备用 AI（Workers AI）', ok: false, ms: 0, detail: '没有绑定' }];
   const t0 = Date.now();
   try {
-    await askWorkersAi(env, '只回答 JSON。', '回答 {"ok":true}', now);
+    await askWorkersAi(env, '只回答 JSON。', '回答 {"ok":true}', now, PLATFORM_PROJECT);
     out.push({ model: `备用 AI ${WAI_MODEL.split('/').pop()}`, ok: true, ms: Date.now() - t0, detail: `OK（今天已用 ${Math.round(await usedToday(env, now))} / ${await dailyCap(env)}）` });
   } catch (e) {
     out.push({ model: `备用 AI ${WAI_MODEL.split('/').pop()}`, ok: false, ms: Date.now() - t0, detail: (e as Error).message });

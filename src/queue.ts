@@ -4,16 +4,18 @@
  * - 后台用（密码登录后的会话 Cookie）：
  *   GET /api/queue?status=pending|done|skip&product=&platform=&from=YYYY-MM-DD&to=YYYY-MM-DD（按存进来的台湾日期）&sort=time|score、POST /api/queue/<id> {status}、
  *   GET /api/company、POST /api/company/done（公司运营仪表盘，company.ts）、
+ *   GET /api/reply-cap、POST /api/reply-cap {caps:{项目: 1～50}}（每天回帖上限按项目，D-2，公司平台批 2）、
  *   POST /api/queue/delete {ids}（Amos 自己删；记录不自动删，D-4 选 B）、GET /api/usage、POST /api/usage {caps}（用量和限额，usage.ts）、POST /api/login、POST /api/logout。
  * 登录：密钥 COPILOT_PASSWORD（≥ 16 个字符，没填时后台 404）；同一 IP 15 分钟错 5 次锁 15 分钟，全站 1 小时错 20 次锁 1 小时；
  * 失败一律回答同一句（不透露锁定规则，C128）；会话 12 小时，签名密钥由密码派生，改密码旧会话全部失效。
  */
 import type { Env } from './env';
 import { modelList } from './gemini';
-import { saveCaps, usageReport, WAI_KEY } from './usage';
+import { saveCaps, usageByProject, usageReport, WAI_KEY } from './usage';
 import { usedToday } from './workers-ai';
 import { extensionZip } from './extension-download';
 import { companyApi } from './company';
+import { PROJECT_PAGES } from './projects';
 
 export const SESSION_MS = 12 * 3600_000;
 const LOCK = { ipWindow: 15 * 60_000, ipMax: 5, ipLock: 15 * 60_000, allWindow: 3600_000, allMax: 20, allLock: 3600_000 };
@@ -83,15 +85,53 @@ async function login(env: Env, req: Request, now: number): Promise<Response> {
   return fail();
 }
 
-const cap = (env: Env) => Math.max(1, Math.min(50, Number(env.DAILY_REPLY_CAP) || 10));
-/** 今天回了几条：插件"同意"（events.approve）+ 后台"我回了"（queue.done），两边合起来算每天上限（2026-10-30） */
-export async function doneToday(env: Env, now: number): Promise<number> {
+/** 全站默认的每天回帖上限（wrangler.toml DAILY_REPLY_CAP，没填 10）：项目没单独设上限时用它 */
+const defaultCap = (env: Env) => Math.max(1, Math.min(50, Number(env.DAILY_REPLY_CAP) || 10));
+/** 不带项目时按 forecast 算（老插件 0.3.5 的 /v1/today 不带 product，技术方案 PR 与数据页第三节） */
+export const DEFAULT_PROJECT = 'forecast';
+export const REPLY_CAP_MAX = 50;
+const capKey = (product: string) => 'reply_cap:' + product;
+
+/** 每天回帖上限按项目（D-2，公司平台批 2）：settings 的 reply_cap:<项目>，没设时退回 DAILY_REPLY_CAP */
+export async function replyCap(env: Env, product: string = DEFAULT_PROJECT): Promise<number> {
+  const r = await env.DB.prepare('SELECT value FROM settings WHERE key = ?1').bind(capKey(product)).first<{ value: string }>();
+  const v = Number(r?.value);
+  return Number.isInteger(v) && v >= 1 ? Math.min(REPLY_CAP_MAX, v) : defaultCap(env);
+}
+
+/** 今天这个项目回了几条：插件"同意"（events.approve）+ 后台"我回了"（queue.done），两边合起来算每天上限（2026-10-30）；D-2 起按项目分开算 */
+export async function doneToday(env: Env, now: number, product: string = DEFAULT_PROJECT): Promise<number> {
   const day = twDay(now);
   const [a, b] = await Promise.all([
-    env.DB.prepare("SELECT COUNT(*) AS n FROM queue WHERE status = 'done' AND done_day = ?1").bind(day).first<{ n: number }>(),
-    env.DB.prepare("SELECT COUNT(*) AS n FROM events WHERE day = ?1 AND action = 'approve'").bind(day).first<{ n: number }>(),
+    env.DB.prepare("SELECT COUNT(*) AS n FROM queue WHERE status = 'done' AND done_day = ?1 AND product = ?2").bind(day, product).first<{ n: number }>(),
+    env.DB.prepare("SELECT COUNT(*) AS n FROM events WHERE day = ?1 AND action = 'approve' AND product = ?2").bind(day, product).first<{ n: number }>(),
   ]);
   return (a?.n ?? 0) + (b?.n ?? 0);
+}
+
+/** 后台"每天回帖上限"一行：每个有项目页的项目（src/projects.ts PROJECT_PAGES） */
+async function replyCapRows(env: Env, now: number): Promise<{ project: string; cap: number; doneToday: number }[]> {
+  return Promise.all(PROJECT_PAGES.map(async (project) => {
+    const [cap, done] = await Promise.all([replyCap(env, project), doneToday(env, now, project)]);
+    return { project, cap, doneToday: done };
+  }));
+}
+
+/** POST /api/reply-cap {caps:{项目: n}}：n 是 1～50 的整数、项目要有项目页；有一个不对就一个都不存 */
+async function saveReplyCaps(env: Env, now: number, caps: unknown): Promise<string[]> {
+  if (!caps || typeof caps !== 'object' || Array.isArray(caps) || !Object.keys(caps).length) return ['请求不对：要 {caps:{项目: 数字}}'];
+  const bad: string[] = [];
+  const ok: [string, number][] = [];
+  for (const [project, v] of Object.entries(caps as Record<string, unknown>)) {
+    if (!PROJECT_PAGES.includes(project)) { bad.push(`不认识的项目：${project.slice(0, 40)}`); continue; }
+    if (typeof v !== 'number' && typeof v !== 'string') { bad.push(`${project} 要在 1～${REPLY_CAP_MAX} 之间`); continue; }
+    const n = typeof v === 'string' && v.trim() === '' ? NaN : Number(v);
+    if (!Number.isInteger(n) || n < 1 || n > REPLY_CAP_MAX) bad.push(`${project} 要在 1～${REPLY_CAP_MAX} 之间（整数）`);
+    else ok.push([project, n]);
+  }
+  if (bad.length) return bad;
+  await env.DB.batch(ok.map(([p, n]) => env.DB.prepare('INSERT INTO settings (key, value, updated_at) VALUES (?1, ?2, ?3) ON CONFLICT (key) DO UPDATE SET value = ?2, updated_at = ?3').bind(capKey(p), String(n), now)));
+  return [];
 }
 
 /** 后台的接口（/api/*）；不是后台的地址返回 null */
@@ -117,7 +157,8 @@ export async function adminApi(env: Env, req: Request, now: number): Promise<Res
     const where = ['status = ?1'];
     const args: (string | number)[] = [status];
     const add = (sql: string, v: string | number) => { args.push(v); where.push(sql.replace('?', '?' + args.length)); };
-    if (/^[a-z0-9-]{1,32}$/.test(q.get('product') ?? '')) add('product = ?', q.get('product')!);
+    const prod = /^[a-z0-9-]{1,32}$/.test(q.get('product') ?? '') ? q.get('product')! : '';
+    if (prod) add('product = ?', prod);
     if (q.get('platform') === 'x' || q.get('platform') === 'threads') add('platform = ?', q.get('platform')!);
     const day = (v: string | null) => (v && /^\d{4}-\d{2}-\d{2}$/.test(v) ? Date.parse(`${v}T00:00:00+08:00`) : NaN);
     if (Number.isFinite(day(q.get('from')))) add('at >= ?', day(q.get('from')));
@@ -139,7 +180,15 @@ export async function adminApi(env: Env, req: Request, now: number): Promise<Res
       stale: (x.post_at ?? x.at) < now - 24 * 3600_000,
       replyUrl: replyUrl(x.platform, x.post_id, x.draft), postUrl: postUrl(x.platform, x.post_id, x.author),
     }));
-    return json({ items, total: total?.n ?? 0, max: LIST_MAX, products: (products.results ?? []).map((x) => x.product), doneToday: await doneToday(env, now), cap: cap(env) });
+    // 每天回帖上限按项目（D-2）：doneToday、cap 是筛的那个项目的（没筛按 forecast，和 /v1/today 一样）；caps 是清单里每个项目各自的，页面按条目所在项目判断"到上限"
+    const prodList = (products.results ?? []).map((x) => x.product);
+    const caps: Record<string, { doneToday: number; cap: number }> = {};
+    await Promise.all([...new Set([...prodList, prod || DEFAULT_PROJECT])].map(async (pj) => {
+      const [doneN, capN] = await Promise.all([doneToday(env, now, pj), replyCap(env, pj)]);
+      caps[pj] = { doneToday: doneN, cap: capN };
+    }));
+    const cur = caps[prod || DEFAULT_PROJECT];
+    return json({ items, total: total?.n ?? 0, max: LIST_MAX, products: prodList, doneToday: cur.doneToday, cap: cur.cap, caps });
   }
   if (p === '/api/queue/delete' && req.method === 'POST') {
     // Amos 自己删（D-4：记录一直保留，条数太多时自己删）；一次最多 LIST_MAX 条，删了不能恢复（页面上先确认）
@@ -155,7 +204,17 @@ export async function adminApi(env: Env, req: Request, now: number): Promise<Res
     return json({ ok: true, deleted });
   }
   if (p === '/api/usage' && req.method === 'GET') {
-    return json({ rows: await usageReport(env, now, modelList(env), await usedToday(env, now), !!env.AI) });
+    // byProject：今天每个项目的 Gemini 次数、Workers AI neurons（D-3，只记、不当限额；11/2 以前的没分项目）
+    return json({ rows: await usageReport(env, now, modelList(env), await usedToday(env, now), !!env.AI), byProject: await usageByProject(env, now) });
+  }
+  if (p === '/api/reply-cap' && req.method === 'GET') return json({ rows: await replyCapRows(env, now) });
+  if (p === '/api/reply-cap' && req.method === 'POST') {
+    let caps: unknown = null;
+    try { caps = ((await req.json()) as { caps?: unknown }).caps; } catch { /* 下面判 400 */ }
+    const bad = await saveReplyCaps(env, now, caps);
+    if (bad.length) return json({ error: '没保存：' + bad.join('；') }, 400);
+    console.log(JSON.stringify({ event: 'copilot.reply_cap_saved' }));
+    return json({ ok: true, rows: await replyCapRows(env, now) });
   }
   if (p === '/api/usage' && req.method === 'POST') {
     let caps: Record<string, unknown> = {};
@@ -170,10 +229,13 @@ export async function adminApi(env: Env, req: Request, now: number): Promise<Res
     let status = '';
     try { status = String(((await req.json()) as { status?: unknown }).status ?? ''); } catch { /* 下面判 400 */ }
     if (!['pending', 'done', 'skip'].includes(status)) return json({ error: '请求不对' }, 400);
-    if (status === 'done' && (await doneToday(env, now)) >= cap(env)) return json({ error: `今天已经回了 ${cap(env)} 条，到上限了` }, 429);
+    const row = await env.DB.prepare('SELECT product FROM queue WHERE id = ?1').bind(Number(m[1])).first<{ product: string }>();
+    if (!row) return json({ error: '这条已经不在了，请刷新' }, 404);
+    // 每天上限按这一条所在的项目算（D-2）：forecast 到上限不挡别的项目
+    if (status === 'done') { const c = await replyCap(env, row.product); if ((await doneToday(env, now, row.product)) >= c) return json({ error: `今天已经回了 ${c} 条，到上限了` }, 429); }
     const r = await env.DB.prepare('UPDATE queue SET status = ?1, updated_at = ?2, done_day = CASE WHEN ?1 = \'done\' THEN ?3 ELSE NULL END WHERE id = ?4').bind(status, now, twDay(now), Number(m[1])).run();
     if (!r.meta.changes) return json({ error: '这条已经不在了，请刷新' }, 404);
-    return json({ ok: true, doneToday: await doneToday(env, now) });
+    return json({ ok: true, doneToday: await doneToday(env, now, row.product) });
   }
   return new Response('Not found', { status: 404 });
 }

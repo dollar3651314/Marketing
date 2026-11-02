@@ -18,7 +18,8 @@ export const ADMIN_PAGE = `<!doctype html>
 *{box-sizing:border-box}[hidden]{display:none!important}
 body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.6 "Noto Sans TC","PingFang TC","Microsoft JhengHei",sans-serif}
 /* 外框（公司平台批 1，原型 v2）：顶部一级菜单（工作台 · 项目 · 公共工具）、二级菜单直通模块，地址用 #/work/todo 这类锚点 */
-.top{position:sticky;top:0;z-index:30;display:flex;align-items:center;gap:6px 8px;padding:8px max(16px,env(safe-area-inset-left));background:var(--navy);color:#fff;min-height:48px;flex-wrap:wrap}
+.bars{position:sticky;top:0;z-index:30}
+.top{position:relative;display:flex;align-items:center;gap:6px 8px;padding:8px max(16px,env(safe-area-inset-left));background:var(--navy);color:#fff;min-height:48px;flex-wrap:wrap}
 .logo{display:flex;gap:3px;align-items:flex-end;flex:0 0 auto}.logo i{display:block;width:6px;border-radius:2px}
 .brand{font-size:16px;font-weight:700;margin-right:8px;white-space:nowrap}
 .sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
@@ -29,7 +30,7 @@ body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.6 "Noto Sans TC"
 .nav1 .cnt{display:inline-block;min-width:18px;padding:0 5px;margin-left:5px;border-radius:99px;background:#E5484D;color:#fff;font-size:11px;font-weight:700;line-height:18px;text-align:center}
 .top .sp{flex:1}
 .top button{font:inherit;font-size:12px;background:none;border:1px solid #3A4A6A;color:#C9D4E6;border-radius:99px;padding:3px 10px;cursor:pointer;white-space:nowrap}
-.sub{position:sticky;top:48px;z-index:25;background:var(--surface);border-bottom:1px solid var(--line);box-shadow:0 2px 6px rgba(15,27,51,.05)}
+.sub{position:relative;background:var(--surface);border-bottom:1px solid var(--line);box-shadow:0 2px 6px rgba(15,27,51,.05)}
 .sub .in{max-width:1120px;margin:0 auto;display:flex;gap:4px;overflow-x:auto;scrollbar-width:none;padding:0 max(12px,env(safe-area-inset-left))}
 .sub .in::-webkit-scrollbar{display:none}
 .sub a{flex:0 0 auto;display:inline-flex;align-items:center;gap:6px;padding:11px 12px 10px;font-size:14px;color:var(--muted);text-decoration:none;border-bottom:3px solid transparent;white-space:nowrap}
@@ -37,10 +38,19 @@ body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.6 "Noto Sans TC"
 .sub .n{font-size:11px;font-weight:700;border-radius:99px;padding:0 6px;background:var(--bg);color:var(--muted);border:1px solid var(--line)}.sub .n.red{background:var(--err);color:#fff;border-color:var(--err)}
 main{max-width:1120px;margin:0 auto;padding:16px max(16px,env(safe-area-inset-right)) 40px max(16px,env(safe-area-inset-left));min-width:0}
 .page{display:grid;gap:18px;min-width:0}.page::after{content:"";display:block;height:60vh}
-.mod{scroll-margin-top:120px;min-width:0}
+.mod{scroll-margin-top:calc(var(--bars-h,104px) + 8px);min-width:0}
+.page{scroll-margin-top:var(--bars-h,104px)}
 .crumb{display:flex;gap:8px 10px;align-items:baseline;flex-wrap:wrap;margin:0}.crumb h1{font-size:22px;margin:0}
 .mh{font-size:16px;margin:0 0 10px;display:flex;align-items:center;gap:8px;flex-wrap:wrap}.mh .sp{flex:1}.mh #count{font-size:13px;font-weight:400;color:var(--muted)}
-@media (max-width:640px){.brand{display:none}.nav1{gap:2px}.nav1 a{padding:5px 10px}.nav1 .grp-l{display:none}.top{padding-left:12px;padding-right:12px}}
+@media (max-width:640px){.brand{display:none}.nav1{gap:2px}.nav1 a{padding:4px 9px}.nav1 .grp-l{display:none}.top{padding:6px 12px;min-height:44px;gap:4px 6px}
+  .top #nav,.top #extnav{display:none}.top button{padding:2px 8px}.sub a{padding:8px 10px 7px}
+  /* 批 2 审查 R8：公共工具只有 5 项，手机上折成两行，"插件下载"不用横滑就看得到 */
+  #sub-tools .in{flex-wrap:wrap;overflow-x:visible;row-gap:0}#sub-tools a{padding:6px 9px 5px}}
+/* 其他二级菜单能横滑时，右边缘渐隐提示"还有"（R8） */
+.sub .in.more{-webkit-mask-image:linear-gradient(90deg,#000 82%,transparent);mask-image:linear-gradient(90deg,#000 82%,transparent)}
+/* 批 2 审查 R9：手机横屏（矮屏）两层菜单收紧，加起来 ≤ 屏幕高度 25% */
+@media (max-height:500px){.top{min-height:0;padding:3px 12px;gap:2px 6px;flex-wrap:nowrap}.brand,.nav1 .grp-l,.top #nav,.top #extnav{display:none}.nav1{flex-wrap:nowrap;gap:2px}.nav1 a{padding:2px 9px}.top button{padding:1px 8px}
+  .sub a{padding:4px 10px 3px}#sub-tools .in{flex-wrap:nowrap;overflow-x:auto}}
 .filters{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin:4px 0 10px}
 .chip{font:inherit;font-size:14px;padding:5px 12px;border-radius:99px;border:1px solid var(--line);background:var(--surface);color:var(--ink);cursor:pointer}
 .chip[aria-pressed="true"]{background:var(--teal-soft);border-color:var(--teal);font-weight:700}
@@ -109,6 +119,9 @@ th{font-size:12px;color:var(--muted);font-weight:600}td.n{text-align:right}
 #v-company .co-err-t{color:var(--err)}
 #v-company .co-empty{padding:20px 16px;color:var(--muted);text-align:center;margin:0}
 #v-company .msg{padding:0 16px}#v-company .msg:not(:empty){padding:8px 16px 0}
+#v-company .list .what .detail{display:grid;gap:8px;margin-top:8px;padding:10px 12px;border:1px solid var(--line);border-radius:10px;background:var(--bg);justify-items:start}
+#v-company .detail-text{white-space:pre-wrap;overflow-wrap:anywhere;width:100%}#v-company .detail-text.fold{max-height:12.8em;overflow:hidden}
+#v-company .detail .qs{margin:0;padding-left:20px}#v-company .detail a.gh{font-size:13px;color:var(--muted)}
 #v-company .co-foot{padding:10px 16px;display:grid;gap:4px;border-top:1px solid var(--line)}
 /* 项目表（2026-11-01 Amos 截图：长数字把"本周"挤成一字一行、右边被截掉）：固定列宽，全部可换行；数字一条一行"名称 · 现在 → 目标"；本周最多 3 行，点一下展开 */
 #v-company table.co-proj{table-layout:fixed}
@@ -126,7 +139,6 @@ th{font-size:12px;color:var(--muted);font-weight:600}td.n{text-align:right}
   #v-company table.stack td[data-label]::before{content:attr(data-label) "：";color:var(--muted);font-size:12px;font-family:inherit}
   #v-company table.co-proj{table-layout:auto}#v-company table.co-proj colgroup{display:none}}
 /* 工作台、项目页（公司平台批 1，原型 v2）：样式都限定在 .plat 里，不影响清单、用量、插件下载和"公司总览" */
-@media (max-width:640px){.sub{position:static}}
 .plat .card{background:var(--surface);border:1px solid var(--line);border-radius:14px;min-width:0;overflow:hidden}
 .plat .card>h2{font-size:16px;margin:0;padding:12px 16px;border-bottom:1px solid var(--line);display:flex;align-items:center;gap:8px;flex-wrap:wrap}
 .plat .card>h2 .sp{flex:1}.plat .stamp{font-size:12px;color:var(--muted);font-weight:400}
@@ -195,6 +207,13 @@ th{font-size:12px;color:var(--muted);font-weight:600}td.n{text-align:right}
 .plat .ul{margin:0;padding-left:20px}.plat .ul li{margin:3px 0}
 .plat .hand{list-style:none;margin:0;padding:0}.plat .hand li{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:4px 14px;padding:12px 16px;border-bottom:1px solid var(--line)}.plat .hand li:last-child{border-bottom:0}
 .plat .foot{font-size:12px;color:var(--muted);text-align:center;margin:0}
+.plat .detail{margin-top:8px;padding:10px 12px;border:1px solid var(--line);border-radius:10px;background:var(--bg);display:grid;gap:8px;min-width:0;justify-items:start}
+.plat .detail-text{white-space:pre-wrap;overflow-wrap:anywhere;font-size:14px;line-height:1.6;width:100%}
+.plat .detail-text.fold{max-height:12.8em;overflow:hidden;-webkit-mask-image:linear-gradient(180deg,#000 75%,transparent);mask-image:linear-gradient(180deg,#000 75%,transparent)}
+.plat .detail .qs{margin:0;padding-left:20px;display:grid;gap:4px;width:100%}.plat .detail .qs li{overflow-wrap:anywhere}
+.plat .todo .go a.gh{font-size:14px;color:var(--ink)}
+.plat .detail .cutnote{margin:0;font-size:13px;color:var(--amber)}.plat .detail a.gh{font-size:13px;color:var(--muted)}
+#t-reply .cap-in{width:70px}
 #p-toast{position:fixed;left:16px;right:16px;bottom:20px;margin:0 auto;max-width:520px;background:var(--navy);color:#fff;padding:10px 16px;border-radius:10px;font-size:14px;z-index:50;box-shadow:0 6px 20px rgba(0,0,0,.25);text-align:center}
 #p-toast.err{background:var(--err)}
 @media (max-width:640px){
@@ -208,7 +227,7 @@ th{font-size:12px;color:var(--muted);font-weight:600}td.n{text-align:right}
   .plat table.stack td[data-label]::before{content:attr(data-label) "：";color:var(--muted);font-size:12px;font-family:inherit}
 }
 </style></head><body>
-<header class="top" id="top"><span class="logo" aria-hidden="true"><i style="height:16px;background:#2DD4BF"></i><i style="height:10px;background:#FBBF24"></i></span><span class="brand">公司平台</span><b class="sr" id="title">工作台</b>
+<div class="bars" id="bars"><header class="top" id="top"><span class="logo" aria-hidden="true"><i style="height:16px;background:#2DD4BF"></i><i style="height:10px;background:#FBBF24"></i></span><span class="brand">公司平台</span><b class="sr" id="title">工作台</b>
   <nav class="nav1" id="nav1" aria-label="一级菜单" hidden><a href="#/work" data-p="work">工作台<span class="cnt" id="c-work" hidden></span></a><span class="grp-l">项目</span><a href="#/forecast" data-p="forecast">forecast<span class="cnt" id="c-forecast" hidden></span></a><a href="#/tools" data-p="tools">公共工具</a></nav>
   <span class="sp"></span><button id="nav" hidden>用量和限额 →</button><button id="extnav" hidden>插件下载</button><button id="conav" hidden>公司</button><button id="logout" hidden>登出</button></header>
 <div id="subs" hidden>
@@ -219,9 +238,9 @@ th{font-size:12px;color:var(--muted);font-weight:600}td.n{text-align:right}
   <a href="#/forecast/next" data-s="f-next">下一步做什么<span class="n red" id="s-fnext" hidden></span></a><a href="#/forecast/guide" data-s="f-guide">操作指引<span class="n" id="s-guide" hidden></span></a><a href="#/forecast/live" data-s="f-live">团队在做什么</a><a href="#/forecast/card" data-s="f-card">数字和决定</a><a href="#/forecast/pack" data-s="f-pack">本周帖子</a><a href="#/forecast/match" data-s="f-match">焦点战</a><a href="#/forecast/tools" data-s="f-tools">用到的工具</a><a href="#/forecast/handoff" data-s="f-handoff">交接记录</a>
 </div></nav>
 <nav class="sub" id="sub-tools" aria-label="公共工具模块" hidden><div class="in">
-  <a href="#/tools/queue" data-s="t-queue">跟帖评论清单</a><a href="#/tools/usage" data-s="t-usage">用量和限额</a><a href="#/tools/ext" data-s="t-ext">插件下载</a>
+  <a href="#/tools/queue" data-s="t-queue">跟帖评论清单</a><a href="#/tools/reply" data-s="t-reply">每天回帖上限</a><a href="#/tools/usage" data-s="t-usage">用量和限额</a><a href="#/tools/byproj" data-s="t-byproj">按项目看用量</a><a href="#/tools/ext" data-s="t-ext">插件下载</a>
 </div></nav>
-</div>
+</div></div>
 <form class="login" id="login" hidden>
   <b>登录</b><label for="pw">密码</label><input id="pw" type="password" autocomplete="current-password" required>
   <button class="btn primary" id="go" type="submit">登录</button><p class="msg" id="lmsg" role="alert"></p>
@@ -280,6 +299,12 @@ th{font-size:12px;color:var(--muted);font-weight:600}td.n{text-align:right}
     <p class="toast" id="toast" role="status" hidden></p>
     <div id="list"></div>
   </section></section>
+  <!-- 每天回帖上限按项目（公司平台批 2，D-2）：GET / POST /api/reply-cap -->
+  <section class="mod" id="t-reply"><h2 class="mh">每天回帖上限<span class="sp"></span><span class="hint">每个项目一个数</span></h2>
+    <div class="card"><div class="tablewrap"><table><thead><tr><th>项目</th><th>每天上限</th><th>今天已回</th></tr></thead><tbody id="rc-rows"><tr><td colspan="3">正在读取…</td></tr></tbody></table></div>
+      <div class="pad"><button class="btn primary" id="rc-save" type="button">保存上限</button><p class="msg" id="rc-msg" role="status"></p>
+        <p class="hint">插件里"同意"和清单里"我回了"合起来算，按台湾日期每天重新数。某个项目到上限后，只有这个项目的"一键回复"变灰，别的项目照常。每个项目 1～50 条；没单独设过的项目用默认值。</p></div></div>
+  </section>
   <section class="mod" id="t-usage"><h2 class="mh">用量和限额</h2>
   <section id="v-usage">
     <div class="card"><div class="tablewrap"><table><thead><tr><th>模型</th><th>今天请求</th><th>今天 token（入 / 出）</th><th>每天上限</th><th>用量</th><th>状态</th><th>下次重置（台湾时间）</th></tr></thead><tbody id="u-rows"></tbody></table></div>
@@ -287,6 +312,11 @@ th{font-size:12px;color:var(--muted);font-weight:600}td.n{text-align:right}
         <button class="btn primary" id="u-save" type="button">保存上限</button><p class="msg" id="u-msg" role="status"></p>
         <p class="hint">Gemini 的真实免费额度 Google 不提供查询，这里是我们自己数的次数和 token；Google 说用完（429）时状态会标出来。到了我们设的上限，这个模型今天先跳过，换下一个。Gemini 按次数（1～10,000），Workers AI 按 neurons（1～9,500；免费额度 10,000，超过不让保存）。"今天"按各家的重置时间算。</p></div></div>
   </section></section>
+  <!-- 按项目看用量（公司平台批 2，D-3）：/api/usage 的 byProject；只记、不当限额 -->
+  <section class="mod" id="t-byproj"><h2 class="mh">按项目看用量<span class="sp"></span><span class="hint">今天 · 只看、不设上限</span></h2>
+    <div class="card"><div class="tablewrap"><table><thead><tr><th>项目</th><th>Gemini</th><th>Workers AI</th></tr></thead><tbody id="bp-rows"><tr><td colspan="3">正在读取…</td></tr></tbody></table></div>
+      <div class="pad"><p class="hint">"今天"和上面的用量和限额一样按各家的重置时间算。额度是所有项目一起用的，上限只在"用量和限额"里设。"平台自己"是设置页"测试 AI"这类平台自己发的请求。这一版上线以前没分项目（不回填），所以今天按项目加起来可能比上面的总数少。</p></div></div>
+  </section>
   <section class="mod" id="t-ext"><h2 class="mh">插件下载</h2>
   <section id="v-ext">
     <div class="card"><div class="pad">
@@ -324,16 +354,16 @@ async function call(path,body){const r=await fetch(path,{method:body?'POST':'GET
 let authed=false;
 function showLogin(m){authed=false;$('app').hidden=true;$('subs').hidden=true;$('nav1').hidden=true;$('logout').hidden=true;$('nav').hidden=true;$('extnav').hidden=true;$('conav').hidden=true;$('login').hidden=false;$('count').textContent='';$('lmsg').textContent=m||'';$('pw').focus();try{platformStop();}catch(e){}}
 // #app 由 route() 决定什么时候显示：工作台、项目页等第一次读到数据再显示（免得看到空模块），清单、用量、插件下载、公司总览马上显示
-function showApp(){authed=true;$('subs').hidden=false;$('nav1').hidden=false;$('logout').hidden=false;frameButtons();}
+function showApp(){authed=true;$('subs').hidden=false;$('nav1').hidden=false;$('logout').hidden=false;frameButtons();setTimeout(()=>{try{subHint();}catch(e){}},0);}
 $('login').addEventListener('submit',async(e)=>{e.preventDefault();const b=$('go');b.disabled=true;b.textContent='正在登录…';$('lmsg').textContent='';
   try{await call('/api/login',{password:$('pw').value});$('pw').value='';$('login').hidden=true;await load();route();}catch(err){$('lmsg').textContent=err.message;}finally{b.disabled=false;b.textContent='登录';}});
 $('logout').addEventListener('click',async()=>{await call('/api/logout',{}).catch(()=>{});showLogin('已登出');});
-const TITLES={list:'跟帖评论清单',usage:'用量和限额',ext:'插件下载',company:'公司',work:'工作台',forecast:'forecast'};
+const TITLES={list:'跟帖评论清单',usage:'用量和限额',reply:'每天回帖上限',ext:'插件下载',company:'公司',work:'工作台',forecast:'forecast'};
 // 外框路由（公司平台批 1）：#/<页>/<模块>；页 = work / forecast / tools / company；模块 id = 页的前缀 + 模块名（#/work/todo → w-todo）
 let page='';
-const PFX={work:'w-',forecast:'f-',tools:'t-',company:''}, TOOLV={queue:'list',usage:'usage',ext:'ext'};
+const PFX={work:'w-',forecast:'f-',tools:'t-',company:''}, TOOLV={queue:'list',usage:'usage',ext:'ext',reply:'reply',byproj:'usage'};
 function frameButtons(){const t=page==='tools'||page==='company';$('nav').hidden=!t;$('extnav').hidden=!t||view==='ext';$('conav').hidden=false;$('nav').textContent=view==='list'?'用量和限额 →':'← 跟帖评论清单';}
-function hashOf(){const m=/^#\\/([a-z]+)(?:\\/([a-z0-9-]+))?/.exec(location.hash);return m&&Object.prototype.hasOwnProperty.call(PFX,m[1])?{p:m[1],m:m[2]||''}:null;}
+function hashOf(){const m=/^#\\/([a-z]+)(?:\\/([a-z0-9-]+))?/.exec(location.hash);return m&&Object.hasOwn(PFX,m[1])?{p:m[1],m:m[2]||''}:null;}
 function route(){if(!authed)return;let h=hashOf();
   if(!h){history.replaceState(null,'',location.pathname+location.search+(location.pathname==='/queue'?'#/tools/queue':'#/work'));h=hashOf();}
   const prev=page;page=h.p;view=page==='tools'?(TOOLV[h.m]||'list'):page;
@@ -345,9 +375,10 @@ function route(){if(!authed)return;let h=hashOf();
   document.querySelectorAll('nav.sub a[data-s]').forEach(a=>a.setAttribute('aria-current',String(a.dataset.s===mod)));
   const t=TITLES[view]||TITLES[page];$('title').textContent=t;document.title=t+' · 公司平台';frameButtons();
   usageTimer(page==='tools');
-  if(page==='tools'){if(prev!==''&&prev!=='tools')load();else if(prev==='tools'&&view==='list')load();if(view==='usage'||prev!=='tools'){uEditing=false;loadUsage(true);}}
+  if(page==='tools'){if(prev!==''&&prev!=='tools')load();else if(prev==='tools'&&view==='list')load();if(view==='usage'||prev!=='tools'){uEditing=false;loadUsage(true);}if(view==='reply'||prev!=='tools')loadReply();}
   if(page==='company'){try{companyOpen();}catch(e){$('co-at').textContent='这一页出错了：'+e.message;}}
-  if(page==='work'||page==='forecast'){try{platformOpen(page,mod);}catch(e){}}else{try{platformStop();}catch(e){}}
+  // 批 2：在公共工具、公司总览刷新时，一级菜单上的待办数量也马上读出来（以前要切到工作台才有）
+  if(page==='work'||page==='forecast'){try{platformOpen(page,mod);}catch(e){}}else{try{platformStop();platformPeek();}catch(e){}}
   const el=mod&&$(mod);if(el&&!el.closest('[hidden]'))el.scrollIntoView({block:'start'});else if(prev!==page)window.scrollTo(0,0);}
 window.addEventListener('hashchange',route);
 document.querySelectorAll('nav.sub a[data-s], #nav1 a[data-p]').forEach(a=>a.addEventListener('click',()=>{if(a.getAttribute('href')===location.hash)setTimeout(route,0);}));
@@ -378,7 +409,8 @@ async function load(){
   showApp();render();
 }
 function render(){
-  const full=state.doneToday>=state.cap;
+  // 每天回帖上限按项目（D-2）：每条看它所在项目的"今天已回 / 上限"（state.caps）；老接口没有 caps 时用整体的
+  const fullOf=(p)=>{const c=state.caps&&state.caps[p];return c?c.doneToday>=c.cap:state.doneToday>=state.cap;};
   $('count').textContent='今天已回 '+state.doneToday+' / '+state.cap;
   const sel=$('f-prod'), cur=sel.value; sel.replaceChildren(Object.assign(document.createElement('option'),{value:'',textContent:'全部'}),...state.products.map(p=>Object.assign(document.createElement('option'),{value:p,textContent:PROD[p]||p})));sel.value=cur;
   $('total').textContent='共 '+state.total+' 条'+(state.total>state.items.length?'（只显示最近 '+state.items.length+' 条）':'');
@@ -406,7 +438,7 @@ function render(){
     const acts=document.createElement('div');acts.className='acts';
     if(filter==='pending'){
       const r=Object.assign(document.createElement('a'),{className:'btn primary',href:it.replyUrl,target:'_blank',rel:'noopener',textContent:'一键回复'});
-      if(full){r.setAttribute('aria-disabled','true');r.textContent='今天已到上限';}
+      if(fullOf(it.product)){r.setAttribute('aria-disabled','true');r.textContent='今天已到上限';}
       r.addEventListener('click',()=>toast('已打开回复窗口。发完回来点"我回了"。'));
       acts.append(r,mk(it,'done','我回了'),mk(it,'skip','跳过'));
     }else acts.append(mk(it,'pending','放回待回'));
@@ -438,7 +470,7 @@ $('bulk-yes').addEventListener('click',async()=>{const y=$('bulk-yes');y.disable
 let uTimer=null, uEditing=false;
 function uStamp(){$('u-at').textContent='更新于 '+tw(Date.now()).slice(11)+'（停在这一页时每 30 秒自动刷新）';}
 async function loadUsage(manual){const b=$('u-refresh');if(manual){b.disabled=true;b.textContent='正在刷新…';}
-  try{const rows=(await call('/api/usage')).rows;if(!uEditing||manual){usage=rows;renderUsage();}uStamp();if(manual)$('u-msg').textContent='';}
+  try{const j=await call('/api/usage');const rows=j.rows;if(!uEditing||manual){usage=rows;renderUsage();}renderByProject(j.byProject||[]);uStamp();if(manual)$('u-msg').textContent='';}
   catch(e){$('u-at').textContent='刷新失败：'+e.message+'（30 秒后再试）';}
   finally{if(manual){b.disabled=false;b.textContent='立即刷新';}}}
 function usageTimer(on){clearInterval(uTimer);uTimer=on?setInterval(()=>{if(page==='tools'&&document.visibilityState==='visible')loadUsage(false);},30000):null;}
@@ -453,6 +485,30 @@ function renderUsage(){const T=$('u-rows');T.replaceChildren();
     const st=document.createElement('td');st.append(Object.assign(document.createElement('span'),{className:'state'+(u.state==='ok'?'':' warn'),textContent:u.stateText}));tr.append(st);
     tr.append(Object.assign(document.createElement('td'),{textContent:tw(u.resetAt).slice(5,16)+(u.model==='workers-ai'?'（UTC 0 点）':'（美西 0 点）')}));
     T.append(tr);});}
+/** 按项目看用量（D-3）：今天每个项目的 Gemini 次数和 Workers AI neurons */
+function renderByProject(list){const T=$('bp-rows');T.replaceChildren();
+  if(!list.length){const tr=document.createElement('tr');tr.append(Object.assign(document.createElement('td'),{colSpan:3,textContent:'今天还没有按项目记下的用量'}));T.append(tr);return;}
+  list.forEach(x=>{const tr=document.createElement('tr');const cell=(t,label,cls)=>{const c=Object.assign(document.createElement('td'),{textContent:t});if(label)c.dataset.label=label;if(cls)c.className=cls;tr.append(c);};
+    cell(x.project==='_platform'?'平台自己（"测试 AI"）':(PROD[x.project]?x.project+'（'+PROD[x.project]+'）':x.project));cell(x.gemini.toLocaleString()+' 次','Gemini','n');cell(Math.round(x.workersAi).toLocaleString()+' neurons','Workers AI','n');T.append(tr);});}
+// 每天回帖上限按项目（公司平台批 2，D-2）：GET / POST /api/reply-cap；1～50 的整数，前后端同一个范围
+let replyRows=[];
+async function loadReply(){try{replyRows=(await call('/api/reply-cap')).rows;renderReply();}catch(e){if(e.message!=='请重新登录'){const m=$('rc-msg');m.className='msg';m.textContent='读不到上限：'+e.message;}}}
+function renderReply(){const T=$('rc-rows');T.replaceChildren();
+  replyRows.forEach(r=>{const tr=document.createElement('tr');tr.append(Object.assign(document.createElement('td'),{textContent:PROD[r.project]?r.project+'（'+PROD[r.project]+'）':r.project}));
+    const c=document.createElement('td');c.dataset.label='每天上限';const inp=Object.assign(document.createElement('input'),{className:'cap-in',id:'rc-'+r.project,value:String(r.cap),inputMode:'numeric'});inp.setAttribute('aria-label',r.project+' 每天上限');c.append(inp,' 条');tr.append(c);
+    const d=document.createElement('td');d.dataset.label='今天已回';d.textContent=r.doneToday+' 条'+(r.doneToday>=r.cap?'（到上限了）':'');tr.append(d);T.append(tr);});}
+$('rc-save').addEventListener('click',async()=>{const b=$('rc-save'),m=$('rc-msg');const caps={},bad=[];
+  replyRows.forEach(r=>{const el=$('rc-'+r.project);const v=String(el.value).trim();const n=Number(v);const ok=/^[0-9]+$/.test(v)&&n>=1&&n<=50;el.setAttribute('aria-invalid',String(!ok));if(!ok)bad.push(r.project+' 要在 1～50 之间（整数）');caps[r.project]=n;});
+  if(bad.length){m.className='msg';m.textContent='没保存：'+bad.join('；');return;}
+  b.disabled=true;b.textContent='正在保存…';m.textContent='';
+  try{replyRows=(await call('/api/reply-cap',{caps})).rows;renderReply();m.className='msg ok';m.textContent='✓ 已保存，马上生效';load();}catch(e){m.className='msg';m.textContent=e.message;}finally{b.disabled=false;b.textContent='保存上限';}});
+// 两层菜单固定在屏幕顶部（批 2，Amos 2026-11-02）：量出菜单高度，跳到模块时模块顶端停在菜单下面
+function barsH(){const h=Math.ceil($('bars').getBoundingClientRect().height);document.documentElement.style.setProperty('--bars-h',h+'px');}
+try{new ResizeObserver(barsH).observe($('bars'));}catch(e){window.addEventListener('resize',barsH);}barsH();
+/** 二级菜单能往右横滑时加 .more（右边缘渐隐），滑到底就去掉 */
+function subHint(){document.querySelectorAll('.sub .in').forEach(x=>x.classList.toggle('more',x.scrollWidth>x.clientWidth+1&&x.scrollLeft+x.clientWidth<x.scrollWidth-1));}
+document.querySelectorAll('.sub .in').forEach(x=>x.addEventListener('scroll',subHint,{passive:true}));window.addEventListener('resize',subHint);
+window.addEventListener('hashchange',()=>setTimeout(subHint,0));setTimeout(subHint,0);
 $('u-save').addEventListener('click',async()=>{const b=$('u-save'),m=$('u-msg');const caps={};const bad=[];
   usage.forEach((u,i)=>{const el=$('cap-'+i);const v=Number(el.value);const ok=Number.isInteger(v)&&v>=1&&v<=u.max;el.setAttribute('aria-invalid',String(!ok));if(!ok)bad.push(u.label+' 要在 1～'+u.max.toLocaleString()+' 之间');caps[u.model]=v;});
   if(bad.length){m.className='msg';m.textContent='没保存：'+bad.join('；');return;}
@@ -463,7 +519,7 @@ call(query()).then(j=>{state=j;showApp();render();route();}).catch(()=>{});
 <script>
 // 公司页（运营仪表盘）：整段 try/catch；这里只定义函数，打开"公司"页（go('company')）时才读数据、渲染，出错只影响这一页
 try{
-const CO={data:null,latest:null,done:new Map(),week:''};
+const CO={data:null,latest:null,done:new Map(),week:'',open:'',more:false};
 const SRCN={agents:'agents','new-forecast':'new-forecast',marketing:'Marketing'};
 const KINDN={projects:'项目版图',status:'状态卡',handoff:'交接记录',todo:'Amos 待办',weekly:'周报',learning:'岗位学习',prs:'要你决定的 PR',ci:'自动检查'};
 const ROLES=['产品','市场','研发','测试','运维安全','运维','安全','经营'];
@@ -481,11 +537,15 @@ function pill(text,cls){return el('span','pill '+cls,text);}
 function table(heads,rows,widths,cls){const w=el('div','tablewrap');const t=el('table','stack'+(cls?' '+cls:''));if(widths){const cg=el('colgroup');widths.forEach(x=>{const c=el('col');c.style.width=x;cg.append(c);});t.append(cg);}const th=el('thead');const tr=el('tr');heads.forEach(h=>tr.append(el('th',null,h)));th.append(tr);const tb=el('tbody');rows.forEach(r=>tb.append(r));t.append(th,tb);w.append(t);return w;}
 function td(label,content,cls){const c=el('td',cls||null);if(label)c.dataset.label=label;(Array.isArray(content)?content:[content]).forEach(x=>{if(x==null||x==='')return;c.append(x);});if(!c.childNodes.length)c.append('—');return c;}
 const lines=(parts)=>{const out=[];parts.filter(x=>x!=null&&x!=='').forEach((x,i)=>{if(i)out.push(el('br'));out.push(x);});return out;};
-function needItems(){const out=[];const add=(o)=>out.push(o);
-  blocks('todo').filter(b=>b.payload).forEach(b=>(b.payload.items||[]).filter(it=>it.type==='confirm').forEach((it,i)=>add({key:'todo:'+b.key+':'+(it.id||'c'+i),who:'决定'+(it.level?' · '+it.level:''),id:it.id,text:it.text,hint:it.hint,link:it.link,linkText:it.link_text})));
-  blocks('prs').filter(b=>b.payload).forEach(b=>(b.payload.items||[]).forEach(it=>add({key:'pr:'+b.source+':'+it.number,who:'PR 要你决定',id:'#'+it.number,text:it.title,hint:(SRCN[b.source]||b.source)+(typeof it.days==='number'?' · 开了 '+it.days+' 天':''),link:it.url,linkText:'看 PR'})));
-  blocks('status').filter(b=>b.payload).forEach(b=>(b.payload.waiting||[]).forEach(it=>add({key:'wait:'+b.key+':'+(it.id||String(it.text||'').slice(0,80)),who:'在等你',id:it.id,text:it.text,hint:(b.payload.product||b.key)+(it.hint?' · '+it.hint:''),link:it.link||b.payload.link,linkText:it.link?'打开':'看状态卡'})));
-  ['action','report'].forEach(t=>blocks('todo').filter(b=>b.payload).forEach(b=>(b.payload.items||[]).filter(it=>it.type===t).forEach((it,i)=>add({key:'todo:'+b.key+':'+(it.id||t[0]+i),who:t==='action'?'操作':'回报',id:it.id,text:it.text,hint:it.hint,link:it.link,linkText:it.link_text}))));
+function needItems(){const out=[];
+  // 批 2 审查 R5：有正文的（只认 agents 推来的）点了在本页展开，同工作台；外部平台的照旧外链。外部人提交的 PR 只给"在 GitHub 打开"
+  const add=(it,b,o)=>{if(b.kind==='prs'&&it.external){o.who='外部提交';o.hint='给你看一下 · '+(SRCN[b.source]||b.source);o.linkText='在 GitHub 打开';out.push(o);return;}
+    const body=b.source==='agents'&&typeof it.body==='string'?it.body:'';const qs=b.source==='agents'&&Array.isArray(it.questions)?it.questions.filter(q=>q&&q.q):[];
+    if((body.trim()||qs.length)&&(!o.link||/^https:\\/\\/github\\.com\\//.test(o.link)))o.detail={body,cut:it.body_cut===true,qs,href:o.link||''};out.push(o);};
+  blocks('todo').filter(b=>b.payload).forEach(b=>(b.payload.items||[]).filter(it=>it.type==='confirm').forEach((it,i)=>add(it,b,{key:'todo:'+b.key+':'+(it.id||'c'+i),who:'决定'+(it.level?' · '+it.level:''),id:it.id,text:it.text,hint:it.hint,link:it.link,linkText:it.link_text})));
+  blocks('prs').filter(b=>b.payload).forEach(b=>(b.payload.items||[]).forEach(it=>add(it,b,{key:'pr:'+b.source+':'+it.number,who:'PR 要你决定',id:'#'+it.number,text:it.title,hint:(SRCN[b.source]||b.source)+(typeof it.days==='number'?' · 开了 '+it.days+' 天':''),link:it.url,linkText:'看 PR'})));
+  blocks('status').filter(b=>b.payload).forEach(b=>(b.payload.waiting||[]).forEach(it=>add(it,b,{key:'wait:'+b.key+':'+(it.id||String(it.text||'').slice(0,80)),who:'在等你',id:it.id,text:it.text,hint:(b.payload.product||b.key)+(it.hint?' · '+it.hint:''),link:it.link||b.payload.link,linkText:it.link?'打开':'看状态卡'})));
+  ['action','report'].forEach(t=>blocks('todo').filter(b=>b.payload).forEach(b=>(b.payload.items||[]).filter(it=>it.type===t).forEach((it,i)=>add(it,b,{key:'todo:'+b.key+':'+(it.id||t[0]+i),who:t==='action'?'操作':'回报',id:it.id,text:it.text,hint:it.hint,link:it.link,linkText:it.link_text}))));
   return out;}
 function heroTiles(need){const h=el('section','hero');h.setAttribute('aria-label','摘要');
   const tile=(n,l,cls)=>{const t=el('div','tile'+(cls?' '+cls:''));t.append(el('div','n',n),el('div','l',l));h.append(t);};
@@ -502,9 +562,20 @@ function needCard(need){const bs=[...blocks('todo'),...blocks('prs'),...blocks('
   const ul=el('ul','list');
   need.forEach(it=>{const at=CO.done.get(it.key);const li=el('li',at?'done':'');li.dataset.key=it.key;li.append(el('span','who',it.who));
     const w=el('span','what');if(it.id)w.append(el('b',null,it.id),' ');w.append(it.text||'');if(it.hint)w.append(el('br'),el('span','hint',it.hint));if(at)w.append(el('br'),el('span','hint co-done','✓ 已做 '+tw(at)));li.append(w);
-    const act=el('span','act');if(it.link){const a=el('a','btn',it.linkText||'打开');a.href=it.link;a.target='_blank';a.rel='noopener';act.append(a);}
+    const act=el('span','act');
+    if(it.detail){const on=CO.open===it.key;const d=el('button','btn',(it.linkText||'看说明')+(on?' ↑':' ↓'));d.type='button';d.setAttribute('aria-expanded',String(on));d.addEventListener('click',()=>{CO.open=CO.open===it.key?'':it.key;renderCompany();});act.append(d);if(on)w.append(coDetail(it));}
+    else if(it.link){const a=el('a','btn',it.linkText||'打开');a.href=it.link;a.target='_blank';a.rel='noopener';act.append(a);}
     const b=el('button','btn',at?'取消':'我做了');b.type='button';b.addEventListener('click',()=>markDone(it,!at,b));act.append(b);li.append(act);ul.append(li);});
   c.sec.append(ul);return c.sec;}
+/** 公司总览的正文（同工作台 detailEl）：全部 textContent；长的先折叠；被截断写明；问题表每条带建议；小链接"在 GitHub 打开" */
+function coDetail(it){const D=it.detail;const d=el('div','detail');
+  if(D.body.trim()){const t=el('div','detail-text'+(CO.more?'':' fold'),D.body);d.append(t);const m=el('button','btn',CO.more?'收起':'展开全文');m.type='button';m.dataset.more='1';m.setAttribute('aria-expanded',String(!!CO.more));
+    m.addEventListener('click',()=>{CO.more=!CO.more;t.classList.toggle('fold',!CO.more);m.setAttribute('aria-expanded',String(CO.more));m.textContent=CO.more?'收起':'展开全文';});d.append(m);
+    if(!CO.more)requestAnimationFrame(()=>{if(t.isConnected&&t.scrollHeight<=t.clientHeight+2){t.classList.remove('fold');m.hidden=true;}});}
+  if(D.cut)d.append(el('p','hint','已截断：正文太长，这里只显示前面一部分。'));
+  if(D.qs.length){d.append(el('b',null,'要你决定的问题（'+D.qs.length+'）'));const ul=el('ul','qs');D.qs.forEach(q=>{const li=el('li');li.append(el('span',null,q.q));if(q.advice)li.append(el('br'),el('span','hint','建议：'+q.advice));ul.append(li);});d.append(ul);}
+  if(D.href){const a=el('a','gh',/^https:\\/\\/github\\.com\\//.test(D.href)?'在 GitHub 打开':'打开原文');a.href=D.href;a.target='_blank';a.rel='noopener';d.append(a);}
+  return d;}
 async function markDone(it,done,b){const label=b.textContent;b.disabled=true;b.textContent='处理中…';const m=$('co-msg');m.className='msg';m.textContent='';
   try{const r=await call('/api/company/done',{key:it.key,done});if(done)CO.done.set(it.key,r.at);else CO.done.delete(it.key);renderCompany();
     const m2=$('co-msg');m2.className='msg ok';m2.textContent=done?'✓ 已记下：'+(it.id?it.id+' ':'')+'做完了（'+tw(r.at)+'）':'已取消"我做了"：'+(it.id||it.text||'');}
@@ -584,7 +655,7 @@ $('co-refresh').addEventListener('click',()=>loadCompany(CO.week));
 // 时间一律用浏览器的 Date.now()（台湾时间显示）；停在这两页时每 30 秒重读一次，切走停、切回马上读。
 try{
 const CFG=${JSON.stringify(PLATFORM_CONFIG)};
-const PL={data:null,qAll:null,qProj:{},done:new Map(),reports:[],page:'',scroll:'',timer:null,busy:false,again:false,err:'',at:0,want:new Map(),copy:null,open:new Set(),vals:{}};
+const PL={data:null,qAll:null,qProj:{},done:new Map(),reports:[],page:'',scroll:'',timer:null,busy:false,again:false,err:'',at:0,want:new Map(),copy:null,open:new Set(),vals:{},det:new Set(),more:new Set(),peek:false,retry:0};
 const HR=3600e3,DY=864e5,WD='日一二三四五六';
 const SRC={agents:'agents','new-forecast':'new-forecast',marketing:'Marketing'};
 const pe=(tag,cls,text)=>{const e=document.createElement(tag);if(cls)e.className=cls;if(text!=null)e.textContent=String(text);return e;};
@@ -606,6 +677,11 @@ const repoProj=(src)=>CFG.REPO_PROJECT[src]||'公司';
 const packKey=(p)=>'pack:'+p.project+':'+p.date;
 const stepKey=(p,n)=>'step:'+p.project+':'+p.date+':'+n;
 const isDone=(key)=>PL.want.has(key)?PL.want.get(key):PL.done.has(key);
+// 批 2：待办正文在当前页面展开（Amos 2026-11-02："看待办 加载的不就是文字吗"）。有 body / questions、链接不是外部平台的 → 主按钮在页面里展开正文；
+// 要到外部平台（X、Threads 等）操作的照旧是外链。正文只用 textContent 显示，服务端已按白名单和 4000 字上限清洗过。
+const external=(u)=>!!u&&!/^https:\\/\\/github\\.com\\//.test(u);
+function withDetail(o,it,href){const body=typeof it.body==='string'?it.body:'';const qs=Array.isArray(it.questions)?it.questions.filter((q)=>q&&q.q):[];
+  if((body.trim()||qs.length)&&!external(href))o.detail={body,cut:it.body_cut===true,qs,href:href||''};return o;}
 function formFor(text){for(const f of CFG.REPORT_FORMS)if(new RegExp(f.match).test(text||''))return f.fields;return null;}
 /** 全部待办（各来源合在一起）：{key, proj, title, why, due, urgent, href/btn 或 form 或 go} */
 function items(){const out=[];const pj=projects();const projOf=(k)=>pj.indexOf(k)>=0?k:'公司';
@@ -613,10 +689,14 @@ function items(){const out=[];const pj=projects();const projOf=(k)=>pj.indexOf(k
     out.push({key:'ci:'+b.source+':'+(b.key||'')+':'+(p.sha||p.at||b.source_at),urgent:true,proj:repoProj(b.source),title:(SRC[b.source]||b.source)+(b.key?' · '+b.key:'')+'：有一项改动没通过自动检查',why:'没通过前不能合并，团队会先修；你看一眼就行。'+(p.note?'（'+p.note+'）':''),href:p.url,btn:'看哪里出错'});});
   okBlocks('todo').forEach((b)=>{const n={};(b.payload.items||[]).forEach((it)=>{const t=it.type||'action';n[t]=n[t]==null?0:n[t]+1;
     const o={key:'todo:'+b.key+':'+(it.id||(t==='confirm'?'c':t.charAt(0))+n[t]),proj:projOf(b.key),title:it.text||'',why:[t==='confirm'?'要你决定'+(it.level?'（'+it.level+'）':''):'',it.hint||''].filter(Boolean).join(' · '),due:typeof it.due==='number'?it.due:null};
-    const f=t==='report'?formFor(it.text):null;if(f){o.form=f;o.btn='去填数字';}else if(it.link){o.href=it.link;o.btn=it.link_text||'打开';}out.push(o);});});
+    const f=t==='report'?formFor(it.text):null;if(f){o.form=f;o.btn='去填数字';}else{if(it.link){o.href=it.link;o.btn=it.link_text||'打开';}withDetail(o,it,it.link);if(o.detail&&!o.btn)o.btn='看说明';}out.push(o);});});
   okBlocks('prs').forEach((b)=>(b.payload.items||[]).forEach((it)=>{const look=it.tag==='look';
-    out.push({key:'pr:'+b.source+':'+it.number,proj:repoProj(b.source),title:it.title||'',why:(look?'只要看，不用回；你不反对的话开 PR 后 48 小时自动生效。':'要你决定：看完在 PR 里回复。')+'（'+(SRC[b.source]||b.source)+' #'+it.number+'）',due:look&&typeof it.opened_at==='number'?it.opened_at+48*HR:null,href:it.url,btn:look?'去看这份改动':'看 PR'});}));
-  okBlocks('status').forEach((b)=>(b.payload.waiting||[]).forEach((it)=>out.push({key:'wait:'+b.key+':'+(it.id||String(it.text||'').slice(0,80)),proj:projOf(b.key),title:it.text||'',why:'状态卡"在等谁"'+(it.hint?' · '+it.hint:''),due:null,href:it.link||b.payload.link,btn:it.link?'打开':'看状态卡'})));
+    // 批 2 新口径（Amos 2026-11-02："只有agents才是公司……如果真有人提交了，只需要给我看就好"）：外部人提交的单独一条，只给"在GitHub 打开"，不当"要你决定"
+    if(it.external){out.push({key:'pr:'+b.source+':'+it.number,proj:repoProj(b.source),title:it.title||'',why:'外部提交，给你看一下（'+(SRC[b.source]||b.source)+' #'+it.number+'）',due:null,gh:it.url});return;}
+    // 正文只认 agents：代码仓库推来的 PR 只显示标题和链接（服务端也不存，这里再挡一次）
+    const src=b.source==='agents'?it:{};
+    out.push(withDetail({key:'pr:'+b.source+':'+it.number,proj:repoProj(b.source),title:it.title||'',why:(look?'只要看，不用回；你不反对的话开 PR 后 48 小时自动生效。':'要你决定：看完在 Claude 窗口里回复。')+'（'+(SRC[b.source]||b.source)+' #'+it.number+'）',due:look&&typeof it.opened_at==='number'?it.opened_at+48*HR:null,href:it.url,btn:look?'去看这份改动':'看 PR'},src,it.url));}));
+  okBlocks('status').forEach((b)=>(b.payload.waiting||[]).forEach((it)=>out.push(withDetail({key:'wait:'+b.key+':'+(it.id||String(it.text||'').slice(0,80)),proj:projOf(b.key),title:it.text||'',why:'状态卡"在等谁"'+(it.hint?' · '+it.hint:''),due:null,href:it.link||b.payload.link,btn:it.link?'打开':'看状态卡'},it,it.link||b.payload.link))));
   okBlocks('pack').forEach((b)=>{const p=b.payload;if(!p.project||!p.date)return;const first=(p.posts||[])[0];
     const o={key:packKey(p),proj:p.project,title:'照操作指引做完这周的 '+(p.steps||[]).length+' 步（周包 '+p.date.slice(5).replace('-','/')+'）',why:(first?'第 1 条帖子要在 '+(first.at_text||'')+' 发出。':'')+'跟着指引一步步做，每步做完打勾；都勾了这件自动打勾。',due:typeof p.due==='number'?p.due:null};
     if(CFG.PROJECT_PAGES.indexOf(p.project)>=0){o.go='#/'+p.project+'/guide';o.btn='打开分步指引';}else if(p.link){o.href=p.link;o.btn='看周包';}out.push(o);});
@@ -642,8 +722,28 @@ function todoLi(x,first,now){const l=lvl(x,now);const li=pe('li','todo '+l+(firs
   body.append(due,pe('div','ttl',x.title));if(x.why)body.append(pe('p','why',x.why));
   const go=pe('div','go');
   if(x.form){const f=formEl(x);body.append(f);const b=pe('button','btn primary',x.btn+' →');b.type='button';b.dataset.act=x.key;b.addEventListener('click',()=>{f.hidden=false;PL.open.add(x.key);const i=f.querySelector('input');if(i)i.focus();});go.append(b);}
-  else if(x.go)go.append(link(x.btn+' →',x.go,'btn primary'));else if(x.href)go.append(link(x.btn+' →',x.href,'btn primary'));
+  else if(x.go)go.append(link(x.btn+' →',x.go,'btn primary'));
+  else if(x.gh)go.append(link('在 GitHub 打开',x.gh,'gh'));
+  else if(x.detail){const on=PL.det.has(x.key);const b=pe('button','btn primary',x.btn+(on?' ↑':' ↓'));b.type='button';b.setAttribute('aria-expanded',String(on));
+    b.dataset.label=x.btn;
+    b.addEventListener('click',()=>{const open=!PL.det.has(x.key);
+      // 一次只展开一条：先收起别的（同一件待办在工作台、项目页各有一份，都收起）
+      if(open){PL.det.clear();document.querySelectorAll('.plat li.todo .detail').forEach((d)=>{const ob=d.closest('li.todo').querySelector('.go button[aria-expanded]');if(ob){ob.setAttribute('aria-expanded','false');ob.textContent=ob.dataset.label+' ↓';}d.remove();});PL.det.add(x.key);}
+      else{PL.det.delete(x.key);const d=body.querySelector('.detail');if(d)d.remove();}
+      if(open)body.append(detailEl(x));b.setAttribute('aria-expanded',String(open));b.textContent=x.btn+(open?' ↑':' ↓');});
+    go.append(b);if(on)body.append(detailEl(x));}
+  else if(x.href)go.append(link(x.btn+' →',x.href,'btn primary'));
   li.append(t,body,go);return li;}
+/** 展开的正文：正文（长的先折叠，"展开全文"）、"已截断"、要你决定的问题表（每条带建议）、小链接"在 GitHub 打开"。全部 textContent */
+function detailEl(x){const D=x.detail;const d=pe('div','detail');
+  if(D.body.trim()){const t=pe('div','detail-text'+(PL.more.has(x.key)?'':' fold'),D.body);d.append(t);
+    const more=pe('button','btn small',PL.more.has(x.key)?'收起':'展开全文');more.type='button';more.dataset.more='1';more.setAttribute('aria-expanded',String(PL.more.has(x.key)));
+    more.addEventListener('click',()=>{const open=t.classList.contains('fold');t.classList.toggle('fold',!open);if(open)PL.more.add(x.key);else PL.more.delete(x.key);more.setAttribute('aria-expanded',String(open));more.textContent=open?'收起':'展开全文';});
+    d.append(more);if(!PL.more.has(x.key))requestAnimationFrame(()=>{if(t.isConnected&&t.scrollHeight<=t.clientHeight+2){t.classList.remove('fold');more.hidden=true;}});}
+  if(D.cut)d.append(pe('p','cutnote','已截断：正文太长，这里只显示前面一部分'+(D.href?'，全文点下面的链接看':'')+'。'));
+  if(D.qs.length){d.append(pe('b',null,'要你决定的问题（'+D.qs.length+'）'));const ul=pe('ul','qs');D.qs.forEach((q)=>{const li=pe('li');li.append(pe('span',null,q.q));if(q.advice)li.append(pe('br'),pe('span','hint','建议：'+q.advice));ul.append(li);});d.append(ul);}
+  if(D.href)d.append(link(/^https:\\/\\/github\\.com\\//.test(D.href)?'在 GitHub 打开':'打开原文',D.href,'gh'));
+  return d;}
 function formEl(x){const f=pe('div','form');f.hidden=!PL.open.has(x.key);const ins=x.form.map((name)=>{const l=pe('label',null,name+(CFG.REPORT_FIELDS[name]&&CFG.REPORT_FIELDS[name].max?'（0～'+CFG.REPORT_FIELDS[name].max+'）':'')+' ');const i=pe('input');i.inputMode='numeric';i.dataset.name=name;i.placeholder='不知道填 0';
     i.value=(PL.vals[x.key]||{})[name]||'';i.addEventListener('input',()=>{(PL.vals[x.key]=PL.vals[x.key]||{})[name]=i.value;});l.append(i);f.append(l);return i;});
   const b=pe('button','btn small primary','保存');b.type='button';const m=pe('span','msg');m.setAttribute('role','status');f.append(b,m);
@@ -679,7 +779,9 @@ function renderWork(all,now){const open=fillList('w-todos','w-donelist','w-todo-
   const h=$('hero');h.replaceChildren(pe('p','k','你现在最该做的一件事'));
   if(!open.length){h.className='hero calm';h.append(pe('p','one','现在没事要做'),pe('p','why','有新的事会出现在这里。团队在做的事可以往下看。'));}
   else{const x=open[0];h.className='hero';const w=pe('div','when');w.append(badge(x,now),pe('span',null,dueText(x)));h.append(pe('p','one',x.title),w);if(x.why)h.append(pe('p','why',x.why));
-    const row=pe('div','row');if(x.form)row.append(link(x.btn+' →','#/work/todo','btn primary big'));else if(x.go)row.append(link(x.btn+' →',x.go,'btn primary big'));else if(x.href)row.append(link(x.btn+' →',x.href,'btn primary big'));
+    const row=pe('div','row');if(x.form)row.append(link(x.btn+' →','#/work/todo','btn primary big'));else if(x.go)row.append(link(x.btn+' →',x.go,'btn primary big'));
+    else if(x.gh)row.append(link('在 GitHub 打开',x.gh,'btn big'));
+    else if(x.detail){const a=link(x.btn+' ↓','#/work/todo','btn primary big');a.addEventListener('click',()=>{PL.det.clear();PL.det.add(x.key);setTimeout(renderAll,0);});row.append(a);}else if(x.href)row.append(link(x.btn+' →',x.href,'btn primary big'));
     if(open.length>1)row.append(link('做完了？后面还有 '+(open.length-1)+' 件，已经按截止时间排好 ↓','#/work/todo','sec'));h.append(row);}
   const g=$('w-glance');g.replaceChildren();const tile=(n,l,href,cls)=>{const a=href?link('',href,'gl'+(cls?' '+cls:'')):pe('div','gl'+(cls?' '+cls:''));a.append(pe('div','n',n),pe('div','l',l));g.append(a);};
   tile(String(open.length),'件事等你处理','#/work/todo',open.length?'red':'');
@@ -753,7 +855,7 @@ function renderCard(pj){const b=okBlocks('status').find((x)=>x.key===pj);const B
   if(p.link)pd.append(link('看状态卡全文',p.link,'btn small'));out.push(pd);B.replaceChildren(...out);}
 function renderTools(pj){const q=PL.qProj[pj];const B=$('f-tools-body');const a=pe('div','toolcard');a.append(pe('h3',null,'副驾驶 · 跟帖评论清单'));
   a.append(pe('p',null,q?'等你回 '+q.total+' 条 · 今天已回 '+q.doneToday+' / '+q.cap:'清单条数暂时读不到'));const r=pe('div','row');r.append(link('去跟帖评论清单 →','#/tools/queue','btn primary'));a.append(r);
-  const u=pe('div','toolcard');u.append(pe('h3',null,'AI 用量'),pe('p','hint','额度是所有项目一起用的；按项目分开记要等公共工具那一批上线。'));const r2=pe('div','row');r2.append(link('去看用量和限额 →','#/tools/usage','btn'));u.append(r2);B.replaceChildren(a,u);}
+  const u=pe('div','toolcard');u.append(pe('h3',null,'AI 用量'),pe('p','hint','额度是所有项目一起用的；每个项目今天各用了多少，看"按项目看用量"。'));const r2=pe('div','row');r2.append(link('按项目看用量 →','#/tools/byproj','btn'),link('用量和限额 →','#/tools/usage','btn'));u.append(r2);B.replaceChildren(a,u);}
 function renderHandoff(pj){const hs=okBlocks('handoff').filter((b)=>b.key.indexOf(pj+'/')===0).sort((a,b)=>String(b.payload.date||'').localeCompare(String(a.payload.date||''))||b.source_at-a.source_at);const B=$('f-handoff-body');
   if(!hs.length){B.replaceChildren(emptyP('还没有 '+pj+' 的交接记录'));return;}const ul=pe('ul','hand');
   hs.forEach((b)=>{const p=b.payload;const li=pe('li');const d=pe('div');d.append(pe('div','hint',(p.date||'')+' · '+(p.role||b.key.split('/').pop())),pe('div',null,p.done||''));if(p.next)d.append(pe('div','hint','下一步：'+p.next));li.append(d);
@@ -769,16 +871,21 @@ async function getJ(u){const r=await fetch(u,{credentials:'same-origin'});if(r.s
 async function refresh(){if(PL.busy){PL.again=true;return;}PL.busy=true;
   try{const [c,qa,qp]=await Promise.all([getJ('/api/company'),getJ('/api/queue?status=pending').catch(()=>null),getJ('/api/queue?status=pending&product=forecast').catch(()=>null)]);
     PL.data=c;PL.done=new Map((c.done||[]).map((x)=>[x.key,x.at]));PL.reports=c.reports||[];PL.qAll=qa;PL.qProj.forecast=qp;PL.err='';PL.at=Date.now();}
-  catch(e){if(e.message==='请重新登录'){PL.busy=false;return;}PL.err='暂时读不到最新情况：'+e.message+'（30 秒后自动再试）';if(!PL.data)PL.data={blocks:[],done:[],reports:[],weekly:null};}
+  catch(e){if(e.message==='请重新登录'){PL.busy=false;return;}PL.err='暂时读不到最新情况：'+e.message+'（过一会儿自动再试）';if(!PL.data)PL.data={blocks:[],done:[],reports:[],weekly:null};
+    // 读取失败：5 秒后先重试一次，之后照 30 秒一次（R10）
+    clearTimeout(PL.retry);PL.retry=setTimeout(()=>{if(PL.page||PL.peek)refresh();},5000);}
   finally{PL.busy=false;}
   renderAll();if(PL.again){PL.again=false;refresh();}}
-function tickTimer(){clearInterval(PL.timer);PL.timer=setInterval(()=>{if(PL.page&&document.visibilityState==='visible')refresh();},30000);}
-document.addEventListener('visibilitychange',()=>{if(PL.page&&document.visibilityState==='visible')refresh();});
-var platformOpen=function(p,mod){const changed=PL.page!==p;PL.page=p;if(!PL.timer)tickTimer();
+// 批 2 审查 R10：停在工作台、项目页，或者停在公共工具、公司总览（只为一级菜单上的数字，PL.peek）时，都每 30 秒重读一次
+function tickTimer(){clearInterval(PL.timer);PL.timer=setInterval(()=>{if((PL.page||PL.peek)&&document.visibilityState==='visible')refresh();},30000);}
+document.addEventListener('visibilitychange',()=>{if((PL.page||PL.peek)&&document.visibilityState==='visible')refresh();});
+var platformOpen=function(p,mod){const changed=PL.page!==p;PL.page=p;PL.peek=false;if(!PL.timer)tickTimer();
   if(!PL.data||changed||Date.now()-PL.at>30000){PL.scroll=mod||'';refresh();}};
-var platformStop=function(){PL.page='';};
+var platformStop=function(){PL.page='';PL.peek=false;};
+/** 停在公共工具、公司总览时：还没读过就读一次，让一级菜单上的待办数量马上显示（批 1 问题，Amos 2026-11-02） */
+var platformPeek=function(){PL.peek=true;if(!PL.timer)tickTimer();if(!PL.data&&!PL.busy)refresh();};
 /** 第一次读到数据之前，工作台、项目页先不显示（免得看到空的模块） */
 var platformReady=function(){return !!PL.data;};
-}catch(e){var platformReady=function(){return true;};var platformOpen=function(){['w-err','f-err'].forEach((id)=>{const x=document.getElementById(id);if(x){x.hidden=false;x.textContent='这一页出错了：'+e.message;}});};var platformStop=function(){};}
+}catch(e){var platformReady=function(){return true;};var platformOpen=function(){['w-err','f-err'].forEach((id)=>{const x=document.getElementById(id);if(x){x.hidden=false;x.textContent='这一页出错了：'+e.message;}});};var platformStop=function(){};var platformPeek=function(){};}
 </script>
 </body></html>`;
