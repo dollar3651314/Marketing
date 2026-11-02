@@ -126,6 +126,12 @@ const badges = (page) => page.evaluate(() => {
   const r = (id) => { const e = document.getElementById(id); return e && !e.hidden && e.offsetWidth > 0 && /^\d+$/.test(e.textContent.trim()) ? Number(e.textContent.trim()) : null; };
   return { work: r('c-work'), forecast: r('c-forecast') };
 });
+/** 工作台"全部待办"按项目分组后默认收起：点"全部展开"（2026-11-02） */
+async function openGroups(page) {
+  if (!(await page.locator('#w-todos details.tgrp:not([open])').count())) return;
+  await page.click('#w-todo-all', { timeout: WAIT });
+  await page.waitForFunction(() => ![...document.querySelectorAll('#w-todos details.tgrp')].some((d) => !d.open), null, { timeout: WAIT });
+}
 const todayOf = (page) => page.evaluate(() => { const m = /今天已回\s*(\d+)\s*\/\s*(\d+)/.exec(document.body.innerText); return m ? [Number(m[1]), Number(m[2])] : null; });
 const item = (page, author) => page.locator('#list .item', { has: page.locator('.who a', { hasText: author }) });
 /**
@@ -169,7 +175,7 @@ try {
       await login(page, '/#/work');
       await waitFor(page, '#w-todos li.todo');
       const ref = await badges(page);
-      await page.click('nav.nav1 a[data-p="forecast"]', { timeout: WAIT });
+      await page.click('nav.nav1 a[data-proj="forecast"]', { timeout: WAIT });
       await waitFor(page, '#f-todos li.todo');
       ref.forecast = (await badges(page)).forecast;
       check(`${width} 宽：切到工作台、forecast 后看到的数量（工作台 3、forecast 2）`, same(ref, { work: 3, forecast: 2 }), ref);
@@ -187,6 +193,7 @@ try {
       await page.click('nav.nav1 a[data-p="work"]', { timeout: WAIT });
       await waitFor(page, '#w-todos li.todo');
       const w = (await badges(page)).work;
+      await openGroups(page);
       const n = await page.locator('#w-todos li.todo').count();
       check(`${width} 宽：从清单页切到工作台，菜单数量 = 工作台待办条数`, w === ref.work && n === ref.work, { badge: w, list: n });
       await page.context().close();
@@ -281,6 +288,7 @@ try {
       page.on('request', (q2) => { if (/^https:\/\/github\.com\//.test(q2.url())) ghReq += 1; });
       await login(page, at);
       await waitFor(page, `${sel} li.todo`);
+      if (sel === '#w-todos') await openGroups(page);
       const li = (t) => page.locator(`${sel} li.todo`, { hasText: t });
       const tag = `${at}（${width} 宽）`;
       const openDetail = async (t) => {
@@ -334,10 +342,11 @@ try {
   for (const [width, height] of [[375, 667], [1440, 700]]) {
     const PAGES = [
       // 起始地址、二级菜单、要点的二级菜单项（跳到哪个模块）、要点的一级菜单（跳到哪一页）
-      { at: '/#/work', sub: '#sub-work', mod: 'w-meet', p1: 'forecast' },
-      { at: '/#/forecast', sub: '#sub-forecast', mod: 'f-guide', p1: 'tools' },
-      { at: '/#/tools', sub: '#sub-tools', mod: 't-ext', p1: 'work' },
-      { at: '/#/tools/queue', sub: '#sub-tools', mod: 't-usage', p1: 'forecast' },
+      // p1 = 要点的一级菜单：{nav} 是链接上的名字（项目用 data-proj），{page} 是页面 id（项目页一律 project）
+      { at: '/#/work', sub: '#sub-work', mod: 'w-meet', p1: { nav: 'forecast', page: 'project' } },
+      { at: '/#/forecast', sub: '#sub-project', mod: 'f-guide', p1: { nav: 'tools', page: 'tools' } },
+      { at: '/#/tools', sub: '#sub-tools', mod: 't-ext', p1: { nav: 'work', page: 'work' } },
+      { at: '/#/tools/queue', sub: '#sub-tools', mod: 't-usage', p1: { nav: 'forecast', page: 'project' } },
     ];
     for (const P of PAGES) {
       await section(`固定菜单 ${P.at}（${width} 宽）`, async () => {
@@ -376,12 +385,12 @@ try {
         // 再滚到底，点一级菜单：跳到另一页
         await page.evaluate(() => window.scrollTo(0, document.documentElement.scrollHeight));
         await page.waitForTimeout(200);
-        const b1 = await page.locator(`nav.nav1 a[data-p="${P.p1}"]`).boundingBox();
+        const b1 = await page.locator(P.p1.nav === P.p1.page ? `nav.nav1 a[data-p="${P.p1.nav}"]` : `nav.nav1 a[data-proj="${P.p1.nav}"]`).boundingBox();
         const in1 = !!b1 && b1.y >= 0 && b1.y + b1.height <= height;
         if (in1) await page.mouse.click(b1.x + b1.width / 2, b1.y + b1.height / 2);
-        const ok = in1 && (await waitFor(page, `#v-${P.p1}`));
-        const top = await page.evaluate((p) => { const v = document.getElementById('v-' + p); const s = document.querySelector('#sub-' + p); return v && s ? { v: Math.round(v.getBoundingClientRect().top), menus: Math.round(s.getBoundingClientRect().bottom) } : null; }, P.p1);
-        check(`${tag}：在底部点一级菜单"${P.p1}"：跳到那一页，页面开头不被菜单挡住`, ok && !!top && top.v >= top.menus - 1, top);
+        const ok = in1 && (await waitFor(page, `#v-${P.p1.page}`));
+        const top = await page.evaluate((p) => { const v = document.getElementById('v-' + p); const s = document.querySelector('#sub-' + p); return v && s ? { v: Math.round(v.getBoundingClientRect().top), menus: Math.round(s.getBoundingClientRect().bottom) } : null; }, P.p1.page);
+        check(`${tag}：在底部点一级菜单"${P.p1.nav}"：跳到那一页，页面开头不被菜单挡住`, ok && !!top && top.v >= top.menus - 1, top);
         if (SHOTS && P.at === '/#/work') { mkdirSync(SHOTS, { recursive: true }); await page.evaluate(() => window.scrollTo(0, document.documentElement.scrollHeight)); await page.screenshot({ path: path.join(SHOTS, `sticky-${width}.png`) }); }
         await page.context().close();
       });
@@ -419,6 +428,7 @@ try {
     const page = await open();
     await login(page, '/#/work/todo');
     await waitFor(page, '#w-todos li.todo');
+    await openGroups(page);
     const prLi = page.locator('#w-todos li.todo', { hasText: '【要你决定】换首页文案（样例）' });
     const t = (await prLi.innerText().catch(() => '')) || '';
     const html = await page.evaluate(async () => (await fetch('/', { credentials: 'same-origin' })).text());
@@ -460,7 +470,7 @@ try {
     await section(`R9 横屏 ${at}`, async () => {
       const page = await open({ width: 667, height: 375 });
       await login(page, at);
-      const p = at.split('/')[2];
+      const p = at.split('/')[2] === 'forecast' ? 'project' : at.split('/')[2];
       await waitFor(page, `#sub-${p}`);
       await page.evaluate(() => window.scrollTo(0, document.documentElement.scrollHeight));
       await page.waitForTimeout(300);
@@ -512,6 +522,7 @@ try {
     page.context().on('page', () => { popups += 1; });
     await login(page, '/#/work/todo');
     await waitFor(page, '#w-todos li.todo');
+    await openGroups(page);
     const ext = page.locator('#w-todos li.todo', { hasText: EXT.title });
     const t = (await ext.innerText().catch(() => '')) || '';
     check('G 外部提交的 PR 在工作台单独一条，写"外部提交，给你看一下"', (await ext.count()) === 1 && t.includes('外部提交，给你看一下'), t.slice(0, 200));

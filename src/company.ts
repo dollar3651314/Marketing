@@ -14,9 +14,9 @@
  *   GET /api/company 多一项 reports：每个 项目 + 名称 最新的一行。
  */
 import type { Env } from './env';
-import { normReport, PROJECT_PAGES } from './projects';
-/** 填数字的 project 只能是有项目页的项目或"公司"（审查 P-7） */
-const REPORT_PROJECTS = [...PROJECT_PAGES, '公司'];
+import { normReport, projectPagesFrom, PROJECT_PAGES_FALLBACK } from './projects';
+/** 填数字的 project 只能是有项目页的项目或"公司"（审查 P-7）；项目页的名单是动态的，见 projectPages() */
+const REPORT_COMPANY = '公司';
 
 export const STALE_MS = 7 * 24 * 3600_000;
 const DONE_KEEP_MS = 90 * 24 * 3600_000;
@@ -32,6 +32,20 @@ function json(data: unknown, status = 200): Response {
   return new Response(JSON.stringify(data), { status, headers: { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store' } });
 }
 const notFound = () => new Response('Not found', { status: 404 });
+
+/**
+ * 有项目页的项目（2026-11-02 起不写死）：读 agents 推来的 projects 块（项目版图"产品"表）。
+ * 块还没推上来、解析不出、或连不上 D1 → 退回 src/projects.ts 的 PROJECT_PAGES_FALLBACK，
+ * 所以"每天回帖上限"一行和各处校验永远有一份名单，不会白屏、也不会变成什么项目名都收。
+ */
+export async function projectPages(env: Env): Promise<string[]> {
+  try {
+    const row = await env.DB.prepare("SELECT payload FROM company_snapshot WHERE source = 'agents' AND kind = 'projects' AND status = 'ok' LIMIT 1").first<{ payload: string }>();
+    return projectPagesFrom(row?.payload ? JSON.parse(row.payload) : null);
+  } catch {
+    return [...PROJECT_PAGES_FALLBACK];
+  }
+}
 
 export function companyEnabled(env: Env): boolean {
   return (env.COMPANY_INGEST_TOKEN ?? '').trim().length >= 32;
@@ -297,7 +311,9 @@ async function report(env: Env, req: Request, now: number): Promise<Response> {
   const project = typeof b.project === 'string' ? b.project.trim() : '';
   const values = b.values && typeof b.values === 'object' && !Array.isArray(b.values) ? Object.entries(b.values as Record<string, unknown>) : [];
   if (!key) return json({ error: '请求不对：key 要是 1～200 个字', bad: [] }, 400);
-  if (!REPORT_PROJECTS.includes(project)) return json({ error: `请求不对：project 只能是 ${REPORT_PROJECTS.join(' / ')}`, bad: [] }, 400);
+  // 有项目页的项目是动态的（agents 推来的 projects 块），所以这里现查一次，再加上"公司"
+  const allow = [...(await projectPages(env)), REPORT_COMPANY];
+  if (!allow.includes(project)) return json({ error: `请求不对：project 只能是 ${allow.join(' / ')}`, bad: [] }, 400);
   if (!values.length || values.length > 10) return json({ error: '请求不对：values 要有 1～10 格', bad: [] }, 400);
   const bad: { name: string; why: string }[] = [];
   const ok: [string, string][] = [];

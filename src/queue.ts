@@ -14,9 +14,8 @@ import { modelList } from './gemini';
 import { saveCaps, usageByProject, usageReport, WAI_KEY } from './usage';
 import { usedToday } from './workers-ai';
 import { extensionZip } from './extension-download';
-import { companyApi } from './company';
+import { companyApi, projectPages } from './company';
 import { activeApi } from './hooks';
-import { PROJECT_PAGES } from './projects';
 
 export const SESSION_MS = 12 * 3600_000;
 const LOCK = { ipWindow: 15 * 60_000, ipMax: 5, ipLock: 15 * 60_000, allWindow: 3600_000, allMax: 20, allLock: 3600_000 };
@@ -110,9 +109,9 @@ export async function doneToday(env: Env, now: number, product: string = DEFAULT
   return (a?.n ?? 0) + (b?.n ?? 0);
 }
 
-/** 后台"每天回帖上限"一行：每个有项目页的项目（src/projects.ts PROJECT_PAGES） */
+/** 后台"每天回帖上限"一行：每个有项目页的项目（src/company.ts projectPages()，按 agents 推来的 projects 块动态算） */
 async function replyCapRows(env: Env, now: number): Promise<{ project: string; cap: number; doneToday: number }[]> {
-  return Promise.all(PROJECT_PAGES.map(async (project) => {
+  return Promise.all((await projectPages(env)).map(async (project) => {
     const [cap, done] = await Promise.all([replyCap(env, project), doneToday(env, now, project)]);
     return { project, cap, doneToday: done };
   }));
@@ -123,8 +122,10 @@ async function saveReplyCaps(env: Env, now: number, caps: unknown): Promise<stri
   if (!caps || typeof caps !== 'object' || Array.isArray(caps) || !Object.keys(caps).length) return ['请求不对：要 {caps:{项目: 数字}}'];
   const bad: string[] = [];
   const ok: [string, number][] = [];
+  // 名单动态（projects 块），但**仍然是白名单**：不在名单里的项目名照旧拒收
+  const pages = await projectPages(env);
   for (const [project, v] of Object.entries(caps as Record<string, unknown>)) {
-    if (!PROJECT_PAGES.includes(project)) { bad.push(`不认识的项目：${project.slice(0, 40)}`); continue; }
+    if (!pages.includes(project)) { bad.push(`不认识的项目：${project.slice(0, 40)}`); continue; }
     if (typeof v !== 'number' && typeof v !== 'string') { bad.push(`${project} 要在 1～${REPLY_CAP_MAX} 之间`); continue; }
     const n = typeof v === 'string' && v.trim() === '' ? NaN : Number(v);
     if (!Number.isInteger(n) || n < 1 || n > REPLY_CAP_MAX) bad.push(`${project} 要在 1～${REPLY_CAP_MAX} 之间（整数）`);

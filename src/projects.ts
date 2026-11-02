@@ -39,10 +39,32 @@ export const isToolCard = (key: string): boolean => NOT_PROJECTS.includes(key);
 /** 推 PR / CI 的仓库属于哪个项目；没写的算"公司" */
 export const REPO_PROJECT: Record<string, string> = { 'new-forecast': 'forecast' };
 
-/** 每天回帖上限等工具页的项目名（批 1 只有 forecast 一个项目页） */
-export const PROJECT_PAGES = ['forecast'];
+/**
+ * 有项目页的项目：**不再写死**（2026-11-02，Amos"项目也只有 forecast 一个，新项目哪儿去了"）。
+ * 真正的来源是 agents 推来的 projects 块（项目版图"产品"表，C146 只放在跑的项目）：服务端 src/company.ts projectPages(env) 读 D1、
+ * 页面读 GET /api/company 的 projects 块；两边都用下面的 projectPagesFrom() 算，规则只有一份。
+ * 下面这个只是**兜底**：块还没推上来（新装、清库、agents 上报坏了）时用，免得页面白屏、校验变成什么项目名都收。
+ */
+export const PROJECT_PAGES_FALLBACK = ['forecast'];
+/** 最多认几个项目页（挡住推来的块异常变大） */
+export const MAX_PROJECT_PAGES = 20;
 
-export const PLATFORM_CONFIG = { REPORT_FIELDS, REPORT_FORMS, METRIC_FROM_REPORT, SEE_PLATFORM, NOT_PROJECTS, REPO_PROJECT, PROJECT_PAGES };
+/** projects 块的 payload → 有项目页的项目名：去掉工具层（工作平台 / Marketing）、去空、去重、限条数；算不出就用兜底 */
+export function projectPagesFrom(payload: unknown): string[] {
+  const items = payload && typeof payload === 'object' && !Array.isArray(payload) ? (payload as { items?: unknown }).items : undefined;
+  const names = Array.isArray(items)
+    ? items.map((x) => (x && typeof x === 'object' && typeof (x as { name?: unknown }).name === 'string' ? ((x as { name: string }).name).trim() : '')).filter((n) => n && !isToolCard(n))
+    : [];
+  const out = [...new Set(names)].slice(0, MAX_PROJECT_PAGES);
+  return out.length ? out : [...PROJECT_PAGES_FALLBACK];
+}
+
+/** 项目页标题旁边的那一行小字（有官网的项目才有）；没写的项目不显示 */
+export const PROJECT_SITE: Record<string, { text: string; url: string }> = {
+  forecast: { text: 'Quick Come 官网', url: 'https://www.quickcome.online' },
+};
+
+export const PLATFORM_CONFIG = { REPORT_FIELDS, REPORT_FORMS, METRIC_FROM_REPORT, SEE_PLATFORM, NOT_PROJECTS, REPO_PROJECT, PROJECT_PAGES_FALLBACK };
 
 /** 填数字的一格：全角数字转半角、去掉所有空白；要非负整数（最多 9 位），有上限的不超过上限。返回规范化后的值或错在哪 */
 export function normReport(name: string, raw: unknown): { value: string } | { why: string } {
