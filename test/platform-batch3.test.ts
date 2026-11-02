@@ -109,7 +109,7 @@ function push(o: PushOpt) {
     commits, head_commit: commits[commits.length - 1],
   };
 }
-interface PrOpt { repo?: string; branch: string; number: number; title: string; action?: string; at?: number; merged?: boolean; body?: string; assoc?: string; fork?: boolean; user?: string }
+interface PrOpt { repo?: string; branch: string; number: number; title: string; action?: string; at?: number; merged?: boolean; body?: string; assoc?: string; fork?: boolean; user?: string; userType?: string; forkOwner?: string }
 function pr(o: PrOpt) {
   const repo = o.repo ?? 'agents';
   const closed = o.action === 'closed';
@@ -118,14 +118,17 @@ function pr(o: PrOpt) {
     pull_request: {
       number: o.number, title: o.title, body: o.body ?? 'PR 说明正文', state: closed ? 'closed' : 'open', draft: false, merged: !!o.merged,
       html_url: `https://github.com/${OWNER}/${repo}/pull/${o.number}`, created_at: iso(o.at ?? T0), updated_at: iso(o.at ?? T0), closed_at: closed ? iso(o.at ?? T0) : null, merged_at: o.merged ? iso(o.at ?? T0) : null,
-      author_association: o.assoc ?? 'OWNER', user: { login: o.user ?? OWNER, type: 'User' },
-      head: { ref: o.branch, sha: 'b'.repeat(40), repo: { full_name: o.fork ? `${o.user ?? 'stranger'}/${repo}` : `${OWNER}/${repo}`, fork: !!o.fork } },
+      author_association: o.assoc ?? 'OWNER', user: { login: o.user ?? OWNER, type: o.userType ?? 'User' },
+      head: (() => {
+        const owner = o.fork ? (o.forkOwner ?? o.user ?? 'stranger') : OWNER;
+        return { ref: o.branch, label: `${owner}:${o.branch}`, sha: 'b'.repeat(40), user: { login: owner }, repo: { full_name: `${owner}/${repo}`, name: repo, fork: !!o.fork, owner: { login: owner } } };
+      })(),
       base: { ref: repo === 'agents' ? 'main' : 'staging', repo: { full_name: `${OWNER}/${repo}`, fork: false } },
     },
     repository: repoObj(repo), sender: { login: o.user ?? OWNER, type: 'User' },
   };
 }
-function run(o: { repo?: string; branch: string; action?: string; conclusion?: string | null; at?: number; name?: string; prs?: number[] }) {
+function run(o: { repo?: string; branch: string; action?: string; conclusion?: string | null; at?: number; name?: string; prs?: number[]; forkOwner?: string }) {
   const action = o.action ?? 'completed';
   return {
     action,
@@ -133,7 +136,7 @@ function run(o: { repo?: string; branch: string; action?: string; conclusion?: s
       id: 1, name: o.name ?? 'ci', head_branch: o.branch, head_sha: 'b'.repeat(40), event: 'pull_request', status: action === 'completed' ? 'completed' : action === 'requested' ? 'queued' : 'in_progress',
       conclusion: action === 'completed' ? (o.conclusion ?? 'success') : null, html_url: `https://github.com/${OWNER}/${o.repo ?? 'agents'}/actions/runs/1`,
       created_at: iso(o.at ?? T0), updated_at: iso(o.at ?? T0), pull_requests: (o.prs ?? []).map((n) => ({ number: n })),
-      head_repository: { full_name: `${OWNER}/${o.repo ?? 'agents'}`, fork: false },
+      head_repository: { full_name: `${o.forkOwner ?? OWNER}/${o.repo ?? 'agents'}`, name: o.repo ?? 'agents', fork: !!o.forkOwner, owner: { login: o.forkOwner ?? OWNER } },
     },
     repository: repoObj(o.repo ?? 'agents'), sender: { login: OWNER, type: 'User' },
   };
@@ -601,8 +604,12 @@ describe('C147：代码仓库只给分支名、PR 标题、CI；外部人的标"
   });
 
   it('fork 来的 PR 一律外部，不论作者是谁（含 agents）', async () => {
-    await hook({ event: 'pull_request', body: pr({ branch: 'claude/pm-forecast-fork', number: 70, title: '【产品·forecast】x', assoc: 'OWNER', fork: true, user: OWNER }) });
-    expect(find(await active(T0 + M), 'claude/pm-forecast-fork')).toMatchObject({ external: true, decide: false });
+    await hook({ event: 'pull_request', body: pr({ branch: 'claude/pm-forecast-fork', number: 70, title: '【产品·forecast】x', assoc: 'OWNER', fork: true, user: OWNER, forkOwner: 'someone-fork' }) });
+    // 测试用例修正（批 3 审查 R1）：fork 来的单独成行，分支那一格可能带 fork 所有者前缀，按 PR 号找
+    const a = await active(T0 + M);
+    const x = [...a.items, ...a.ended].filter((i) => i.pr === 70);
+    expect(x.length).toBe(1);
+    expect(x[0]).toMatchObject({ external: true, decide: false });
   });
 
   it('外部人的推送（sender 不是仓库主人）：external，提交说明不显示（agents 也一样）', async () => {
@@ -806,5 +813,161 @@ describe('不影响别的功能（这组在改动前就是绿的，之后必须�
 
   it('签名密钥只用 COMPANY_INGEST_TOKEN（不新增变量名）：src/env.ts 没有 GITHUB_WEBHOOK_SECRET', () => {
     expect(readFileSync(path.join(ROOT, 'src/env.ts'), 'utf8')).not.toMatch(/GITHUB_WEBHOOK_SECRET/);
+  });
+});
+
+// ======================================================================
+// 批 3 审查"改完再审"（🔴 R1、🟡 R2 R4 R5 R6；R3、R8 在 scripts/e2e-live.mjs）：测试先写，研发再改
+describe('审查 R1：外部 fork 用同名分支开 PR、跑 CI、关 PR，不能改内部同名分支那一行', () => {
+  const BR = 'claude/dev-platform-same';
+  const all = (a: Active) => [...a.items.map((x) => ({ ...x, _in: 'items' })), ...a.ended.map((x) => ({ ...x, _in: 'ended' }))];
+  const inner = (a: Active) => { const x = all(a).filter((i) => i.repo === 'marketing' && i.branch === BR && !i.external); expect(x.length, '内部那一行正好一条').toBe(1); return x[0]; };
+  const outer = (a: Active) => all(a).filter((i) => i.repo === 'marketing' && i.external && i.pr === 41);
+  async function seedInner() {
+    await hook({ event: 'push', body: push({ repo: 'marketing', branch: BR, msg: '开工', created: true, at: T0 }), now: T0 });
+    await hook({ event: 'pull_request', body: pr({ repo: 'marketing', branch: BR, number: 40, title: '【要你决定】【研发·platform】内部的', at: T0 + M }), now: T0 + M });
+    await hook({ event: 'workflow_run', body: run({ repo: 'marketing', branch: BR, conclusion: 'success', at: T0 + 2 * M }), now: T0 + 2 * M });
+    const x = inner(await active(T0 + 3 * M));
+    expect(x).toMatchObject({ pr: 40, title: '【要你决定】【研发·platform】内部的', decide: true, ci: 'success', end: null, _in: 'items' });
+    return x;
+  }
+  const keep = (x: Item & { _in: string }) => ({ pr: x.pr, title: x.title, decide: x.decide, ci: x.ci, end: x.end, url: x.url, external: x.external, _in: x._in });
+  const ext = (o: Partial<PrOpt> = {}) => pr({ repo: 'marketing', branch: BR, number: 41, title: '外部人同名分支的 PR', assoc: 'CONTRIBUTOR', fork: true, user: 'stranger', forkOwner: 'stranger', ...o });
+
+  it('fork 开 PR：内部那一行 pr、title、decide、ci、end 都不变；外部的单独一行（external、pr 41）', async () => {
+    const before = keep(await seedInner());
+    await hook({ event: 'pull_request', body: ext({ at: T0 + 4 * M }), now: T0 + 4 * M });
+    const a = await active(T0 + 5 * M);
+    expect(keep(inner(a))).toEqual(before);
+    const o = outer(a);
+    expect(o.length, '外部的单独成行').toBe(1);
+    expect(o[0]).toMatchObject({ external: true, pr: 41, decide: false, end: null });
+  });
+
+  it('fork 的 CI 红了：内部那一行 ci 还是 success；红的记在外部那一行', async () => {
+    const before = keep(await seedInner());
+    await hook({ event: 'pull_request', body: ext({ at: T0 + 4 * M }), now: T0 + 4 * M });
+    await hook({ event: 'workflow_run', body: run({ repo: 'marketing', branch: BR, conclusion: 'failure', forkOwner: 'stranger', at: T0 + 5 * M }), now: T0 + 5 * M });
+    const a = await active(T0 + 6 * M);
+    expect(keep(inner(a))).toEqual(before);
+    const o = outer(a);
+    expect(o.length).toBe(1);
+    expect(o[0]).toMatchObject({ ci: 'failure', external: true });
+  });
+
+  it('fork 的 CI 先到（之前没开 PR）：也不改内部那一行', async () => {
+    const before = keep(await seedInner());
+    await hook({ event: 'workflow_run', body: run({ repo: 'marketing', branch: BR, conclusion: 'failure', forkOwner: 'stranger', at: T0 + 5 * M }), now: T0 + 5 * M });
+    expect(keep(inner(await active(T0 + 6 * M)))).toEqual(before);
+  });
+
+  it('fork 关 PR（没合并）：内部那一行还在进行中、end 不变；外部那一行进最近结束"没合并就关了"', async () => {
+    const before = keep(await seedInner());
+    await hook({ event: 'pull_request', body: ext({ at: T0 + 4 * M }), now: T0 + 4 * M });
+    await hook({ event: 'pull_request', body: ext({ action: 'closed', at: T0 + 6 * M }), now: T0 + 6 * M });
+    const a = await active(T0 + 7 * M);
+    expect(keep(inner(a))).toEqual(before);
+    const o = outer(a);
+    expect(o.length).toBe(1);
+    expect(o[0]).toMatchObject({ end: 'closed', _in: 'ended' });
+  });
+
+  it('两个不同的 fork 用同一个分支名：各自一行，互不覆盖', async () => {
+    await seedInner();
+    await hook({ event: 'pull_request', body: ext({ at: T0 + 4 * M }), now: T0 + 4 * M });
+    await hook({ event: 'pull_request', body: ext({ number: 42, user: 'other', forkOwner: 'other', title: '另一个外部人', at: T0 + 5 * M }), now: T0 + 5 * M });
+    const a = await active(T0 + 6 * M);
+    const ex = all(a).filter((i) => i.repo === 'marketing' && i.external).map((i) => i.pr).sort();
+    expect(ex).toEqual([41, 42]);
+  });
+});
+
+describe('审查 R2：第一次处理时 D1 batch 抛错，GitHub 用同一个投递编号重送要正常处理', () => {
+  /** batch 第一次调用抛错（模拟 D1 临时出错），其余照常 */
+  function failingBatchDb(d: D1Database): D1Database {
+    let failed = false;
+    return new Proxy(d, {
+      get(t, k) {
+        if (k === 'batch') return async (st: D1PreparedStatement[]) => { if (!failed) { failed = true; throw new Error('模拟 D1 batch 出错'); } return t.batch(st); };
+        const v = Reflect.get(t, k);
+        return typeof v === 'function' ? v.bind(t) : v;
+      },
+    });
+  }
+  it('第一次 batch 抛错（回 5xx 或抛出）；同一投递编号重送：200、不是 duplicate、库里有这一条', async () => {
+    const id = randomUUID();
+    const body = push({ branch: 'claude/pm-forecast-retry', msg: '开工', created: true });
+    const first = await hook({ event: 'push', body, delivery: id, e: env({}, failingBatchDb(db)) }).catch((e: unknown) => e);
+    if (first instanceof Response) expect(first.status, '第一次没写成不能回 2xx（GitHub 才会知道要重送）').toBeGreaterThanOrEqual(500);
+    expect(await count('active_item'), '第一次没写成').toBe(0);
+    const r = await hook({ event: 'push', body, delivery: id, now: T0 + M });
+    expect(r.status).toBe(200);
+    const j = (await r.json()) as Record<string, unknown>;
+    expect(j.duplicate, '重送不能当成重复').toBeFalsy();
+    expect(find(await active(T0 + 2 * M), 'claude/pm-forecast-retry')).toMatchObject({ step: '开工', _in: 'items' });
+    expect(await count('active_log')).toBe(1);
+    // 再送第三次才是真的重复
+    const r3 = await hook({ event: 'push', body, delivery: id, now: T0 + 3 * M });
+    expect(r3.status).toBe(200);
+    expect(await count('active_log')).toBe(1);
+  });
+});
+
+describe('审查 R4：PR 的 user.type === "Bot" 一律外部', () => {
+  it('机器人的 PR（author_association 是 OWNER / MEMBER / COLLABORATOR 也一样）：external、标题有【要你决定】也不进"需要我的事"', async () => {
+    for (const [i, assoc] of ['OWNER', 'MEMBER', 'COLLABORATOR', 'NONE'].entries()) {
+      await hook({ event: 'pull_request', body: pr({ repo: 'marketing', branch: `dependabot/npm/x-${i}`, number: 100 + i, title: '【要你决定】Bump x', assoc, user: 'dependabot[bot]', userType: 'Bot' }) });
+    }
+    const a = await active(T0 + M);
+    for (let i = 0; i < 4; i++) expect(find(a, `dependabot/npm/x-${i}`, 'marketing'), `第 ${i} 个`).toMatchObject({ external: true, decide: false });
+  });
+});
+
+describe('审查 R5：缺 X-Hub-Signature-256 或 X-GitHub-Event 头：直接 401，不读请求体、不写 hook:bad_sig_at、不碰 D1', () => {
+  function bare(drop: string): Request {
+    const raw = JSON.stringify(push({ branch: 'claude/pm-forecast-nohdr' }));
+    const headers: Record<string, string> = { 'content-type': 'application/json', 'x-github-event': 'push', 'x-github-delivery': randomUUID(), 'x-hub-signature-256': sign(raw) };
+    delete headers[drop];
+    return new Request(`${HOST}/hooks/github`, { method: 'POST', headers, body: raw });
+  }
+  for (const drop of ['x-hub-signature-256', 'x-github-event']) {
+    it(`缺 ${drop}：401；请求体没读（bodyUsed = false）；D1 一条语句都没执行`, async () => {
+      const s = spyDb(db);
+      const req = bare(drop);
+      const r = await handle(req, env({}, s.db), T0);
+      expect(r.status).toBe(401);
+      expect(req.bodyUsed, '请求体没读').toBe(false);
+      expect(s.sql, '不碰 D1').toEqual([]);
+      expect(await db.prepare("SELECT value FROM settings WHERE key = 'hook:bad_sig_at'").first()).toBeNull();
+      for (const t of NEW_TABLES) expect(await count(t), t).toBe(0);
+    });
+  }
+});
+
+describe('审查 R6："最近结束"只显示 7 天内的（原型 v2 第 274 行）；记录照样留 30 天', () => {
+  it('显示窗口：合并了的，7 天差 1 毫秒还在 ended；正好 7 天不在了', async () => {
+    await hook({ event: 'pull_request', body: pr({ branch: 'claude/pm-forecast-done', number: 9, title: 'x', action: 'closed', merged: true, at: T0 }), now: T0 });
+    expect(find(await active(T0 + 7 * D - 1), 'claude/pm-forecast-done')).toMatchObject({ _in: 'ended', end: 'merged' });
+    expect(find(await active(T0 + 7 * D), 'claude/pm-forecast-done')).toBeUndefined();
+  });
+
+  it('显示窗口：一天没动静收起来的（timeout），从最后一次事件算 7 天后也不显示了', async () => {
+    await hook({ event: 'push', body: push({ branch: 'claude/pm-forecast-quiet', at: T0 }), now: T0 });
+    expect(find(await active(T0 + 7 * D - 1), 'claude/pm-forecast-quiet')).toMatchObject({ _in: 'ended', end: 'timeout' });
+    expect(find(await active(T0 + 7 * D), 'claude/pm-forecast-quiet')).toBeUndefined();
+  });
+
+  it('保留期限（和显示分开断言，只看库）：过了 7 天显示窗口，库里 active_item、active_log 照样还在；第 8 天、第 29 天都在（现在就绿，守住 30 天不被显示窗口带着删）', async () => {
+    await hook({ event: 'pull_request', body: pr({ branch: 'claude/pm-forecast-done', number: 9, title: 'x', action: 'closed', merged: true, at: T0 }), now: T0 });
+    // 别的分支在第 8 天、第 29 天各来一次事件（会触发"顺手删 30 天前的"），这一条不能被删
+    await hook({ event: 'push', body: push({ branch: 'claude/pm-forecast-other', at: T0 + 8 * D }), now: T0 + 8 * D });
+    await active(T0 + 8 * D); // 读一次（显示窗口在读的时候算，不能顺手把库里的删了）
+    const rows = async () => (await db.prepare("SELECT COUNT(*) AS n FROM active_item WHERE branch = 'claude/pm-forecast-done'").first<{ n: number }>())!.n;
+    const logs = async () => (await db.prepare("SELECT COUNT(*) AS n FROM active_log WHERE branch = 'claude/pm-forecast-done'").first<{ n: number }>())!.n;
+    expect(await rows()).toBe(1);
+    expect(await logs()).toBe(1);
+    await hook({ event: 'push', body: push({ branch: 'claude/pm-forecast-other', at: T0 + 29 * D }), now: T0 + 29 * D });
+    expect(await rows()).toBe(1);
+    expect(await logs()).toBe(1);
   });
 });

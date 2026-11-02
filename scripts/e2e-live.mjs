@@ -18,6 +18,11 @@
  *   C. 签名不对：页面提示"签名不对"，写明检查 Secret 和 COMPANY_INGEST_TOKEN 是不是一样、前后有没有空格。
  *   D. 被限流（同一仓库一分钟第 121 次）："有延迟"。
  *   E. 开关：公共工具页点开关 → 关；刷新后还是关；关着时新事件不出现；再点打开后新事件出现。
+ *   批 3 审查"改完再审"（测试先写）：
+ *   R3 外部的红 CI（fork 来的、外部人同仓库分支的）不触发工作台顶部 #ci-alert，也不算进"团队正在做"的数字（#w-live-n、工作台概览"件事团队正在做"）。
+ *   R6 "最近结束"只显示 7 天内的（原型 v2 第 274 行"保留 7 天"）：8 天前合并的不显示，标题旁写 7 天。
+ *   R8 开关：打开后等按钮变回开，等不到就红（不再吞掉超时）；点开关的同时切页面触发一次 GET /api/active，
+ *      这个 GET 比 POST 先发但后返回，按钮最终必须显示服务端的最新状态。
  *
  * 页面约定（照原型 v2；研发要改名就同一个 PR 改这里并在 PR 描述写明）：
  *   每一条 .act-item[data-branch="<分支名>"]（带 data-repo）；进行中的在 #w-live 里、#recent 之外；最近结束在 #recent-body（#recent 是 details，测试会先展开）；
@@ -49,19 +54,19 @@ const push = ({ repo = 'agents', branch, msg = '开工', at = Date.now(), files 
   const c = { id: 'c'.repeat(40), message: msg, timestamp: iso(at), added: files, removed: [], modified: [], author: { name: 'Claude', username: sender } };
   return { ref: `refs/heads/${branch}`, before: created ? '0'.repeat(40) : 'a'.repeat(40), after: 'b'.repeat(40), created, deleted: false, repository: repoObj(repo), pusher: { name: sender }, sender: { login: sender }, commits: [c], head_commit: c };
 };
-const pr = ({ repo = 'agents', branch, number, title, action = 'opened', at = Date.now(), merged = false, body = 'PR 说明', assoc = 'OWNER', user = OWNER }) => ({
+const pr = ({ repo = 'agents', branch, number, title, action = 'opened', at = Date.now(), merged = false, body = 'PR 说明', assoc = 'OWNER', user = OWNER, forkOwner = '' }) => ({
   action, number, repository: repoObj(repo), sender: { login: user },
-  pull_request: { number, title, body, state: action === 'closed' ? 'closed' : 'open', merged, html_url: `https://github.com/${OWNER}/${repo}/pull/${number}`, updated_at: iso(at), created_at: iso(at), closed_at: action === 'closed' ? iso(at) : null, author_association: assoc, user: { login: user }, head: { ref: branch, repo: { full_name: `${OWNER}/${repo}`, fork: false } }, base: { ref: 'main' } },
+  pull_request: { number, title, body, state: action === 'closed' ? 'closed' : 'open', merged, html_url: `https://github.com/${OWNER}/${repo}/pull/${number}`, updated_at: iso(at), created_at: iso(at), closed_at: action === 'closed' ? iso(at) : null, author_association: assoc, user: { login: user, type: 'User' }, head: { ref: branch, label: `${forkOwner || OWNER}:${branch}`, repo: { full_name: `${forkOwner || OWNER}/${repo}`, fork: !!forkOwner, owner: { login: forkOwner || OWNER } } }, base: { ref: 'main' } },
 });
-const run = ({ repo = 'agents', branch, conclusion = 'success', at = Date.now() }) => ({
+const run = ({ repo = 'agents', branch, conclusion = 'success', at = Date.now(), forkOwner = '' }) => ({
   action: 'completed', repository: repoObj(repo), sender: { login: OWNER },
-  workflow_run: { name: 'ci', head_branch: branch, status: 'completed', conclusion, html_url: `https://github.com/${OWNER}/${repo}/actions/runs/1`, updated_at: iso(at), pull_requests: [] },
+  workflow_run: { name: 'ci', head_branch: branch, status: 'completed', conclusion, html_url: `https://github.com/${OWNER}/${repo}/actions/runs/1`, updated_at: iso(at), pull_requests: [], head_repository: { full_name: `${forkOwner || OWNER}/${repo}`, fork: !!forkOwner, owner: { login: forkOwner || OWNER } } },
 });
 /** 本地签名后发给本地服务；secret 默认就是本地服务的测试令牌 */
-async function send(event, payload, { secret = TOKEN } = {}) {
+async function send(event, payload, { secret = TOKEN, base = BASE } = {}) {
   const raw = JSON.stringify(payload);
   const sig = 'sha256=' + createHmac('sha256', secret).update(raw).digest('hex');
-  const r = await fetch(BASE + '/hooks/github', { method: 'POST', headers: { 'content-type': 'application/json', 'x-github-event': event, 'x-github-delivery': randomUUID(), 'x-hub-signature-256': sig }, body: raw });
+  const r = await fetch(base + '/hooks/github', { method: 'POST', headers: { 'content-type': 'application/json', 'x-github-event': event, 'x-github-delivery': randomUUID(), 'x-hub-signature-256': sig }, body: raw });
   return r.status;
 }
 
@@ -75,8 +80,8 @@ async function open({ width = 1440, height = 900 } = {}) {
   page.on('pageerror', (e) => errors.push(e.message));
   return page;
 }
-async function login(page, at = '/') {
-  await page.goto(BASE + at);
+async function login(page, at = '/', base = BASE) {
+  await page.goto(base + at);
   await page.fill('#pw', PASS);
   await page.click('#go');
   await page.waitForSelector('#app:not([hidden])', { timeout: WAIT });
@@ -125,6 +130,8 @@ try {
     await send('push', push({ branch: 'claude/ops-company-gone', msg: '很久以前', at: now - 25 * H })),
     await send('pull_request', pr({ branch: 'claude/pm-forecast-merged', number: 99, title: '【产品·forecast】已经合并的', action: 'closed', merged: true, at: now - 20 * M })),
     await send('pull_request', pr({ repo: 'marketing', branch: 'feature-x', number: 31, title: '外部人提的改动', assoc: 'CONTRIBUTOR', user: 'stranger', body: MARK, at: now - 2 * M })),
+    // 审查 R6：8 天前合并的，不在"最近结束"里显示（只显示 7 天内的）
+    await send('pull_request', pr({ branch: 'claude/pm-forecast-oldmerged', number: 98, title: '【产品·forecast】8 天前合并的', action: 'closed', merged: true, at: now - 8 * 24 * H })),
   ];
   check('样例事件都收下了（2xx）', sent.every((s) => s >= 200 && s < 300), sent);
 
@@ -147,6 +154,9 @@ try {
       const g = one(ended, 'claude/ops-company-gone'), m = one(ended, 'claude/pm-forecast-merged');
       check(`${width} 宽：25 小时没动静 → 进"最近结束"，不在进行中`, !!g && !one(live, 'claude/ops-company-gone'), { g, inLive: !!one(live, 'claude/ops-company-gone') });
       check(`${width} 宽：合并了的 PR → "最近结束"写"已合并"`, !!m && /已合并/.test(m.text), m);
+      check(`${width} 宽（审查 R6）：8 天前合并的不在"最近结束"里（只显示 7 天内的）`, !one(L, 'claude/pm-forecast-oldmerged'), one(L, 'claude/pm-forecast-oldmerged'));
+      const rs = (await txt(page, '#recent > summary')) ?? '';
+      check(`${width} 宽（审查 R6）："最近结束"标题旁写 7 天（不是 30 天）`, /7 天/.test(rs) && !/30 天/.test(rs), rs);
       const d = one(live, 'claude/dev-platform-hooks');
       check(`${width} 宽：代码仓库（marketing）的一条：有分支名和 PR 标题，提交说明、PR 正文都不显示（C147）`, !!d && /Webhook 实时进度/.test(d.text) && !d.text.includes(MARK), d);
       const ext = one(L, 'feature-x');
@@ -203,12 +213,86 @@ try {
     await page.goto(BASE + '/#/tools');
     await waitFor(page, '#hook-toggle');
     await page.click('#hook-toggle');
-    await page.waitForFunction(() => document.querySelector('#hook-toggle')?.getAttribute('aria-pressed') === 'true', null, { timeout: WAIT }).catch(() => {});
+    // 审查 R8：等不到按钮变回开就红，不吞超时
+    const backOn = await page.waitForFunction(() => document.querySelector('#hook-toggle')?.getAttribute('aria-pressed') === 'true', null, { timeout: WAIT }).then(() => true, () => false);
+    check('再点开关：按钮变回开（aria-pressed = true）', backOn, await page.getAttribute('#hook-toggle', 'aria-pressed').catch(() => null));
     const s2 = await send('push', push({ branch: 'claude/dev-company-on', msg: '打开后推的' }));
     await page.goto(BASE + '/#/work/live');
     await page.waitForSelector('#w-live .act-item[data-branch="claude/dev-company-on"]', { timeout: WAIT }).catch(() => {});
     check('再打开：新事件出现', s2 === 200 && (await items(page, '#w-live')).some((x) => x.branch === 'claude/dev-company-on'), s2);
     await page.context().close();
+  });
+
+  // ---------- 审查 R8：点开关的同时切页面，旧的 GET 比 POST 先发、后返回，按钮最终要是服务端的最新状态 ----------
+  await section('开关和切页面同时', async () => {
+    const page = await open();
+    await login(page, '/#/tools/hook');
+    await page.waitForFunction(() => { const b = document.querySelector('#hook-toggle'); return b && !b.hidden && b.getAttribute('aria-pressed') === 'true'; }, null, { timeout: WAIT });
+    await page.goto(BASE + '/#/tools/usage');
+    await page.waitForTimeout(300);
+    // 拦下接下来的第一个 GET /api/active：马上向服务端要（拿到的是点开关之前的状态），等 POST 回来以后才交给页面
+    let release, fetched;
+    const gate = new Promise((r) => { release = r; });
+    const gotOld = new Promise((r) => { fetched = r; });
+    let held = false;
+    await page.route('**/api/active', async (route) => {
+      if (held || route.request().method() !== 'GET') return route.continue();
+      held = true;
+      const resp = await route.fetch();
+      fetched();
+      await gate;
+      await route.fulfill({ response: resp });
+    });
+    const getSent = page.waitForRequest((r) => r.url().endsWith('/api/active') && r.method() === 'GET', { timeout: WAIT });
+    await page.evaluate(() => { location.hash = '#/tools/hook'; }); // 切页面 → 页面发 GET /api/active
+    await getSent;
+    await gotOld;
+    const post = page.waitForResponse((r) => r.url().endsWith('/api/hook') && r.request().method() === 'POST', { timeout: WAIT });
+    await page.click('#hook-toggle');
+    const pr8 = await post;
+    check('R8：GET 先发，之后点开关 POST 成功', pr8.status() === 200, pr8.status());
+    await page.waitForFunction(() => document.querySelector('#hook-toggle')?.getAttribute('aria-pressed') === 'false', null, { timeout: WAIT }).catch(() => {});
+    release(); // 旧的 GET 这时才返回（里面是 on: true）
+    await page.waitForTimeout(800);
+    await page.unroute('**/api/active');
+    const server = await page.evaluate(async () => (await (await fetch('/api/active', { credentials: 'same-origin' })).json()).on);
+    const shown = await page.getAttribute('#hook-toggle', 'aria-pressed');
+    check('R8：晚到的旧 GET 不能把按钮改回去：按钮显示的是服务端最新状态（关）', server === false && shown === 'false', { server, shown });
+    // 恢复成开，后面的段要用
+    const back = await page.evaluate(async () => (await fetch('/api/hook', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ on: true }), credentials: 'same-origin' })).status);
+    check('R8：恢复成开', back === 200, back);
+    await page.context().close();
+  });
+
+  // ---------- 审查 R3：外部的红 CI 不触发顶部提醒、不算进"团队正在做" ----------
+  await section('外部的红 CI', async () => {
+    const srv3 = await startServer({ name: 'e2e-live-ext' });
+    try {
+      const B3 = srv3.BASE;
+      const t = Date.now();
+      const st = [
+        await send('push', push({ branch: 'claude/pm-forecast-inner', msg: '自己人的一条', at: t - 5 * M }), { base: B3 }),
+        // fork 来的 PR，同名分支跑 CI 红了
+        await send('pull_request', pr({ repo: 'marketing', branch: 'claude/dev-platform-x', number: 51, title: 'fork 来的改动', assoc: 'CONTRIBUTOR', user: 'stranger', forkOwner: 'stranger', at: t - 4 * M }), { base: B3 }),
+        await send('workflow_run', run({ repo: 'marketing', branch: 'claude/dev-platform-x', conclusion: 'failure', forkOwner: 'stranger', at: t - 3 * M }), { base: B3 }),
+        // 外部人在同一个仓库开的分支（不是 fork），CI 红了
+        await send('pull_request', pr({ repo: 'marketing', branch: 'feature-y', number: 52, title: '外部人同仓库的改动', assoc: 'CONTRIBUTOR', user: 'stranger2', at: t - 4 * M }), { base: B3 }),
+        await send('workflow_run', run({ repo: 'marketing', branch: 'feature-y', conclusion: 'failure', at: t - 2 * M }), { base: B3 }),
+      ];
+      check('R3：样例事件都收下了', st.every((x) => x >= 200 && x < 300), st);
+      const page = await open();
+      await login(page, '/#/work', B3);
+      await page.waitForSelector('#w-live .act-item[data-branch]', { timeout: WAIT }).catch(() => {});
+      await page.waitForTimeout(300);
+      const alert = await page.locator('#ci-alert').isVisible().catch(() => false);
+      check('R3：只有外部的红 CI 时，工作台顶部不出红提醒（#ci-alert 隐藏）', !alert, await txt(page, '#ci-alert'));
+      const n = ((await txt(page, '#w-live-n')) ?? '').trim();
+      check('R3："团队在做什么"的数字只算自己人（1），不算外部的', n === '1', n);
+      const g = (await txt(page, '#w-glance')) ?? '';
+      const m = /(\d+)\s*件事团队正在做/.exec(g);
+      check('R3：工作台概览"件事团队正在做"也是 1', !!m && m[1] === '1', g.slice(0, 200));
+      await page.context().close();
+    } finally { srv3.stop(); }
   });
 
   // ---------- D. 被限流（放最后：会占满这一分钟 marketing 的额度） ----------

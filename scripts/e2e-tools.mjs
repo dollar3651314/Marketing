@@ -526,7 +526,9 @@ try {
       await page.fill('#pw', PASS);
       await page.click('#go');
       await page.waitForSelector('#app:not([hidden])', { timeout: WAIT });
-      const ok = await waitFor(page, '#t-byproj tbody tr');
+      // 测试用例修正（批 3 时发现的偶发失败，C29、C57）：tbody 里先有一行"正在读取…"占位，原来等到它就往下查，读得慢时查到的是占位行。
+      // 改成等到真的数据行（第一格写 forecast）再查；断言不变。
+      const ok = await page.waitForFunction(() => [...document.querySelectorAll('#t-byproj tbody tr')].some((tr) => (tr.querySelector('td')?.innerText || '').includes('forecast')), null, { timeout: WAIT }).then(() => true, () => false);
       const rows = await page.locator('#t-byproj tbody tr').evaluateAll((trs) => trs.map((tr) => ({ name: tr.querySelector('td')?.innerText || '', gemini: tr.querySelector('td[data-label="Gemini"]')?.innerText || '' })));
       const num = (s) => { const m = /([\d,]+)\s*次/.exec(s); return m ? Number(m[1].replace(/,/g, '')) : NaN; };
       const fc = rows.find((r) => r.name.includes('forecast')), pf = rows.find((r) => r.name.includes('平台自己'));
