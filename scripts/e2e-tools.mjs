@@ -16,6 +16,9 @@
  *      PR 说明正文 + 问题表（每条带建议）；长正文先折叠、点"展开全文"展开；正文里的 HTML 只当文字（textContent）；被截断的写明"已截断"；
  *      旁边留小链接"在 GitHub 打开"；要到外部平台操作的（去 X 发帖）保留原来的外链。
  *      页面约定：li.todo 里主按钮 .go .btn.primary；展开后 .detail（正文 .detail-text、问题表 .qs li、折叠按钮 [data-more] 带 aria-expanded、小链接 a.gh）
+ *   E.（批 2 追加，Amos 2026-11-02："主菜单和子菜单都要固定"）工作台、forecast 页、公共工具页、清单页滚到最底部后，一级菜单（nav.nav1）和二级菜单（#sub-<页>）
+ *      还固定在屏幕顶部、看得到、没被挡住；在底部点二级菜单跳到模块、点一级菜单跳到别的页，模块 / 页面顶端不被固定菜单挡住；
+ *      手机上两层菜单加起来 ≤ 屏幕高度 25%。375、1440 宽。
  *   C. 按项目看用量（D-3）：#t-byproj 每个项目一行，Gemini 次数加起来 = 用量总额度里 Gemini 的请求数；写着以前没分项目、"测试 AI"那行是平台自己。
  *
  * 页面约定（照原型 v2；研发要改名就同一个 PR 改这里并在 PR 描述写明）：
@@ -280,7 +283,66 @@ try {
     }
   });
 
-  check('A、B、D 段没有脚本错误', errors.length === 0, errors);
+  // ---------- E.（批 2 追加）一级、二级菜单固定在屏幕顶部 ----------
+  // Amos 2026-11-02："主菜单和子菜单都要固定，方便我点击跳转，现在我滑到下面后 再想跳转其他菜单挺累的"
+  for (const [width, height] of [[375, 667], [1440, 700]]) {
+    const PAGES = [
+      // 起始地址、二级菜单、要点的二级菜单项（跳到哪个模块）、要点的一级菜单（跳到哪一页）
+      { at: '/#/work', sub: '#sub-work', mod: 'w-meet', p1: 'forecast' },
+      { at: '/#/forecast', sub: '#sub-forecast', mod: 'f-guide', p1: 'tools' },
+      { at: '/#/tools', sub: '#sub-tools', mod: 't-ext', p1: 'work' },
+      { at: '/#/tools/queue', sub: '#sub-tools', mod: 't-usage', p1: 'forecast' },
+    ];
+    for (const P of PAGES) {
+      await section(`固定菜单 ${P.at}（${width} 宽）`, async () => {
+        const page = await open({ width, height });
+        await login(page, P.at);
+        await waitFor(page, P.sub);
+        await page.waitForTimeout(500);
+        await page.evaluate(() => window.scrollTo(0, document.documentElement.scrollHeight));
+        await page.waitForTimeout(300);
+        const tag = `${width} 宽 ${P.at}`;
+        const st = await page.evaluate((sub) => {
+          const vh = innerHeight;
+          const r = (el) => { if (!el) return null; const b = el.getBoundingClientRect(); return { top: Math.round(b.top), bottom: Math.round(b.bottom), w: Math.round(b.width) }; };
+          const n1 = document.querySelector('nav.nav1'), s2 = document.querySelector(sub);
+          // 每个菜单项的中心点上真的是它自己（没被别的东西盖住）
+          const hit = (a) => { const b = a.getBoundingClientRect(); if (b.width === 0 || b.bottom <= 0 || b.top >= vh || b.left >= innerWidth || b.right <= 0) return false; const x = Math.min(Math.max(b.left + b.width / 2, 1), innerWidth - 1), y = b.top + b.height / 2; const e = document.elementFromPoint(x, y); return !!e && (e === a || a.contains(e)); };
+          const l1 = [...document.querySelectorAll('nav.nav1 a[data-p]')], l2 = [...document.querySelectorAll(sub + ' a[data-s]')];
+          return { vh, scrollY: Math.round(scrollY), max: document.documentElement.scrollHeight - vh, n1: r(n1), s2: r(s2), hit1: l1.filter(hit).length, n1All: l1.length, hit2: l2.filter(hit).length, n2All: l2.length };
+        }, P.sub);
+        check(`${tag}：已经滚到页面最底部（先确认到了要检查的状态）`, st.scrollY > 50 && st.scrollY >= st.max - 2, { scrollY: st.scrollY, max: st.max });
+        check(`${tag}：滚到底后一级菜单还在屏幕顶部`, !!st.n1 && st.n1.top >= 0 && st.n1.top < 80 && st.n1.bottom <= st.vh, st.n1);
+        check(`${tag}：滚到底后二级菜单还在屏幕顶部（紧挨一级菜单下面）`, !!st.s2 && st.s2.top >= 0 && st.s2.top < 160 && st.s2.bottom <= st.vh, st.s2);
+        check(`${tag}：一级菜单每一项都看得到、没被挡住（能点）`, st.n1All >= 3 && st.hit1 === st.n1All, { hit: st.hit1, all: st.n1All });
+        check(`${tag}：二级菜单至少有一项看得到、没被挡住（手机上可以横向滑）`, st.n2All > 0 && st.hit2 > 0, { hit: st.hit2, all: st.n2All });
+        if (width === 375) check(`${tag}：手机上两层菜单加起来不超过屏幕高度的 25%（滚到底时两层都在屏幕里）`, !!st.s2 && !!st.n1 && st.n1.top >= 0 && st.s2.top >= 0 && st.s2.bottom > 0 && st.s2.bottom <= st.vh * 0.25, { menusBottom: st.s2?.bottom, limit: st.vh * 0.25 });
+        // 在底部点二级菜单：不先滚回去，就在当前屏幕上它的位置点（手机上二级菜单可以横向滑，只横向滑它自己）；跳到模块，模块顶端不被固定的菜单挡住
+        const link = page.locator(`${P.sub} a[data-s="${P.mod}"]`);
+        await link.evaluate((a) => { const nav = a.closest('nav'); const box = nav && nav.querySelector('.in'); [nav, box].forEach((x) => { if (x && x.scrollWidth > x.clientWidth) x.scrollLeft = a.offsetLeft - 8; }); }).catch(() => {});
+        const box = await link.boundingBox();
+        const inView = !!box && box.y >= 0 && box.y + box.height <= height && box.x >= 0 && box.x + box.width <= width;
+        check(`${tag}：滚到底后要点的二级菜单项"${P.mod}"就在屏幕里`, inView, box);
+        if (inView) await page.mouse.click(box.x + box.width / 2, box.y + box.height / 2);
+        await page.waitForTimeout(600);
+        const m = await page.evaluate(([id, sub]) => { const e = document.getElementById(id), s2 = document.querySelector(sub); if (!e) return null; const b = e.getBoundingClientRect(), sb = s2 ? s2.getBoundingClientRect() : { bottom: 0 }; return { top: Math.round(b.top), menusBottom: Math.round(sb.bottom), vh: innerHeight, hash: location.hash }; }, [P.mod, P.sub]);
+        check(`${tag}：在底部点二级菜单"${P.mod}"：跳到这个模块，模块顶端在固定菜单下面、没被挡住`, !!m && m.top >= m.menusBottom - 1 && m.top < m.vh && m.hash.includes('/' + P.mod.split('-')[1]), m);
+        // 再滚到底，点一级菜单：跳到另一页
+        await page.evaluate(() => window.scrollTo(0, document.documentElement.scrollHeight));
+        await page.waitForTimeout(200);
+        const b1 = await page.locator(`nav.nav1 a[data-p="${P.p1}"]`).boundingBox();
+        const in1 = !!b1 && b1.y >= 0 && b1.y + b1.height <= height;
+        if (in1) await page.mouse.click(b1.x + b1.width / 2, b1.y + b1.height / 2);
+        const ok = in1 && (await waitFor(page, `#v-${P.p1}`));
+        const top = await page.evaluate((p) => { const v = document.getElementById('v-' + p); const s = document.querySelector('#sub-' + p); return v && s ? { v: Math.round(v.getBoundingClientRect().top), menus: Math.round(s.getBoundingClientRect().bottom) } : null; }, P.p1);
+        check(`${tag}：在底部点一级菜单"${P.p1}"：跳到那一页，页面开头不被菜单挡住`, ok && !!top && top.v >= top.menus - 1, top);
+        if (SHOTS && P.at === '/#/work') { mkdirSync(SHOTS, { recursive: true }); await page.evaluate(() => window.scrollTo(0, document.documentElement.scrollHeight)); await page.screenshot({ path: path.join(SHOTS, `sticky-${width}.png`) }); }
+        await page.context().close();
+      });
+    }
+  }
+
+  check('A、B、D、E 段没有脚本错误', errors.length === 0, errors);
 } catch (e) {
   check('脚本跑完（没有中途出错）', false, String(e && e.stack || e));
 } finally {
