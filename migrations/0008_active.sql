@@ -1,8 +1,8 @@
--- 公司平台批 3 · PR 4（agents 公司平台/技术方案-公司平台-Webhook.md 第二～四节；Amos 已定 P-2～P-5、P-7、T-4；C147）：只建新表，旧表一行不动。时间都是毫秒时间戳。
+-- GitHub Webhook 实时进度（方案和决定见 agents，C147）：只建新表，旧表一行不动。时间都是毫秒时间戳。
 -- GitHub Webhook（POST /hooks/github）写这三张表；三个仓库的 company.yml 上报照旧，两条路互不覆盖。
 -- C147：代码仓库（new-forecast、marketing）和外部人的提交说明、PR 正文一律不存；agents 只存提交说明第一行（≤ 200 字），PR 正文都不存。
 
--- "团队在做什么"：同一个 仓库 + 分支 一条，按事件更新（事件时间不早于库里的才覆盖，乱序不倒退）
+-- "团队在做什么"：同一个 仓库 + 分支 一条（fork 来的分支键是 "<fork 所有者>:<分支>"，不碰内部同名分支），按事件更新（事件时间不早于库里的才覆盖，乱序不倒退）
 CREATE TABLE active_item (
   repo TEXT NOT NULL,              -- agents / new-forecast / marketing
   branch TEXT NOT NULL,
@@ -24,7 +24,7 @@ CREATE TABLE active_item (
 );
 CREATE INDEX active_item_at ON active_item (at);
 
--- 每个事件追加一行，保留 30 天（写入时顺手删更早的，P-7）；只记是什么事件，不存提交说明和正文
+-- 每个事件追加一行，保留 30 天（写入时顺手删更早的；页面"最近结束"只显示 7 天，是两回事）；只记是什么事件，不存提交说明和正文
 CREATE TABLE active_log (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   repo TEXT NOT NULL,

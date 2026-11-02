@@ -1,16 +1,18 @@
 /**
- * 公司平台批 3 · PR 4：GitHub Webhook 实时进度（agents 公司平台/技术方案-公司平台-Webhook.md 第二～四节；Amos 已定 P-2～P-5、P-7、T-4；C147）。
+ * GitHub Webhook 实时进度（"团队在做什么"）。方案、决定和来由见 agents（C147：代码仓库只放代码）。
  * - POST /hooks/github  GitHub 发来的事件。只依赖 COMPANY_INGEST_TOKEN（同一个值当 HMAC 密钥，去首尾空格；没填或不到 32 个字符 404），
  *   所以和推送接口一样在后台（密码）判断之前处理；不放在 /api/ 下（/api/* 要会话和本站来源，GitHub 过不去）。
- *   顺序：① 请求体 > 512 KB → 413 ② 先验签（X-Hub-Signature-256，crypto.subtle.verify 常数时间）再解析：不对 → 401，
- *   settings 的 hook:bad_sig_at 每分钟最多写一次（一条带条件的语句；签名不对的请求不读开关、不碰别的表）
- *   ③ 开关 settings 的 hook:github（默认开）：关着回 200、不写库 ④ 不是 JSON → 400 ⑤ 只处理 ping、push、pull_request、workflow_run（只认 completed）、delete，
- *   别的 204 ⑥ 仓库白名单（dollar3651314 的 agents、new-forecast、Marketing，不分大小写）不在 → 202 ⑦ 每个仓库每分钟 120 次（company_rate 的 gh:<仓库>，
- *   推送接口的每分钟 6 次另算）→ 429 ⑧ X-GitHub-Delivery 见过的直接 200 ⑨ 写 active_item（事件时间不早于库里的才覆盖）、追加 active_log，顺手删 30 天前的。
- * - GET  /api/active    （会话）{ on, lastAt, badSigAt, limitedAt, items, ended }：变灰（2 小时）、最近结束（24 小时）在读的时候算，不加定时任务。
+ *   顺序：① 缺签名头或事件头 → 401（不读请求体、不碰 D1） ② 请求体 > 512 KB → 413 ③ 先验签（X-Hub-Signature-256，crypto.subtle.verify 常数时间）再解析：
+ *   不对 → 401，settings 的 hook:bad_sig_at 每分钟最多写一次（一条带条件的语句；不读开关、不碰别的表） ④ 开关 settings 的 hook:github（默认开）：
+ *   关着回 200、不写库 ⑤ 不是 JSON → 400 ⑥ 只处理 ping、push、pull_request、workflow_run（只认 completed）、delete，别的 204
+ *   ⑦ 仓库白名单（agents、new-forecast、Marketing，不分大小写）不在 → 202 ⑧ 每个仓库每分钟 120 次（company_rate 的 gh:<仓库>，推送接口的每分钟 6 次另算）→ 429
+ *   ⑨ X-GitHub-Delivery 见过的直接 200 ⑩ 投递编号、active_item（事件时间不早于库里的才覆盖）、active_log、清理 30 天前的放在同一个 batch，
+ *   写失败整批回滚、回 503，GitHub 重送同一编号会正常处理。
+ * - GET  /api/active    （会话）{ on, lastAt, badSigAt, limitedAt, items, ended }：变灰（2 小时）、最近结束（24 小时，只显示 7 天内的）在读的时候算，不加定时任务。
  * - POST /api/hook {on}  （会话 + 本站来源）切开关。
  * C147：代码仓库（new-forecast、marketing）只给分支名、PR 标题、CI；提交说明和 PR 正文不显示也不存。agents 只存自己人提交说明的第一行。
- *   外部人：PR 的 author_association 不是 OWNER / MEMBER / COLLABORATOR 或 head.repo.fork；推送的 sender 不是仓库主人。外部的不显示提交说明、不进"需要我的事"。
+ *   外部：PR 的 author_association 不是 OWNER / MEMBER / COLLABORATOR、user.type = Bot、或 fork 来的；推送的 sender 不是仓库主人。
+ *   fork 来的 PR 和 CI 单独成行（键 "<fork 所有者>:<分支>"），不碰内部同名分支。外部的不显示提交说明、不进"需要我的事"。
  * 接口约定和测试在 test/platform-batch3.test.ts 文件头；页面在 src/admin-page.ts 第三段脚本（团队在做什么、#ci-alert、#hook-toggle）。
  */
 import type { Env } from './env';
@@ -21,6 +23,8 @@ export const HOOK_PER_MINUTE = 120;
 const KEEP_MS = 30 * 24 * 3600_000;
 const IDLE_MS = 2 * 3600_000;
 const END_MS = 24 * 3600_000;
+/** "最近结束"只显示最后一次事件在 7 天内的（审查 R6）；库里照样留 30 天 */
+const SHOW_MS = 7 * 24 * 3600_000;
 const BAD_SIG_EVERY_MS = 60_000;
 /** "有延迟"：最近 10 分钟里有过限流（company_rate 只留最近 10 分钟） */
 const LIMITED_WINDOW_MIN = 10;
@@ -113,7 +117,7 @@ function guessProject(repo: Repo, files: string[]): string {
   if (repo === 'marketing') return 'platform';
   const f = files[0] ?? '';
   if (f.startsWith('项目/forecast/')) return 'forecast';
-  if (f.startsWith('公司平台/')) return 'platform';
+  if (f.startsWith('工作平台/') || f.startsWith('公司平台/')) return 'platform'; // 过渡期：agents 文件夹改名前后都认
   return 'company';
 }
 /** PR 标题里的【岗位·项目】（【要你决定】【只看】不算） */
@@ -126,20 +130,27 @@ export function fromTitle(title: string): { role: string; project: string } | nu
 }
 const firstLine = (msg: unknown) => s(msg, 4000).split('\n')[0].trim().slice(0, 200);
 
-// ---------------- 写库 ----------------
-function logStmts(env: Env, repo: string, branch: string, kind: string, now: number): D1PreparedStatement[] {
-  return [
-    env.DB.prepare('INSERT INTO active_log (repo, branch, kind, at) VALUES (?1, ?2, ?3, ?4)').bind(repo, branch, kind, now),
-    env.DB.prepare('DELETE FROM active_log WHERE at < ?1').bind(now - KEEP_MS),
-    env.DB.prepare('DELETE FROM active_item WHERE at < ?1').bind(now - KEEP_MS),
-    env.DB.prepare('DELETE FROM gh_delivery WHERE at < ?1').bind(now - KEEP_MS),
-  ];
-}
+// ---------------- 写库：每个事件的语句和投递编号放在同一个 batch（一起成功或一起失败，审查 R2） ----------------
+type St = D1PreparedStatement;
+const logStmt = (env: Env, repo: string, branch: string, kind: string, now: number): St =>
+  env.DB.prepare('INSERT INTO active_log (repo, branch, kind, at) VALUES (?1, ?2, ?3, ?4)').bind(repo, branch, kind, now);
+/** 记录保留 30 天（和页面"最近结束"只显示 7 天是两回事，审查 R6）：写入时顺手删 30 天前的 */
+const pruneStmts = (env: Env, now: number): St[] => [
+  env.DB.prepare('DELETE FROM active_log WHERE at < ?1').bind(now - KEEP_MS),
+  env.DB.prepare('DELETE FROM active_item WHERE at < ?1').bind(now - KEEP_MS),
+  env.DB.prepare('DELETE FROM gh_delivery WHERE at < ?1').bind(now - KEEP_MS),
+];
 const treeUrl = (fullName: string, branch: string) => `https://github.com/${fullName}/tree/${branch.split('/').map(encodeURIComponent).join('/')}`;
+/** fork 来的：head 仓库标了 fork，或者主人不是我们。外部的单独成行，键 = "<fork 所有者>:<分支>"，不碰内部同名分支那一行（审查 R1） */
+function forkOwner(r: O): string | null {
+  const owner = s(obj(r.owner).login, 100) || s(r.full_name, 300).split('/')[0];
+  if (r.fork === true || (owner && owner.toLowerCase() !== OWNER)) return owner || 'fork';
+  return null;
+}
 
-async function onPush(env: Env, repo: Repo, b: O, now: number): Promise<void> {
+function onPush(env: Env, repo: Repo, b: O, now: number): St[] {
   const ref = s(b.ref, 300);
-  if (!ref.startsWith('refs/heads/') || b.deleted === true) return; // 删分支由 delete 事件处理
+  if (!ref.startsWith('refs/heads/') || b.deleted === true) return []; // 删分支由 delete 事件处理
   const branch = ref.slice('refs/heads/'.length);
   const repository = obj(b.repository);
   const head = obj(b.head_commit);
@@ -147,89 +158,98 @@ async function onPush(env: Env, repo: Repo, b: O, now: number): Promise<void> {
   const c0 = commits[0] ?? {};
   const files = ['added', 'modified', 'removed'].flatMap((k) => (Array.isArray(c0[k]) ? (c0[k] as unknown[]).filter((x): x is string => typeof x === 'string') : []));
   const id = identify(repo, branch, files);
-  const external = lower(obj(b.sender).login) !== lower(obj(repository.owner).login) || !lower(obj(b.sender).login);
+  const sender = obj(b.sender);
+  const external = !lower(sender.login) || lower(sender.login) !== lower(obj(repository.owner).login) || s(sender.type, 20) === 'Bot';
   const msg = typeof head.message === 'string' ? head.message : null;
   // C147：代码仓库、外部人的提交说明一个字都不存；【交付】只存是 / 否
   const step = msg === null ? null : repo === 'agents' && !external ? firstLine(msg) : '';
   const delivered = msg !== null && !external && msg.trimStart().startsWith('【交付】') ? 1 : 0;
   const at = timeOf(head.timestamp, now);
   const url = treeUrl(s(repository.full_name, 300) || `${OWNER}/${repo}`, branch);
-  await env.DB.batch([
+  return [
     env.DB.prepare(
       'INSERT INTO active_item (repo, branch, role, project, labeled, step, delivered, at, url, external) VALUES (?1, ?2, ?3, ?4, ?5, COALESCE(?6, \'\'), ?7, ?8, ?9, ?10) ' +
         'ON CONFLICT (repo, branch) DO UPDATE SET step = COALESCE(?6, active_item.step), delivered = ?7, at = ?8, external = ?10, end_kind = NULL, ' +
         'url = CASE WHEN active_item.pr IS NULL THEN ?9 ELSE active_item.url END WHERE active_item.at <= ?8',
     ).bind(repo, branch, id.role, id.project, id.labeled ? 1 : 0, step, delivered, at, url, external ? 1 : 0),
-    ...logStmts(env, repo, branch, 'push', now),
-  ]);
+    logStmt(env, repo, branch, 'push', now),
+  ];
 }
 
-async function onPullRequest(env: Env, repo: Repo, b: O, now: number): Promise<void> {
+function onPullRequest(env: Env, repo: Repo, b: O, now: number): St[] {
   const p = obj(b.pull_request);
   const head = obj(p.head);
-  const branch = s(head.ref, 300);
+  const ref = s(head.ref, 300);
   const number = typeof p.number === 'number' && Number.isInteger(p.number) ? p.number : null;
-  if (!branch || number === null) return;
+  if (!ref || number === null) return [];
+  const fork = forkOwner(obj(head.repo));
+  const branch = fork ? `${fork}:${ref}` : ref;
   const action = s(b.action, 40);
   const title = s(p.title, 200); // C147：只要标题；正文 body 不读、不存
-  const external = !INSIDERS.includes(s(p.author_association, 40)) || obj(head.repo).fork === true;
+  // 外部：作者不是 OWNER / MEMBER / COLLABORATOR、fork 来的、或者是机器人（审查 R4）
+  const external = !!fork || !INSIDERS.includes(s(p.author_association, 40)) || s(obj(p.user).type, 20) === 'Bot';
   const decide = !external && title.includes('【要你决定】') ? 1 : 0;
   const end = action === 'closed' ? (p.merged === true ? 'merged' : 'closed') : null;
   const at = timeOf(p.updated_at, now);
   const url = httpsUrl(p.html_url) || `https://github.com/${s(obj(b.repository).full_name, 300) || `${OWNER}/${repo}`}/pull/${number}`;
-  const id = identify(repo, branch);
+  const id = identify(repo, ref);
   const t = !id.labeled && id.role !== 'amos' ? fromTitle(title) : null;
   const role = t?.role ?? id.role;
   const project = t?.project ?? id.project;
-  await env.DB.batch([
+  return [
     env.DB.prepare(
       'INSERT INTO active_item (repo, branch, role, project, labeled, at, pr, title, url, decide, external, end_kind) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12) ' +
         'ON CONFLICT (repo, branch) DO UPDATE SET at = ?6, pr = ?7, title = ?8, url = ?9, decide = ?10, external = ?11, end_kind = ?12, ' +
         'role = CASE WHEN ?13 THEN ?3 ELSE active_item.role END, project = CASE WHEN ?13 THEN ?4 ELSE active_item.project END WHERE active_item.at <= ?6',
     ).bind(repo, branch, role, project, id.labeled ? 1 : 0, at, number, title, url, decide, external ? 1 : 0, end, t ? 1 : 0),
-    ...logStmts(env, repo, branch, 'pr:' + action, now),
-  ]);
+    logStmt(env, repo, branch, 'pr:' + action, now),
+  ];
 }
 
-async function onWorkflowRun(env: Env, repo: Repo, b: O, now: number): Promise<void> {
-  if (s(b.action, 40) !== 'completed') return; // requested、in_progress 不改 CI
+function onWorkflowRun(env: Env, repo: Repo, b: O, now: number): St[] {
+  if (s(b.action, 40) !== 'completed') return []; // requested、in_progress 不改 CI
   const r = obj(b.workflow_run);
-  const branch = s(r.head_branch, 300);
+  const ref = s(r.head_branch, 300);
   const c = s(r.conclusion, 40);
   const ci = c === 'success' ? 'success' : ['failure', 'timed_out', 'startup_failure'].includes(c) ? 'failure' : null;
-  if (!branch || !ci) return; // cancelled、skipped 等不改
+  if (!ref || !ci) return []; // cancelled、skipped 等不改
+  const hr = obj(r.head_repository);
+  const fork = Object.keys(hr).length ? forkOwner(hr) : null;
+  const branch = fork ? `${fork}:${ref}` : ref;
   const at = timeOf(r.updated_at, now);
-  const id = identify(repo, branch);
-  const external = obj(r.head_repository).fork === true ? 1 : 0;
-  const url = treeUrl(s(obj(b.repository).full_name, 300) || `${OWNER}/${repo}`, branch);
-  await env.DB.batch([
+  const id = identify(repo, ref);
+  const url = treeUrl(fork ? s(hr.full_name, 300) || `${fork}/${repo}` : s(obj(b.repository).full_name, 300) || `${OWNER}/${repo}`, ref);
+  return [
     env.DB.prepare(
       'INSERT INTO active_item (repo, branch, role, project, labeled, at, url, ci, ci_at, external) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?6, ?9) ' +
         'ON CONFLICT (repo, branch) DO UPDATE SET ci = CASE WHEN active_item.ci_at IS NULL OR active_item.ci_at <= ?6 THEN ?8 ELSE active_item.ci END, ' +
         'ci_at = MAX(COALESCE(active_item.ci_at, 0), ?6), at = MAX(active_item.at, ?6)',
-    ).bind(repo, branch, id.role, id.project, id.labeled ? 1 : 0, at, url, ci, external),
-    ...logStmts(env, repo, branch, 'ci:' + ci, now),
-  ]);
+    ).bind(repo, branch, id.role, id.project, id.labeled ? 1 : 0, at, url, ci, fork ? 1 : 0),
+    logStmt(env, repo, branch, 'ci:' + ci, now),
+  ];
 }
 
-async function onDelete(env: Env, repo: Repo, b: O, now: number): Promise<number> {
-  if (s(b.ref_type, 20) !== 'branch') return 204; // 删 tag 不管
+function onDelete(env: Env, repo: Repo, b: O, now: number): St[] | null {
+  if (s(b.ref_type, 20) !== 'branch') return null; // 删 tag 不管
   const branch = s(b.ref, 300);
   // 没开 PR 的分支删了 → 最近结束"分支已删"；开了 PR 的由 PR 关闭事件处理。delete 不带时间，用收到的时间
-  await env.DB.batch([
+  return [
     env.DB.prepare("UPDATE active_item SET end_kind = 'deleted', at = ?3 WHERE repo = ?1 AND branch = ?2 AND pr IS NULL AND at <= ?3").bind(repo, branch, now),
-    ...logStmts(env, repo, branch, 'delete', now),
-  ]);
-  return 200;
+    logStmt(env, repo, branch, 'delete', now),
+  ];
 }
 
 /** POST /hooks/github；不是这个地址返回 null */
 export async function githubHook(env: Env, req: Request, now: number): Promise<Response | null> {
   if (new URL(req.url).pathname !== '/hooks/github') return null;
   if (!companyEnabled(env) || req.method !== 'POST') return notFound();
+  // 审查 R5：没有签名头或事件头的不是 GitHub 发的，直接 401：不读请求体、不碰 D1
+  const sigHeader = req.headers.get('x-hub-signature-256');
+  const event = (req.headers.get('x-github-event') ?? '').trim();
+  if (!sigHeader || !event) return json({ error: 'bad signature' }, 401);
   const body = await readCapped(req, HOOK_MAX_BYTES);
   if (!body) return json({ error: 'too large' }, 413);
-  if (!(await signatureOk(env, req.headers.get('x-hub-signature-256'), body))) {
+  if (!(await signatureOk(env, sigHeader, body))) {
     await noteBadSig(env, now);
     console.log(JSON.stringify({ event: 'hook.bad_signature' }));
     return json({ error: 'bad signature' }, 401);
@@ -243,7 +263,6 @@ export async function githubHook(env: Env, req: Request, now: number): Promise<R
   } catch {
     return json({ error: 'bad request' }, 400);
   }
-  const event = (req.headers.get('x-github-event') ?? '').trim();
   if (!EVENTS.includes(event)) return new Response(null, { status: 204 });
   if (event === 'push' && !s(b.ref, 300).startsWith('refs/heads/')) return new Response(null, { status: 204 }); // 推 tag 不管
   const full = lower(obj(b.repository).full_name);
@@ -251,14 +270,22 @@ export async function githubHook(env: Env, req: Request, now: number): Promise<R
   if (!repo) return json({ ignored: 'repository' }, 202);
   if (!(await underLimit(env, repo, now))) return json({ error: 'too many requests' }, 429);
   const delivery = (req.headers.get('x-github-delivery') ?? '').trim().slice(0, 100) || crypto.randomUUID();
-  const fresh = await env.DB.prepare('INSERT INTO gh_delivery (id, repo, event, at) VALUES (?1, ?2, ?3, ?4) ON CONFLICT (id) DO NOTHING').bind(delivery, repo, event, now).run();
-  if (!fresh.meta.changes) return json({ ok: true, duplicate: true });
-  let status = 200;
-  if (event === 'push') await onPush(env, repo, b, now);
-  else if (event === 'pull_request') await onPullRequest(env, repo, b, now);
-  else if (event === 'workflow_run') await onWorkflowRun(env, repo, b, now);
-  else if (event === 'delete') status = await onDelete(env, repo, b, now);
-  return status === 204 ? new Response(null, { status }) : json({ ok: true });
+  // 投递编号只在处理成功时一起写进去：处理失败（batch 整个回滚）时 GitHub 重送同一编号还会正常处理（审查 R2）
+  if (await env.DB.prepare('SELECT 1 AS x FROM gh_delivery WHERE id = ?1').bind(delivery).first()) return json({ ok: true, duplicate: true });
+  const work = event === 'push' ? onPush(env, repo, b, now) : event === 'pull_request' ? onPullRequest(env, repo, b, now)
+    : event === 'workflow_run' ? onWorkflowRun(env, repo, b, now) : event === 'delete' ? onDelete(env, repo, b, now) : [];
+  try {
+    await env.DB.batch([
+      env.DB.prepare('INSERT INTO gh_delivery (id, repo, event, at) VALUES (?1, ?2, ?3, ?4)').bind(delivery, repo, event, now),
+      ...(work ?? []), ...pruneStmts(env, now),
+    ]);
+  } catch (e) {
+    // 两个相同编号并发：后一个撞主键，整批回滚，当重复处理
+    if (/UNIQUE|PRIMARY KEY|constraint/i.test(String(e))) return json({ ok: true, duplicate: true });
+    console.log(JSON.stringify({ event: 'hook.write_failed', detail: String(e).slice(0, 200) }));
+    return json({ error: 'write failed, please redeliver' }, 503);
+  }
+  return work === null ? new Response(null, { status: 204 }) : json({ ok: true });
 }
 
 // ---------------- 后台读写 ----------------
@@ -278,7 +305,7 @@ export async function activeApi(env: Env, req: Request, now: number): Promise<Re
     const minute = Math.floor(now / 60_000);
     const [on, rows, last, bad, lim] = await Promise.all([
       hookOn(env),
-      env.DB.prepare('SELECT repo, branch, role, project, labeled, step, delivered, at, pr, title, url, ci, decide, external, end_kind FROM active_item WHERE at >= ?1 ORDER BY at DESC LIMIT 300').bind(now - KEEP_MS).all<Row>(),
+      env.DB.prepare('SELECT repo, branch, role, project, labeled, step, delivered, at, pr, title, url, ci, decide, external, end_kind FROM active_item WHERE at > ?1 ORDER BY at DESC LIMIT 300').bind(now - SHOW_MS).all<Row>(),
       env.DB.prepare('SELECT MAX(at) AS at FROM gh_delivery').first<{ at: number | null }>(),
       env.DB.prepare("SELECT value FROM settings WHERE key = 'hook:bad_sig_at'").first<{ value: string }>(),
       env.DB.prepare("SELECT MAX(minute) AS m FROM company_rate WHERE source LIKE 'gh:%' AND n > ?1 AND minute >= ?2").bind(HOOK_PER_MINUTE, minute - LIMITED_WINDOW_MIN).first<{ m: number | null }>(),
