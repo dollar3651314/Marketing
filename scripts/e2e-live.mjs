@@ -163,6 +163,8 @@ try {
       check(`${width} 宽：外部人的 PR 标"外部"`, !!ext && /外部/.test(ext.text) && !ext.text.includes(MARK), ext);
       const body = await page.evaluate(() => document.body.innerText);
       check(`${width} 宽：整页没有代码仓库推来的正文`, !body.includes(MARK), null);
+      // 改名（Amos 2026-11-02"公司平台四个字改为 工作平台"）：项目标签 platform 显示"工作平台"
+      check(`${width} 宽：platform 项目的条目写"工作平台"，整页没有"公司平台"`, !!q && /工作平台/.test(q.text) && !body.includes('公司平台'), q?.text);
       const alert = await page.locator('#ci-alert').isVisible().catch(() => false);
       check(`${width} 宽：有 CI 没过的 → 工作台顶部提醒 #ci-alert 显示`, alert, await txt(page, '#ci-alert'));
       check(`${width} 宽：不再写"还没接上"`, !/还没接上/.test((await txt(page, '#w-live')) ?? ''), await txt(page, '#w-live'));

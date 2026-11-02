@@ -512,9 +512,9 @@ describe('识别：岗位、项目（P-3）', () => {
     expect(find(a, 'claude/boss-platform-x', 'marketing')).toMatchObject({ role: 'none', labeled: false });
   });
 
-  it('agents 不合约定的分支：按改动的文件夹猜（项目/forecast/ → forecast，公司平台/ → platform，其他 → company；没改文件 → company）', async () => {
+  it('agents 不合约定的分支：按改动的文件夹猜（项目/forecast/ → forecast，工作平台/ → platform，其他 → company；没改文件 → company）', async () => {
     await hook({ event: 'push', body: push({ branch: 'claude/v0.36-a', files: ['项目/forecast/状态卡.md'] }) });
-    await hook({ event: 'push', body: push({ branch: 'claude/v0.36-b', files: ['公司平台/技术方案-公司平台.md', '公司平台/状态卡.md'] }) });
+    await hook({ event: 'push', body: push({ branch: 'claude/v0.36-b', files: ['工作平台/技术方案-工作平台.md', '工作平台/状态卡.md'] }) });
     await hook({ event: 'push', body: push({ branch: 'claude/v0.36-c', files: ['流程/底线细则.md'] }) });
     await hook({ event: 'push', body: push({ branch: 'claude/v0.36-d', files: [] }) });
     const a = await active(T0 + M);
