@@ -12,7 +12,7 @@
  * - POST /api/hook {on}  （会话 + 本站来源）切开关。
  * C147：代码仓库（new-forecast、marketing）只给分支名、PR 标题、CI；提交说明和 PR 正文不显示也不存。agents 只存自己人提交说明的第一行。
  *   外部：PR 的 author_association 不是 OWNER / MEMBER / COLLABORATOR、user.type = Bot、或 fork 来的；推送的 sender 不是仓库主人。
- *   fork 来的（含 fork 已删、head.repo 为 null 的）PR 和 CI 单独成行（键 "<fork 所有者>:<分支>"），不碰内部同名分支。外部的不显示提交说明、不进"需要我的事"。
+ *   fork 来的，或者来源仓库缺失、认不出来的（head.repo / head_repository 为 null 或缺失）PR 和 CI 单独成行（键 "<fork 所有者>:<分支>"），不碰内部同名分支。外部的不显示提交说明、不进"需要我的事"。
  * 接口约定和测试在 test/platform-batch3.test.ts 文件头；页面在 src/admin-page.ts 第三段脚本（团队在做什么、#ci-alert、#hook-toggle）。
  */
 import type { Env } from './env';
@@ -144,8 +144,8 @@ const treeUrl = (fullName: string, branch: string) => `https://github.com/${full
 /** fork 来的：head 仓库标了 fork，或者主人不是我们。外部的单独成行，键 = "<fork 所有者>:<分支>"，不碰内部同名分支那一行（审查 R1） */
 function forkOwner(r: O): string | null {
   const owner = s(obj(r.owner).login, 100) || s(r.full_name, 300).split('/')[0];
-  if (r.fork === true || (owner && owner.toLowerCase() !== OWNER)) return owner || 'fork';
-  return null;
+  if (r.fork !== true && owner.toLowerCase() === OWNER) return null;
+  return owner || 'unknown';
 }
 
 function onPush(env: Env, repo: Repo, b: O, now: number): St[] {
@@ -217,12 +217,15 @@ function onWorkflowRun(env: Env, repo: Repo, b: O, now: number): St[] {
   const c = s(r.conclusion, 40);
   const ci = c === 'success' ? 'success' : ['failure', 'timed_out', 'startup_failure'].includes(c) ? 'failure' : null;
   if (!ref || !ci) return []; // cancelled、skipped 等不改
-  const hr = obj(r.head_repository);
-  const fork = Object.keys(hr).length ? forkOwner(hr) : null;
+  // 只有 head_repository 明确是我们的（主人 dollar3651314、fork 不是 true）才落在内部那一行；
+  // 为 null、缺失、fork、主人不是我们：一律当外部单独成行，前缀取法同 PR（三审，同 R1b）
+  const hr = r.head_repository && typeof r.head_repository === 'object' ? obj(r.head_repository) : null;
+  const fork = hr ? forkOwner(hr) : s(obj(r.actor).login, 100) || s(obj(r.triggering_actor).login, 100) || 'unknown';
   const branch = fork ? `${fork}:${ref}` : ref;
   const at = timeOf(r.updated_at, now);
   const id = identify(repo, ref);
-  const url = treeUrl(fork ? s(hr.full_name, 300) || `${fork}/${repo}` : s(obj(b.repository).full_name, 300) || `${OWNER}/${repo}`, ref);
+  // 来源仓库认不出来时链到这次 CI 运行（猜出来的 fork 地址可能不存在）
+  const url = (!hr && httpsUrl(r.html_url)) || treeUrl(fork ? s(hr?.full_name, 300) || `${fork}/${repo}` : s(obj(b.repository).full_name, 300) || `${OWNER}/${repo}`, ref);
   return [
     env.DB.prepare(
       'INSERT INTO active_item (repo, branch, role, project, labeled, at, url, ci, ci_at, external) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?6, ?9) ' +
