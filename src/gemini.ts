@@ -49,13 +49,13 @@ async function callModel(env: Env, model: string, system: string, user: string, 
 
 type GeminiBody = { candidates?: { content?: { parts?: { text?: string; thought?: boolean }[] } }[]; usageMetadata?: { promptTokenCount?: number; candidatesTokenCount?: number; thoughtsTokenCount?: number } };
 /** 记一次 Gemini 请求：状态和 token（回答里的 usageMetadata；思考用的 token 算在输出里） */
-async function record(env: Env, model: string, now: number, status: number, body?: GeminiBody) {
+async function record(env: Env, model: string, now: number, status: number, body?: GeminiBody, project?: string) {
   const u = body?.usageMetadata;
-  await recordUse(env, model, now, { status, tokIn: u?.promptTokenCount, tokOut: (u?.candidatesTokenCount ?? 0) + (u?.thoughtsTokenCount ?? 0) });
+  await recordUse(env, model, now, { status, tokIn: u?.promptTokenCount, tokOut: (u?.candidatesTokenCount ?? 0) + (u?.thoughtsTokenCount ?? 0), project });
 }
 
 /** 诊断：每个模型发一个很小的请求，报状态和用时（设置页"测试 AI"，不含 Key） */
-export async function diagnose(env: Env, fetcher: FetchLike = fetch, now = Date.now()): Promise<{ model: string; ok: boolean; ms: number; detail: string }[]> {
+export async function diagnose(env: Env, fetcher: FetchLike = fetch, now = Date.now(), project?: string): Promise<{ model: string; ok: boolean; ms: number; detail: string }[]> {
   const out = [];
   for (const model of modelList(env)) {
     const t0 = Date.now();
@@ -65,10 +65,10 @@ export async function diagnose(env: Env, fetcher: FetchLike = fetch, now = Date.
       const body = res.ok ? await res.text() : (await res.text()).slice(0, 200);
       let parsed: GeminiBody | undefined;
       try { parsed = res.ok ? (JSON.parse(body) as GeminiBody) : undefined; } catch { /* 只是拿不到 token 数 */ }
-      await record(env, model, now, res.status, parsed);
+      await record(env, model, now, res.status, parsed, project);
       out.push({ model, ok: res.ok, ms: Date.now() - t0, detail: res.ok ? 'OK' : `HTTP ${res.status} ${body.replace(/\s+/g, ' ').replace(/AIza[0-9A-Za-z_-]+/g, '***').slice(0, 160)}` });
     } catch (e) {
-      await record(env, model, now, 0);
+      await record(env, model, now, 0, undefined, project);
       out.push({ model, ok: false, ms: Date.now() - t0, detail: (e as Error).message });
     }
   }
@@ -79,7 +79,8 @@ export async function diagnose(env: Env, fetcher: FetchLike = fetch, now = Date.
  * 每个模型失败的原因用中文写进 tried（2026-10-30 Amos：到上限时要说清楚是哪个模型、什么原因，不要只说"团队忙"）。
  * 全都超额 → GeminiBusy；其他 → GeminiError；message 是每个模型的原因（不含 Key）。
  */
-export async function askJson(env: Env, system: string, user: string, fetcher: FetchLike = fetch, now = Date.now()): Promise<unknown> {
+/** project：按项目记用量（usage_by_project，D-3）；不带就只记 model_usage */
+export async function askJson(env: Env, system: string, user: string, fetcher: FetchLike = fetch, now = Date.now(), project?: string): Promise<unknown> {
   const tried: string[] = [];
   let busy = false;
   for (const model of modelList(env)) {
@@ -97,11 +98,11 @@ export async function askJson(env: Env, system: string, user: string, fetcher: F
       if (res.status === 400) res = await call(false);
     } catch (e) {
       // 超时、网络出错：换下一个模型
-      await record(env, model, now, 0);
+      await record(env, model, now, 0, undefined, project);
       tried.push(`${model} ${(e as Error).message}`);
       continue;
     }
-    if (!res.ok) await record(env, model, now, res.status);
+    if (!res.ok) await record(env, model, now, res.status, undefined, project);
     if (res.status === 404) {
       tried.push(`${model} 这个 Key 用不了（404）`);
       continue;
@@ -118,7 +119,7 @@ export async function askJson(env: Env, system: string, user: string, fetcher: F
     }
     if (!res.ok) throw new GeminiError([...tried, `${model} 出错（HTTP ${res.status}）`].join('；'));
     const body = (await res.json()) as GeminiBody;
-    await record(env, model, now, res.status, body);
+    await record(env, model, now, res.status, body, project);
     const text = body.candidates?.[0]?.content?.parts?.filter((p) => !p.thought).map((p) => p.text ?? '').join('') ?? '';
     try {
       return parseLoose(text);

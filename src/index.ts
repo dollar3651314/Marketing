@@ -4,7 +4,7 @@
  * - POST /v1/score   {product, platform, posts:[{id, author, text, replies?, ageMinutes?}]}  最多 10 条 → {items:[{id, score, reasons}]}
  * - POST /v1/draft   {product, platform, post}  → {drafts:[{tone, text, source}], dropped}   只给通过程序检查的草稿
  * - POST /v1/log     {product, platform, postId, author?, score?, action: approve|skip|regenerate, draft?}  approve 超过每天上限 → 429
- * - GET  /v1/today   当天（台湾日期）的记录和计数，给插件"今天"页和晚上的小结
+ * - GET  /v1/today   当天（台湾日期）的记录和计数，给插件"今天"页和晚上的小结；按项目算（不带 product = forecast，D-2）
  * - GET  /v1/diag    每个 Gemini 模型和备用 AI 各发一个很小的请求，报状态和用时（设置页"测试 AI"；不含 Key）
  * - POST /v1/queue   {product, platform, post, score, reasons, draft, source}  存进跟帖评论清单（草稿再过一遍程序检查；同一条只存一次）
  * - POST /api/company/ingest  公司运营仪表盘：各仓库的自动检查推数据（COMPANY_INGEST_TOKEN，没填时 404；company.ts）
@@ -20,7 +20,7 @@ import { ask as askAi, diagnose } from './ai';
 import { GeminiBusy, GeminiError, type FetchLike } from './gemini';
 import { FORECAST_RULES } from '../rules/forecast';
 import { ADMIN_PAGE } from './admin-page';
-import { adminApi, adminEnabled, doneToday, saveToQueue } from './queue';
+import { adminApi, adminEnabled, DEFAULT_PROJECT, doneToday, replyCap, saveToQueue } from './queue';
 import { companyEnabled, companyIngest } from './company';
 
 const RULES: Record<string, string> = { forecast: FORECAST_RULES };
@@ -109,6 +109,7 @@ async function score(env: Env, body: Record<string, unknown>, now: number, origi
         JSON.stringify(ask.map((p) => ({ id: p.id, author: p.author, text: p.text, replies: p.replies, ageMinutes: p.ageMinutes }))),
       now,
       fetcher,
+      product,
     );
     engine = r.engine;
     const out = r.data as { items?: { id?: unknown; score?: unknown; reasons?: unknown }[] };
@@ -141,6 +142,7 @@ async function draft(env: Env, body: Record<string, unknown>, now: number, origi
       JSON.stringify({ id: post.id, author: post.author, text: post.text }),
     now,
     fetcher,
+    product,
   );
   const out = r.data as { drafts?: { tone?: unknown; text?: unknown; source?: unknown }[] };
   const all = (out.drafts ?? []).slice(0, 3).map((d) => ({ tone: str(d.tone, 12) || '回复', text: str(d.text, 600), source: str(d.source, 120), engine: r.engine }));
@@ -157,8 +159,9 @@ async function log(env: Env, body: Record<string, unknown>, now: number, origin:
   const action = str(body.action, 16);
   if (!RULES[product] || !platform || !POST_ID.test(postId) || !['approve', 'skip', 'regenerate'].includes(action)) return json({ error: 'bad request' }, 400, origin);
   if (action === 'approve') {
-    const cap = Math.max(1, Math.min(50, Number(env.DAILY_REPLY_CAP) || 10));
-    if ((await doneToday(env, now)) >= cap) return json({ error: 'daily cap', cap }, 429, origin);
+    // 每天回帖上限按项目（D-2）：settings 的 reply_cap:<项目>，没设退回 DAILY_REPLY_CAP
+    const cap = await replyCap(env, product);
+    if ((await doneToday(env, now, product)) >= cap) return json({ error: 'daily cap', cap }, 429, origin);
   }
   const sc = typeof body.score === 'number' ? Math.max(0, Math.min(100, Math.round(body.score))) : null;
   await logEvent(env, now, { product, platform, postId, author: str(body.author, 64), score: sc, action, draft: str(body.draft, 600) });
@@ -182,13 +185,13 @@ async function queue(env: Env, body: Record<string, unknown>, now: number, origi
  * 当天（台湾日期）的记录：插件里的"同意 / 跳过"，加上跟帖评论清单里今天"进清单 / 我回了 / 跳过"的
  * （2026-10-30 Amos：在后台清单里回了 2 条，"今天"却是空的——原来只算插件里按"同意"的）
  */
-async function today(env: Env, now: number, origin: string): Promise<Response> {
+async function today(env: Env, now: number, origin: string, product: string = DEFAULT_PROJECT): Promise<Response> {
   const day = twDay(now);
   const from = Date.parse(`${day}T00:00:00+08:00`);
   const to = from + 24 * 3600_000;
   const [ev, q] = await Promise.all([
-    env.DB.prepare("SELECT at, platform, post_id, author, score, action, draft FROM events WHERE day = ?1 AND action IN ('approve', 'skip') ORDER BY at").bind(day).all<{ at: number; platform: string; post_id: string; author: string; score: number | null; action: string; draft: string }>(),
-    env.DB.prepare('SELECT at, updated_at, platform, post_id, author, score, draft, status, done_day FROM queue WHERE (at >= ?1 AND at < ?2) OR (updated_at >= ?1 AND updated_at < ?2) OR done_day = ?3').bind(from, to, day).all<{ at: number; updated_at: number; platform: string; post_id: string; author: string; score: number | null; draft: string; status: string; done_day: string | null }>(),
+    env.DB.prepare("SELECT at, platform, post_id, author, score, action, draft FROM events WHERE day = ?1 AND product = ?2 AND action IN ('approve', 'skip') ORDER BY at").bind(day, product).all<{ at: number; platform: string; post_id: string; author: string; score: number | null; action: string; draft: string }>(),
+    env.DB.prepare('SELECT at, updated_at, platform, post_id, author, score, draft, status, done_day FROM queue WHERE product = ?4 AND ((at >= ?1 AND at < ?2) OR (updated_at >= ?1 AND updated_at < ?2) OR done_day = ?3)').bind(from, to, day, product).all<{ at: number; updated_at: number; platform: string; post_id: string; author: string; score: number | null; draft: string; status: string; done_day: string | null }>(),
   ]);
   const items: { at: number; platform: string; author: string; score: number | null; action: string; draft: string }[] = (ev.results ?? []).map((x) => ({ at: x.at, platform: x.platform, author: x.author, score: x.score, action: x.action, draft: x.draft }));
   for (const x of q.results ?? []) {
@@ -198,7 +201,7 @@ async function today(env: Env, now: number, origin: string): Promise<Response> {
     if (x.status === 'skip' && x.updated_at >= from && x.updated_at < to) items.push({ ...base, at: x.updated_at, action: 'skip' });
   }
   items.sort((a, b) => a.at - b.at);
-  const cap = Math.max(1, Math.min(50, Number(env.DAILY_REPLY_CAP) || 10));
+  const cap = await replyCap(env, product);
   const count = (a: string) => items.filter((x) => x.action === a).length;
   return json({ day, cap, approved: count('approve') + count('done'), skipped: count('skip'), saved: count('saved'), items }, 200, origin);
 }
@@ -225,7 +228,8 @@ export async function handle(req: Request, env: Env, now: number, fetcher?: Fetc
   if (!(await tokenOk(env, req))) return json({ error: 'unauthorized' }, 401, origin);
   if (!(await underLimit(env, now))) return json({ error: 'too many requests' }, 429, origin);
   try {
-    if (p === '/v1/today' && req.method === 'GET') return await today(env, now, origin!);
+    // 不带 product = forecast（插件 0.3.5 不带）；带了就按那个项目算（只认 RULES 里有的）
+    if (p === '/v1/today' && req.method === 'GET') { const pr = url.searchParams.get('product') ?? ''; return await today(env, now, origin!, RULES[pr] ? pr : DEFAULT_PROJECT); }
     if (p === '/v1/diag' && req.method === 'GET') return json({ models: await diagnose(env, now, fetcher) }, 200, origin);
     if (req.method !== 'POST') return notFound();
     if (Number(req.headers.get('content-length') ?? 0) > 32_768) return json({ error: 'too large' }, 413, origin);

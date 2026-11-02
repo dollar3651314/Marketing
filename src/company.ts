@@ -48,14 +48,21 @@ async function ingestTokenOk(env: Env, req: Request): Promise<boolean> {
 }
 
 // ---- payload 字段白名单（技术方案第四节；字符串 ≤ 2,000、数组 ≤ 100；不认识的字段丢掉） ----
-type Spec = { t: 's'; max?: number } | { t: 'n' } | { t: 'b' } | { t: 'u' } | { t: 'e'; of: readonly string[] } | { t: 'o'; f: Record<string, Spec> } | { t: 'a'; of: Spec };
+// 公司平台批 2（待办正文在页面里展开，Amos 2026-11-02）：prs.items、todo.items、status.waiting 多 body（纯文字，≤ BODY_MAX）、body_cut、questions（≤ 20 条，每格 ≤ 500 字）。
+//   body 超长不报错：截到 BODY_MAX 并标 body_cut = true（'c' 型）；页面只用 textContent 显示。
+type Spec = { t: 's'; max?: number } | { t: 'c'; max: number } | { t: 'n' } | { t: 'b' } | { t: 'u' } | { t: 'e'; of: readonly string[] } | { t: 'o'; f: Record<string, Spec> } | { t: 'a'; of: Spec; max?: number };
+export const BODY_MAX = 4000;
 const S = (max = 2000): Spec => ({ t: 's', max });
+/** 超长截断并标记：字段 k 超过 max 时截到 max，同时在同一对象里写 k_cut = true */
+const C = (max: number): Spec => ({ t: 'c', max });
 const N: Spec = { t: 'n' };
 const B: Spec = { t: 'b' };
 const U: Spec = { t: 'u' };
 const E = (...of: string[]): Spec => ({ t: 'e', of });
 const O = (f: Record<string, Spec>): Spec => ({ t: 'o', f });
-const A = (of: Spec): Spec => ({ t: 'a', of });
+const A = (of: Spec, max?: number): Spec => ({ t: 'a', of, max });
+/** 正文三件：body、body_cut、questions */
+const BODY_FIELDS: Record<string, Spec> = { body_cut: { t: 'b' }, body: C(BODY_MAX), questions: A(O({ q: S(500), advice: S(500) }), 20) };
 
 export const SCHEMA: Record<(typeof KINDS)[number], Spec> = {
   // 项目版图：产品、当前阶段
@@ -65,12 +72,12 @@ export const SCHEMA: Record<(typeof KINDS)[number], Spec> = {
     product: S(64), state: S(32), level: E('ok', 'warn', 'err', 'mute'), week: S(), link: U,
     metrics: A(O({ name: S(64), now: S(64), target: S(64), pct: N })),
     open: A(O({ what: S(), who: S(64), status: S(64), since: S(32), stuck: B })),
-    waiting: A(O({ id: S(32), text: S(), hint: S(200), link: U })),
+    waiting: A(O({ id: S(32), text: S(), hint: S(200), link: U, ...BODY_FIELDS })),
   }),
   // 交接记录（key = "项目/岗位"，公司平台批 1；以前的 key = 岗位照收，页面当公司层）
   handoff: O({ role: S(32), date: S(32), done: S(), next: S(), mistakes: N, link: U, sections: A(O({ title: S(64), text: S() })) }),
   // Amos 待办（key = 产品）：等你确认 / 等你操作 / 回报
-  todo: O({ product: S(64), link: U, items: A(O({ id: S(32), type: E('confirm', 'action', 'report'), level: S(16), text: S(), hint: S(200), link: U, link_text: S(32), due: N })) }),
+  todo: O({ product: S(64), link: U, items: A(O({ id: S(32), type: E('confirm', 'action', 'report'), level: S(16), text: S(), hint: S(200), link: U, link_text: S(32), due: N, ...BODY_FIELDS })) }),
   // 周报（key = 日期）
   weekly: O({
     title: S(64), range: S(64), rules: S(64), cost: S(), mistakes: N, link: U,
@@ -81,7 +88,7 @@ export const SCHEMA: Record<(typeof KINDS)[number], Spec> = {
   // 岗位学习（key = 岗位）：最近 7 天新增
   learning: O({ role: S(32), note: S(200), items: A(O({ title: S(200), link: U })) }),
   // 含【要你决定】（tag = decide）或【只看】（tag = look，页面按 opened_at + 48 小时算截止）的 open PR
-  prs: O({ items: A(O({ number: N, title: S(200), url: U, days: N, tag: E('decide', 'look'), opened_at: N })) }),
+  prs: O({ items: A(O({ number: N, title: S(200), url: U, days: N, tag: E('decide', 'look'), opened_at: N, ...BODY_FIELDS })) }),
   // main 最近一次 CI（key 为空 = 仓库本身；其他 key 例如"定时任务"）
   ci: O({ name: S(64), conclusion: E('success', 'failure', 'cancelled', 'running', 'none', 'off'), url: U, sha: S(40), at: N, note: S(200) }),
   // 周包（key = 项目，只有 agents 推）：操作指引的步骤、本周帖子、焦点战；due = 第 1 条帖子的建议发出时间
@@ -97,21 +104,32 @@ export const SCHEMA: Record<(typeof KINDS)[number], Spec> = {
 export function clean(spec: Spec, v: unknown): unknown {
   switch (spec.t) {
     case 's': return typeof v === 'string' ? v.slice(0, spec.max ?? 2000) : undefined;
+    case 'c': return typeof v === 'string' ? cutText(v, spec.max) : undefined;
     case 'n': return typeof v === 'number' && Number.isFinite(v) ? v : undefined;
     case 'b': return typeof v === 'boolean' ? v : undefined;
     case 'u': return typeof v === 'string' && /^https:\/\/[^\s"'<>]{1,500}$/.test(v) ? v : undefined;
     case 'e': return typeof v === 'string' && spec.of.includes(v) ? v : undefined;
-    case 'a': return Array.isArray(v) ? v.slice(0, 100).map((x) => clean(spec.of, x)).filter((x) => x !== undefined) : undefined;
+    case 'a': return Array.isArray(v) ? v.slice(0, spec.max ?? 100).map((x) => clean(spec.of, x)).filter((x) => x !== undefined) : undefined;
     case 'o': {
       if (!v || typeof v !== 'object' || Array.isArray(v)) return undefined;
       const out: Record<string, unknown> = {};
       for (const [k, s] of Object.entries(spec.f)) {
-        const c = clean(s, (v as Record<string, unknown>)[k]);
+        const raw = (v as Record<string, unknown>)[k];
+        const c = clean(s, raw);
         if (c !== undefined) out[k] = c;
+        if (s.t === 'c' && typeof raw === 'string' && typeof c === 'string' && c.length < raw.length) out[k + '_cut'] = true;
       }
       return out;
     }
   }
+}
+
+/** 截到 max 个 UTF-16 单位以内，不把一个字（代理对）切成两半 */
+function cutText(v: string, max: number): string {
+  if (v.length <= max) return v;
+  let t = v.slice(0, max);
+  if (/[\ud800-\udbff]$/.test(t)) t = t.slice(0, -1);
+  return t;
 }
 
 async function underLimit(env: Env, source: string, now: number): Promise<boolean> {
