@@ -3,7 +3,7 @@
  * - 插件用（令牌）：POST /v1/queue {product, platform, post:{id, author, text, ageMinutes}, score, reasons, draft, source}；同一条帖子只存一次。
  * - 后台用（密码登录后的会话 Cookie）：
  *   GET /api/queue?status=pending|done|skip&product=&platform=&from=YYYY-MM-DD&to=YYYY-MM-DD（按存进来的台湾日期）&sort=time|score、POST /api/queue/<id> {status}、
- *   GET /api/company、POST /api/company/done（公司运营仪表盘，company.ts）、
+ *   GET /api/company、POST /api/company/done（公司运营仪表盘，company.ts）、GET /api/active、POST /api/hook {on}（团队在做什么、Webhook 开关，hooks.ts）、
  *   GET /api/reply-cap、POST /api/reply-cap {caps:{项目: 1～50}}（每天回帖上限按项目，D-2，公司平台批 2）、
  *   POST /api/queue/delete {ids}（Amos 自己删；记录不自动删，D-4 选 B）、GET /api/usage、POST /api/usage {caps}（用量和限额，usage.ts）、POST /api/login、POST /api/logout。
  * 登录：密钥 COPILOT_PASSWORD（≥ 16 个字符，没填时后台 404）；同一 IP 15 分钟错 5 次锁 15 分钟，全站 1 小时错 20 次锁 1 小时；
@@ -15,6 +15,7 @@ import { saveCaps, usageByProject, usageReport, WAI_KEY } from './usage';
 import { usedToday } from './workers-ai';
 import { extensionZip } from './extension-download';
 import { companyApi } from './company';
+import { activeApi } from './hooks';
 import { PROJECT_PAGES } from './projects';
 
 export const SESSION_MS = 12 * 3600_000;
@@ -151,6 +152,8 @@ export async function adminApi(env: Env, req: Request, now: number): Promise<Res
   if (p === '/api/extension.zip' && req.method === 'GET') return extensionZip();
   const company = await companyApi(env, req, now);
   if (company) return company;
+  const live = await activeApi(env, req, now);
+  if (live) return live;
   if (p === '/api/queue' && req.method === 'GET') {
     const q = url.searchParams;
     const status = ['pending', 'done', 'skip'].includes(q.get('status') ?? '') ? q.get('status')! : 'pending';
