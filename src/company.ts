@@ -1,14 +1,22 @@
 /**
- * 公司运营仪表盘（后台第四页"公司"；agents 产品/marketing/技术方案-运营仪表盘.md，Amos 2026-11-01 确认 B-3' B-5 B-7，B-6 不要定时兜底）。
+ * 公司运营仪表盘（后台第四页"公司"；agents 公司平台/技术方案-运营仪表盘.md，Amos 2026-11-01 确认 B-3' B-5 B-7，B-6 不要定时兜底）。
  * 推送模型：agents、new-forecast、Marketing 各自的自动检查在合并到 main、开 / 关 PR 时把解析好的块推进来；这里不读 GitHub、没有定时任务。
  * - POST /api/company/ingest  Bearer <COMPANY_INGEST_TOKEN>（≥ 32 个字符，常数时间比较；没填时 404，C103）。不要会话、只依赖这个令牌，
  *   所以在 adminApi() 的 adminEnabled 判断之前处理。{source, blocks:[{kind, key, payload, status, error, source_at}]}；
  *   整体 ≤ 256 KB（413）；source、kind 白名单（400）；每个 source 每分钟 ≤ 6 次（429）；payload 只留白名单字段、按上限截断；
  *   status = error 的块只更新 error，保留上次成功的 payload；所有块一个 DB.batch 写入。
  * - GET  /api/company[?week=YYYY-MM-DD]  会话：所有块（更新时间、是否超过 7 天）、周报（默认最新一期）、"我做了"列表。
- * - POST /api/company/done  {key, done}  会话 + 本站来源（adminApi 已校验）：写 / 取消"我做了"；顺手删 90 天前的。
+ * - POST /api/company/done  {key, done, seen?}  会话 + 本站来源（adminApi 已校验）：写 / 取消"我做了"；顺手删 90 天前的。
+ *   公司平台批 1（技术方案-公司平台-PR与数据.md 第六节）：seen = 页面上次看到的 done_at（没勾是 null）。要改成的状态和库里一样 → 直接成功；
+ *   不一样且 seen 对不上 → 409 {error, key, done, at}（库里现在的状态），页面刷新并提示"已被另一处改过"。不带 seen 的老页面照旧。
+ * - POST /api/company/report  {key, project, values:{名称: 文本}}  会话 + 本站来源：填数字（第七节）。前后端同一套校验（src/projects.ts normReport），
+ *   错的格一次全报 400 {error, bad:[{name, why}]}；对了就在同一个 batch 里写 company_report 每格一行 + 给这件待办打勾。只存 D1，第一期不写回 agents。
+ *   GET /api/company 多一项 reports：每个 项目 + 名称 最新的一行。
  */
 import type { Env } from './env';
+import { normReport, PROJECT_PAGES } from './projects';
+/** 填数字的 project 只能是有项目页的项目或"公司"（审查 P-7） */
+const REPORT_PROJECTS = [...PROJECT_PAGES, '公司'];
 
 export const STALE_MS = 7 * 24 * 3600_000;
 const DONE_KEEP_MS = 90 * 24 * 3600_000;
@@ -16,7 +24,7 @@ const MAX_BYTES = 256 * 1024;
 const PER_MINUTE = 6;
 const MAX_BLOCKS = 100;
 const SOURCES = ['agents', 'new-forecast', 'marketing'] as const;
-const KINDS = ['projects', 'status', 'handoff', 'todo', 'weekly', 'learning', 'prs', 'ci'] as const;
+const KINDS = ['projects', 'status', 'handoff', 'todo', 'weekly', 'learning', 'prs', 'ci', 'pack'] as const;
 /** new-forecast、Marketing 只报自己仓库的 PR 和 CI（技术方案第二节） */
 const KINDS_OF: Record<string, readonly string[]> = { agents: KINDS, 'new-forecast': ['prs', 'ci'], marketing: ['prs', 'ci'] };
 
@@ -59,10 +67,10 @@ export const SCHEMA: Record<(typeof KINDS)[number], Spec> = {
     open: A(O({ what: S(), who: S(64), status: S(64), since: S(32), stuck: B })),
     waiting: A(O({ id: S(32), text: S(), hint: S(200), link: U })),
   }),
-  // 交接记录（key = 岗位）
+  // 交接记录（key = "项目/岗位"，公司平台批 1；以前的 key = 岗位照收，页面当公司层）
   handoff: O({ role: S(32), date: S(32), done: S(), next: S(), mistakes: N, link: U, sections: A(O({ title: S(64), text: S() })) }),
   // Amos 待办（key = 产品）：等你确认 / 等你操作 / 回报
-  todo: O({ product: S(64), link: U, items: A(O({ id: S(32), type: E('confirm', 'action', 'report'), level: S(16), text: S(), hint: S(200), link: U, link_text: S(32) })) }),
+  todo: O({ product: S(64), link: U, items: A(O({ id: S(32), type: E('confirm', 'action', 'report'), level: S(16), text: S(), hint: S(200), link: U, link_text: S(32), due: N })) }),
   // 周报（key = 日期）
   weekly: O({
     title: S(64), range: S(64), rules: S(64), cost: S(), mistakes: N, link: U,
@@ -72,10 +80,17 @@ export const SCHEMA: Record<(typeof KINDS)[number], Spec> = {
   }),
   // 岗位学习（key = 岗位）：最近 7 天新增
   learning: O({ role: S(32), note: S(200), items: A(O({ title: S(200), link: U })) }),
-  // 含【要你决定】的 open PR
-  prs: O({ items: A(O({ number: N, title: S(200), url: U, days: N })) }),
+  // 含【要你决定】（tag = decide）或【只看】（tag = look，页面按 opened_at + 48 小时算截止）的 open PR
+  prs: O({ items: A(O({ number: N, title: S(200), url: U, days: N, tag: E('decide', 'look'), opened_at: N })) }),
   // main 最近一次 CI（key 为空 = 仓库本身；其他 key 例如"定时任务"）
   ci: O({ name: S(64), conclusion: E('success', 'failure', 'cancelled', 'running', 'none', 'off'), url: U, sha: S(40), at: N, note: S(200) }),
+  // 周包（key = 项目，只有 agents 推）：操作指引的步骤、本周帖子、焦点战；due = 第 1 条帖子的建议发出时间
+  pack: O({
+    project: S(64), date: S(10), link: U, due: N,
+    steps: A(O({ n: N, text: S(), link: U })),
+    posts: A(O({ n: N, title: S(200), at: N, at_text: S(64), deadline: S(200) })),
+    matches: A(O({ league: S(32), home: S(64), away: S(64), time: S(32), note: S(200) })),
+  }),
 };
 
 /** 按白名单清洗：不认识的字段丢掉，字符串、数组按上限截断；类型不对的字段当作没有 */
@@ -181,10 +196,11 @@ export async function companyApi(env: Env, req: Request, now: number): Promise<R
     const w = url.searchParams.get('week');
     const week = w && DAY.test(w) ? w : null;
     const COLS = 'source, kind, key, payload, status, error, source_at, updated_at';
-    const [rows, weeks, done] = await Promise.all([
+    const [rows, weeks, done, reports] = await Promise.all([
       env.DB.prepare(`SELECT ${COLS} FROM company_snapshot WHERE kind != 'weekly' ORDER BY source, kind, key`).all<Row>(),
       env.DB.prepare("SELECT key FROM company_snapshot WHERE kind = 'weekly' ORDER BY key DESC LIMIT 52").all<{ key: string }>(),
       env.DB.prepare('SELECT item_key, done_at FROM company_done WHERE done_at >= ?1 ORDER BY done_at DESC').bind(now - DONE_KEEP_MS).all<{ item_key: string; done_at: number }>(),
+      env.DB.prepare('SELECT item_key, project, name, value, at FROM company_report WHERE id IN (SELECT MAX(id) FROM company_report GROUP BY project, name) ORDER BY project, name').all<Report>(),
     ]);
     const list = (weeks.results ?? []).map((x) => x.key);
     const pick = week ?? list[0] ?? null;
@@ -194,14 +210,18 @@ export async function companyApi(env: Env, req: Request, now: number): Promise<R
       blocks: (rows.results ?? []).map((r) => out(r, now)),
       weeks: list, weekly: wk ? out(wk, now) : null,
       done: (done.results ?? []).map((x) => ({ key: x.item_key, at: x.done_at })),
+      reports: reports.results ?? [],
     });
   }
   if (p === '/api/company/done' && req.method === 'POST') {
-    let b: { key?: unknown; done?: unknown } = {};
+    let b: { key?: unknown; done?: unknown; seen?: unknown } = {};
     try { b = (await req.json()) as typeof b; } catch { /* 下面判 400 */ }
-    const key = typeof b.key === 'string' ? b.key.trim() : '';
-    if (!key || key.length > 200 || /[\u0000-\u001f\u007f]/.test(key) || typeof b.done !== 'boolean') return json({ error: '请求不对' }, 400);
+    const key = itemKey(b.key);
+    const seen = b.seen;
+    if (!key || typeof b.done !== 'boolean') return json({ error: '请求不对' }, 400);
+    if (seen !== undefined && seen !== null && !(typeof seen === 'number' && Number.isInteger(seen) && seen >= 0)) return json({ error: '请求不对：seen 只能是毫秒时间或 null' }, 400);
     const prune = env.DB.prepare('DELETE FROM company_done WHERE done_at < ?1').bind(now - DONE_KEEP_MS);
+    if (seen !== undefined) return doneSeen(env, key, b.done, seen as number | null, now, prune);
     if (b.done) {
       await env.DB.batch([env.DB.prepare('INSERT INTO company_done (item_key, done_at) VALUES (?1, ?2) ON CONFLICT (item_key) DO UPDATE SET done_at = excluded.done_at').bind(key, now), prune]);
       return json({ ok: true, key, at: now });
@@ -209,5 +229,59 @@ export async function companyApi(env: Env, req: Request, now: number): Promise<R
     await env.DB.batch([env.DB.prepare('DELETE FROM company_done WHERE item_key = ?1').bind(key), prune]);
     return json({ ok: true, key, at: null });
   }
+  if (p === '/api/company/report' && req.method === 'POST') return report(env, req, now);
   return null;
+}
+
+interface Report { item_key: string; project: string; name: string; value: string; at: number }
+const CTRL = /[\u0000-\u001f\u007f]/;
+/** 待办 key：1～200 个字、没有控制字符；不对返回 '' */
+function itemKey(v: unknown): string {
+  const key = typeof v === 'string' ? v.trim() : '';
+  return !key || key.length > 200 || CTRL.test(key) ? '' : key;
+}
+const doneAt = async (env: Env, key: string) => (await env.DB.prepare('SELECT done_at FROM company_done WHERE item_key = ?1').bind(key).first<{ done_at: number }>())?.done_at ?? null;
+const conflict = (key: string, at: number | null) => json({ error: '已被另一处改过，已刷新', key, done: at !== null, at }, 409);
+
+/** 带 seen 的打勾：库里已经是要的状态 → 成功（不改时间）；seen 对得上 → 改（写的时候再带一次条件，防止中间被别处改了）；对不上 → 409 */
+async function doneSeen(env: Env, key: string, done: boolean, seen: number | null, now: number, prune: D1PreparedStatement): Promise<Response> {
+  const cur = await doneAt(env, key);
+  if (done && cur !== null) return json({ ok: true, key, at: cur });
+  if (!done && cur === null) return json({ ok: true, key, at: null });
+  if (seen !== cur) return conflict(key, cur);
+  const [w] = done
+    ? await env.DB.batch([env.DB.prepare('INSERT INTO company_done (item_key, done_at) VALUES (?1, ?2) ON CONFLICT (item_key) DO NOTHING').bind(key, now), prune])
+    : await env.DB.batch([env.DB.prepare('DELETE FROM company_done WHERE item_key = ?1 AND done_at = ?2').bind(key, seen), prune]);
+  if (!w.meta.changes) {
+    const again = await doneAt(env, key);
+    if ((again !== null) === done) return json({ ok: true, key, at: again });
+    return conflict(key, again);
+  }
+  return json({ ok: true, key, at: done ? now : null });
+}
+
+/** POST /api/company/report：填数字，只存 D1 */
+async function report(env: Env, req: Request, now: number): Promise<Response> {
+  let b: { key?: unknown; project?: unknown; values?: unknown } = {};
+  try { b = (await req.json()) as typeof b; } catch { /* 下面判 400 */ }
+  const key = itemKey(b.key);
+  const project = typeof b.project === 'string' ? b.project.trim() : '';
+  const values = b.values && typeof b.values === 'object' && !Array.isArray(b.values) ? Object.entries(b.values as Record<string, unknown>) : [];
+  if (!key) return json({ error: '请求不对：key 要是 1～200 个字', bad: [] }, 400);
+  if (!REPORT_PROJECTS.includes(project)) return json({ error: `请求不对：project 只能是 ${REPORT_PROJECTS.join(' / ')}`, bad: [] }, 400);
+  if (!values.length || values.length > 10) return json({ error: '请求不对：values 要有 1～10 格', bad: [] }, 400);
+  const bad: { name: string; why: string }[] = [];
+  const ok: [string, string][] = [];
+  for (const [name, raw] of values) {
+    const r = normReport(name, raw);
+    if ('why' in r) bad.push({ name: name.slice(0, 64), why: r.why });
+    else ok.push([name, r.value]);
+  }
+  if (bad.length) return json({ error: '没保存：有格子不对', bad }, 400);
+  await env.DB.batch([
+    ...ok.map(([name, value]) => env.DB.prepare('INSERT INTO company_report (item_key, project, name, value, at) VALUES (?1, ?2, ?3, ?4, ?5)').bind(key, project, name, value, now)),
+    env.DB.prepare('INSERT INTO company_done (item_key, done_at) VALUES (?1, ?2) ON CONFLICT (item_key) DO UPDATE SET done_at = excluded.done_at').bind(key, now),
+  ]);
+  console.log(JSON.stringify({ event: 'company.report', project, n: ok.length }));
+  return json({ ok: true, key, at: now });
 }

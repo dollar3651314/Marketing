@@ -62,13 +62,13 @@ const GH = 'https://github.com/dollar3651314/agents/blob/main/';
 const AGENTS = [
   { kind: 'todo', key: 'forecast', source_at: at, payload: { product: 'forecast', items: [
     { id: 'M1', type: 'confirm', level: 'L3', text: '预热什么时候恢复、怎么恢复（A 11/8 起每周一包 / B 明天恢复 / C 继续停）', hint: '经营会 2026-11-01 · 建议 A', link: GH + '经营/经营会/2026-11-01.md', link_text: '看议程' },
-    { id: 'M2', type: 'confirm', level: 'L3', text: 'forecast 内测版：5～10 个内测用户人选、开始日期', hint: '建议 12/1 开内测', link: GH + '产品/forecast/状态卡.md', link_text: '看状态卡' },
+    { id: 'M2', type: 'confirm', level: 'L3', text: 'forecast 内测版：5～10 个内测用户人选、开始日期', hint: '建议 12/1 开内测', link: GH + '项目/forecast/状态卡.md', link_text: '看状态卡' },
     { id: 'M3', type: 'confirm', level: 'L3', text: '英语学习网站并行：什么时候做开局沟通', hint: '建议 11/8 重构完成后', link: GH + '经营/经营会/2026-11-01.md', link_text: '看议程' },
     { id: 'M5', type: 'confirm', level: 'L3', text: '第一批学习 8 条：今天过还是 11/7 过', link: GH + 'v0.31-附1-岗位重构方案.md', link_text: '看 8 条' },
     { id: 'M6', type: 'confirm', level: 'L3', text: '周报每周六 17:00 发对话，要不要推送提醒' },
     { id: 'T2', type: 'action', text: '官网：用真实邮箱走一遍（留邮箱 → 确认信 → 名单页看到自己）', hint: 'Amos 待办 · 10/29 起 3 天', link: 'https://www.quickcome.online', link_text: '打开官网' },
     { id: 'T3', type: 'action', text: 'X、Threads 简介加官网链接' },
-    { id: 'T4', type: 'action', text: '发置顶帖并置顶（L-1 已确认）', hint: '预热暂停中，恢复时一起做', link: GH + '产品/forecast/BC-可行性预热/运行记录/2026-10-29-置顶帖.md', link_text: '看文案' },
+    { id: 'T4', type: 'action', text: '发置顶帖并置顶（L-1 已确认）', hint: '预热暂停中，恢复时一起做', link: GH + '项目/forecast/BC-可行性预热/运行记录/2026-10-29-置顶帖.md', link_text: '看文案' },
     { type: 'report', text: '两个号的关注数、名单页数字（上次回报 10/29：X 2、Threads 1）' },
   ] } },
   // 项目和状态卡：2026-11-01 晚 agents main 的真实输出（Amos 截图里变形的那份：整句数字、"本周"是全部决定、阶段取的是项目版图）
@@ -156,7 +156,8 @@ async function refresh(page) { await page.click('#co-refresh'); await page.waitF
 try {
   const page = await open({ width: 1280, height: 900 });
   await login(page);
-  check('登录后在清单页，顶栏有"公司"', (await visible(page, '#v-list')) && (await visible(page, '#conav')), null);
+  // 公司平台批 1（P-9）起登录后默认是工作台（原来是清单页）；"公司"页（公司总览）入口还是顶栏的 #conav
+  check('登录后在工作台，顶栏有"公司"', (await visible(page, '#v-work')) && !(await visible(page, '#v-list')) && (await visible(page, '#conav')), null);
 
   // 1. 还没有数据
   await page.click('#conav');

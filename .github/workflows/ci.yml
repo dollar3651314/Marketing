@@ -46,6 +46,10 @@ jobs:
         run: node scripts/e2e-ext.mjs
       - name: 网页后台（本地 wrangler dev + 本地 D1：公司页各块、变灰、解析失败、"我做了"、旧三页照常；agents C141）
         run: npm run e2e:admin
+      - name: 跟帖评论清单基线（一键回复、我回了、跳过、删除、筛选、"今天"计数；公司平台 PR 1 起每个 PR 都要全绿，风险 R-1）
+        run: npm run e2e:queue
+      - name: 公司平台批 1 验收（三层导航、工作台、待办按截止排和红橙、打勾跨设备、填数字、forecast 项目页、375 / 1440 宽、深浅色）
+        run: npm run e2e:platform
 
   # 汇总：分支保护只把这一项设为"必须通过"
   ci-ok:
