@@ -54,10 +54,10 @@ const AGENTS = [
   { kind: 'prs', key: '', source_at: now, payload: { items: [{ number: 89, title: T.soonPr, url: 'https://github.com/dollar3651314/agents/pull/89', days: 1, tag: 'look', opened_at: now - 47 * H }] } },
   { kind: 'projects', key: '', source_at: now - H, payload: { version: 'v1.4', items: [{ name: 'forecast', stage: '试水阶段' }, { name: '报价', stage: '未开始' }] } },
   { kind: 'status', key: 'forecast', source_at: now - H, payload: { product: 'forecast', state: 'B + C', level: 'warn', week: '第一周的 6 条帖子和 10 场焦点战已备好',
-    metrics: [{ name: 'X + Threads 关注合计', now: '见公司平台', target: '50' }, { name: '等候名单确认订阅', now: '见公司平台', target: '100' }, { name: '第一笔真实抽成', now: '没有', target: '2026-12-31 前' }] } },
-  { kind: 'status', key: '公司平台', source_at: now - H, payload: { product: '公司平台', state: 'E 上线运营', level: 'mute', week: '公司平台批 1', metrics: [{ name: '副驾驶插件版本', now: '0.3.5' }] } },
+    metrics: [{ name: 'X + Threads 关注合计', now: '见工作平台', target: '50' }, { name: '等候名单确认订阅', now: '见工作平台', target: '100' }, { name: '第一笔真实抽成', now: '没有', target: '2026-12-31 前' }] } },
+  { kind: 'status', key: '工作平台', source_at: now - H, payload: { product: '工作平台', state: 'E 上线运营', level: 'mute', week: '工作平台批 1', metrics: [{ name: '副驾驶插件版本', now: '0.3.5' }] } },
   { kind: 'handoff', key: 'forecast/市场', source_at: now - H, payload: { role: '市场', date: '2026-11-01', done: 'forecast 周包写好了（样例）', next: '周二窗口' } },
-  { kind: 'handoff', key: '公司平台/研发', source_at: now - H, payload: { role: '研发', date: '2026-11-01', done: '公司平台技术方案（样例）', next: '批 1' } },
+  { kind: 'handoff', key: '工作平台/研发', source_at: now - H, payload: { role: '研发', date: '2026-11-01', done: '工作平台技术方案（样例）', next: '批 1' } },
   { kind: 'weekly', key: '2026-11-01', source_at: now - H, payload: { title: '第 1 期', range: '10/26～11/1', cost: '0 元', mistakes: 9 } },
 ];
 const PACK = {
@@ -116,7 +116,7 @@ try {
     check('登录后默认是工作台（#v-work 显示、地址是 #/work…）', ok && /^#\/work/.test(await page.evaluate(() => location.hash)), [ok, await page.evaluate(() => location.hash)]);
     const nav1 = await page.locator('nav.nav1 a[data-p]').evaluateAll((a) => a.map((x) => x.dataset.p)).catch(() => []);
     check('一级菜单：工作台 · forecast（每个在跑的项目一个）· 公共工具', JSON.stringify(nav1) === JSON.stringify(['work', 'forecast', 'tools']), nav1);
-    check('一级菜单没有"Marketing""公司平台"当项目', !(await page.locator('nav.nav1').innerText().catch(() => '')).match(/Marketing|公司平台/), await txt(page, 'nav.nav1'));
+    check('一级菜单没有"Marketing""工作平台"当项目（改名：Amos 2026-11-02"公司平台四个字改为 工作平台"）', !(await page.locator('nav.nav1').innerText().catch(() => '')).match(/Marketing|工作平台|公司平台/), await txt(page, 'nav.nav1'));
     check('清单页、公司旧页不再是默认（#v-list 不显示）', !(await vis(page, '#v-list')), null);
   });
 
@@ -226,7 +226,7 @@ try {
     await login(f, '/#/forecast/card');
     await waitFor(f, '#f-card');
     const card = (await txt(f, '#f-card')) ?? '';
-    check('forecast"数字和决定"：见公司平台 → 换成平台里的值（关注合计 17、名单 0），写明是你填的', /17/.test(card) && /你.{0,12}填的/.test(card) && !card.includes('见公司平台'), card.slice(0, 300));
+    check('forecast"数字和决定"：见工作平台 → 换成平台里的值（关注合计 17、名单 0），写明是你填的', /17/.test(card) && /你.{0,12}填的/.test(card) && !card.includes('见工作平台') && !card.includes('见公司平台'), card.slice(0, 300));
     const num = (await txt(f, '#w-num')) ?? '';
     await f.goto(BASE + '/#/work/num'); await waitFor(f, '#w-num');
     check('工作台"公司数字"也能看到（新浏览器、没有本地存储：值来自服务器）', /17|12/.test((await txt(f, '#w-num')) ?? num), await txt(f, '#w-num'));
@@ -256,7 +256,7 @@ try {
     check('本周帖子：6 条', (await p.locator('#f-pack tbody tr').count()) === 6, await p.locator('#f-pack tbody tr').count());
     check('焦点战：10 场', (await p.locator('#f-match tbody tr').count()) === 10, await p.locator('#f-match tbody tr').count());
     const hand = (await txt(p, '#f-handoff')) ?? '';
-    check('交接记录：只有 forecast 的（市场），没有公司平台的', hand.includes('forecast 周包写好了') && !hand.includes('公司平台技术方案'), hand.slice(0, 200));
+    check('交接记录：只有 forecast 的（市场），没有工作平台的', hand.includes('forecast 周包写好了') && !hand.includes('工作平台技术方案'), hand.slice(0, 200));
     check('用到的工具：有跟帖评论清单的入口', (await p.locator('#f-tools a, #f-tools button', { hasText: '清单' }).count()) >= 1, await txt(p, '#f-tools'));
     // 操作指引：逐步打勾 → 5 步做完，待办里那件自动打勾；另一台设备也看到
     const steps = p.locator('#g-steps .step');
@@ -297,7 +297,7 @@ try {
     await page.goto(BASE + '/#/work/proj');
     await waitFor(page, '#w-proj');
     const proj = (await txt(page, '#w-proj')) ?? '';
-    check('项目概况：只列有状态卡的项目（forecast），公司平台不当项目、没有状态卡的"报价"不列', proj.includes('forecast') && !proj.includes('公司平台') && !proj.includes('报价'), proj.slice(0, 200));
+    check('项目概况：只列有状态卡的项目（forecast），工作平台不当项目、没有状态卡的"报价"不列', proj.includes('forecast') && !proj.includes('工作平台') && !proj.includes('公司平台') && !proj.includes('报价'), proj.slice(0, 200));
     check('团队在做什么：批 1 先显示"还没接上"', /还没接上/.test((await txt(page, '#w-live')) ?? ''), await txt(page, '#w-live'));
     check('工作台顶部有跟帖评论清单入口（插件按钮落在工作台时少点一下，风险 R-2）', (await page.locator('#v-work a, #v-work button', { hasText: '跟帖评论清单' }).count()) >= 1, null);
   });
@@ -333,6 +333,31 @@ try {
     await waitFor(p, '#w-todos li.todo');
     const L = await todos(p);
     check('有一项改动没通过自动检查：这件事排第一、标红', r.status === 200 && /自动检查/.test(L[0]?.text ?? '') && L[0]?.cls === 'over', L.slice(0, 2));
+    await p.context().close();
+  });
+
+  // ---------- 改名：公司平台 → 工作平台（Amos 2026-11-02："公司平台四个字改为 工作平台"） ----------
+  await section('改名为工作平台', async () => {
+    const p = await open();
+    await p.goto(BASE + '/');
+    await waitFor(p, '#login');
+    const shot = async (where) => {
+      const r = await p.evaluate(() => ({ title: document.title, text: document.body.innerText }));
+      check(`${where}：<title> 有"工作平台"、没有"公司平台"`, r.title.includes('工作平台') && !r.title.includes('公司平台'), r.title);
+      check(`${where}：页面文字有"工作平台"、没有"公司平台"`, r.text.includes('工作平台') && !r.text.includes('公司平台'), (r.text.match(/.{0,20}公司平台.{0,20}/) || [r.text.slice(0, 80)])[0]);
+    };
+    await shot('登录页');
+    await p.fill('#pw', PASS);
+    await p.click('#go');
+    await p.waitForSelector('#app:not([hidden])', { timeout: WAIT });
+    for (const at of ['/#/work', '/#/forecast', '/#/tools', '/#/tools/hook']) {
+      await p.goto(BASE + at);
+      await p.waitForTimeout(600);
+      await shot(at);
+    }
+    const raw = await (await fetch(BASE + '/')).text();
+    const t = /<title>([^<]*)<\/title>/.exec(raw)?.[1] ?? '';
+    check('服务端返回的 HTML 里 <title> 是"工作平台"', t.includes('工作平台') && !t.includes('公司平台'), t);
     await p.context().close();
   });
 

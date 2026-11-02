@@ -147,9 +147,9 @@ describe('推送：待办 due、PR 的 tag / opened_at、周包 pack', () => {
 
   it('交接记录 key 用"项目/岗位"：收下；同一岗位两个项目各一块；没有斜杠的旧 key 也照收', async () => {
     const hand = (key: string, role: string) => ({ kind: 'handoff', key, payload: { role, date: '2026-11-01', done: key } });
-    expect((await ingest({ source: 'agents', blocks: [hand('forecast/市场', '市场'), hand('公司平台/市场', '市场'), hand('研发', '研发')] })).status).toBe(200);
+    expect((await ingest({ source: 'agents', blocks: [hand('forecast/市场', '市场'), hand('工作平台/市场', '市场'), hand('研发', '研发')] })).status).toBe(200);
     const keys = (await read(await cookie())).blocks.filter((b) => b.kind === 'handoff').map((b) => b.key).sort();
-    expect(keys).toEqual(['forecast/市场', '公司平台/市场', '研发']);
+    expect(keys).toEqual(['forecast/市场', '工作平台/市场', '研发']);
   });
 });
 

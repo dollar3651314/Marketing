@@ -34,14 +34,31 @@
  * 接口约定见 test/platform-batch2.test.ts 文件头（/api/reply-cap、/api/usage 的 byProject）。
  * 每段单独 try：一段没做出来不影响别的段报结果；等待都有短超时，等不到就照实报"实际值"。任何一条不符就以非 0 退出。
  */
-import { mkdirSync } from 'node:fs';
+import { mkdirSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { chromium } from 'playwright';
 import { startServer, PASS, twDay, twStart, q, checker } from './e2e-server.mjs';
 
 const shotsAt = process.argv.indexOf('--shots');
 const SHOTS = shotsAt > 0 ? path.resolve(process.argv[shotsAt + 1]) : '';
-const { fails, check } = checker();
+const { fails, check: check0 } = checker();
+// CI 失败时留证据（批 3 复审）：设了 E2E_ARTIFACTS（CI 里设）就把不通过的那几行写进 <目录>/e2e-tools-fails.txt，并给当时最近打开的页面截一张图
+const ART = process.env.E2E_ARTIFACTS ? path.resolve(process.env.E2E_ARTIFACTS, 'e2e-tools') : '';
+const failLines = [];
+const pendingShots = [];
+let curPage = null;
+const check = (name, ok, got) => {
+  const r = check0(name, ok, got);
+  if (!ok) {
+    failLines.push(`✗ ${name}：实际 ${JSON.stringify(got)}`);
+    if (ART && curPage && !curPage.isClosed()) {
+      mkdirSync(ART, { recursive: true });
+      const f = path.join(ART, `fail-${failLines.length}.png`);
+      pendingShots.push(curPage.screenshot({ path: f, fullPage: true }).catch(() => {}));
+    }
+  }
+  return r;
+};
 const H = 3600_000, DAY = 24 * H;
 const WAIT = 4000;
 const now = Date.now();
@@ -87,6 +104,7 @@ async function open({ width = 1440, height = 900 } = {}) {
   const page = await ctx.newPage();
   page.setDefaultTimeout(WAIT);
   page.on('pageerror', (e) => errors.push(e.message));
+  curPage = page;
   return page;
 }
 async function login(page, at = '/') {
@@ -110,11 +128,32 @@ const badges = (page) => page.evaluate(() => {
 });
 const todayOf = (page) => page.evaluate(() => { const m = /今天已回\s*(\d+)\s*\/\s*(\d+)/.exec(document.body.innerText); return m ? [Number(m[1]), Number(m[2])] : null; });
 const item = (page, author) => page.locator('#list .item', { has: page.locator('.who a', { hasText: author }) });
+/**
+ * 清单按项目筛（批 3 复审修正偶发失败）：只认这次筛选的那个返回——请求里 product = v（v 为空串时请求里没有 product）；
+ * 不再用固定的 200 毫秒，等到 #f-prod 是 v、并且"今天已回"那一栏（#count）在这次返回之后重新画过。等不到就报错（这一段记"没跑完"）。
+ */
 async function filterProd(page, v) {
-  const resp = page.waitForResponse((r) => r.url().includes('/api/queue?') && r.request().method() === 'GET', { timeout: WAIT }).catch(() => null);
+  await page.evaluate(() => {
+    window.__countRedrawn = false;
+    const c = document.getElementById('count');
+    if (window.__countObs) window.__countObs.disconnect();
+    window.__countObs = new MutationObserver(() => { window.__countRedrawn = true; });
+    if (c) window.__countObs.observe(c, { childList: true, characterData: true, subtree: true });
+  });
+  const resp = page.waitForResponse((r) => {
+    if (r.request().method() !== 'GET' || !r.url().includes('/api/queue?')) return false;
+    const u = new URL(r.url());
+    return v === '' ? !u.searchParams.has('product') : u.searchParams.get('product') === v;
+  }, { timeout: WAIT });
   await page.selectOption('#f-prod', v);
-  await resp;
-  await page.waitForTimeout(200);
+  const r = await resp.catch(() => null);
+  if (!r) throw new Error(`筛项目"${v || '全部'}"：等不到 product=${v || '（无）'} 的 /api/queue 返回`);
+  // "重新画过"：选了以后 #count 变过，而且显示的正是这次返回里的"今天已回 / 上限"（不是之前别的请求画的）
+  const body = await r.json().catch(() => null);
+  const want = body && Number.isFinite(body.doneToday) && Number.isFinite(body.cap) ? `今天已回 ${body.doneToday} / ${body.cap}` : null;
+  if (!want) throw new Error(`筛项目"${v || '全部'}"：/api/queue 返回里没有 doneToday / cap`);
+  const ok = await page.waitForFunction(([pv, text]) => document.getElementById('f-prod')?.value === pv && window.__countRedrawn === true && (document.getElementById('count')?.textContent || '').trim() === text, [v, want], { timeout: WAIT }).then(() => true, () => false);
+  if (!ok) throw new Error(`筛项目"${v || '全部'}"：返回以后"今天已回"没有按这次的结果重新画（#f-prod = ${await page.inputValue('#f-prod').catch(() => '?')}，#count = ${await page.textContent('#count').catch(() => '?')}，应为 ${want}）`);
 }
 
 try {
@@ -521,12 +560,15 @@ try {
     for (const width of WIDTHS) {
       const ctx = await b2.newContext({ viewport: { width, height: 900 } });
       const page = await ctx.newPage();
+      curPage = page;
       page.on('pageerror', (e) => errs2.push(e.message));
       await page.goto(srv2.BASE + '/#/tools/byproj');
       await page.fill('#pw', PASS);
       await page.click('#go');
       await page.waitForSelector('#app:not([hidden])', { timeout: WAIT });
-      const ok = await waitFor(page, '#t-byproj tbody tr');
+      // 测试用例修正（批 3 时发现的偶发失败，C29、C57）：tbody 里先有一行"正在读取…"占位，原来等到它就往下查，读得慢时查到的是占位行。
+      // 改成等到真的数据行（第一格写 forecast）再查；断言不变。
+      const ok = await page.waitForFunction(() => [...document.querySelectorAll('#t-byproj tbody tr')].some((tr) => (tr.querySelector('td')?.innerText || '').includes('forecast')), null, { timeout: WAIT }).then(() => true, () => false);
       const rows = await page.locator('#t-byproj tbody tr').evaluateAll((trs) => trs.map((tr) => ({ name: tr.querySelector('td')?.innerText || '', gemini: tr.querySelector('td[data-label="Gemini"]')?.innerText || '' })));
       const num = (s) => { const m = /([\d,]+)\s*次/.exec(s); return m ? Number(m[1].replace(/,/g, '')) : NaN; };
       const fc = rows.find((r) => r.name.includes('forecast')), pf = rows.find((r) => r.name.includes('平台自己'));
@@ -545,6 +587,8 @@ try {
   if (srv2) srv2.stop();
 }
 
+await Promise.all(pendingShots);
+if (ART && failLines.length) { mkdirSync(ART, { recursive: true }); writeFileSync(path.join(ART, 'e2e-tools-fails.txt'), failLines.join('\n') + '\n'); }
 await browser.close();
 if (fails.length) { console.error(`\n✗ 公司平台批 2 验收有 ${fails.length} 项不通过`); process.exit(1); }
 console.log('\n✓ 公司平台批 2 验收测试全部通过');
