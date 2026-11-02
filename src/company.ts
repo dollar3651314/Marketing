@@ -88,7 +88,7 @@ export const SCHEMA: Record<(typeof KINDS)[number], Spec> = {
   // 岗位学习（key = 岗位）：最近 7 天新增
   learning: O({ role: S(32), note: S(200), items: A(O({ title: S(200), link: U })) }),
   // 含【要你决定】（tag = decide）或【只看】（tag = look，页面按 opened_at + 48 小时算截止）的 open PR
-  prs: O({ items: A(O({ number: N, title: S(200), url: U, days: N, tag: E('decide', 'look'), opened_at: N, ...BODY_FIELDS })) }),
+  prs: O({ items: A(O({ number: N, title: S(200), url: U, days: N, tag: E('decide', 'look'), opened_at: N, external: B, ...BODY_FIELDS })) }),
   // main 最近一次 CI（key 为空 = 仓库本身；其他 key 例如"定时任务"）
   ci: O({ name: S(64), conclusion: E('success', 'failure', 'cancelled', 'running', 'none', 'off'), url: U, sha: S(40), at: N, note: S(200) }),
   // 周包（key = 项目，只有 agents 推）：操作指引的步骤、本周帖子、焦点战；due = 第 1 条帖子的建议发出时间
@@ -99,6 +99,16 @@ export const SCHEMA: Record<(typeof KINDS)[number], Spec> = {
     matches: A(O({ league: S(32), home: S(64), away: S(64), time: S(32), note: S(200) })),
   }),
 };
+
+/**
+ * 代码仓库（new-forecast、marketing）推来的用这一份（批 2 新口径，Amos 2026-11-02："只有agents才是公司……其他项目内不保留这些资料也不认被其他人提交上来的东西"）：
+ * PR 只收标题、链接、开了几天、tag、external；正文 body / body_cut / questions 一律不存（正文只认 agents）。
+ */
+export const CODE_SCHEMA: Partial<Record<(typeof KINDS)[number], Spec>> = {
+  prs: O({ items: A(O({ number: N, title: S(200), url: U, days: N, tag: E('decide', 'look'), opened_at: N, external: B })) }),
+  ci: SCHEMA.ci,
+};
+const specFor = (source: string, kind: string): Spec | undefined => (source === 'agents' ? SCHEMA : CODE_SCHEMA)[kind as keyof typeof SCHEMA];
 
 /** 按白名单清洗：不认识的字段丢掉，字符串、数组按上限截断；类型不对的字段当作没有 */
 export function clean(spec: Spec, v: unknown): unknown {
@@ -176,7 +186,8 @@ export async function companyIngest(env: Env, req: Request, now: number): Promis
     else if (kind === 'weekly' && !DAY.test(key)) why.push('周报的 key 要写成 YYYY-MM-DD');
     if (status !== 'ok' && status !== 'error') why.push('status 只能是 ok 或 error');
     if (typeof at !== 'number' || !Number.isInteger(at) || at <= 0 || at > now + 24 * 3600_000) why.push('source_at 要是毫秒时间戳，不能晚于现在');
-    const payload = status === 'ok' && KINDS_OF[source].includes(kind) ? clean(SCHEMA[kind as keyof typeof SCHEMA], b.payload) : undefined;
+    const spec = KINDS_OF[source].includes(kind) ? specFor(source, kind) : undefined;
+    const payload = status === 'ok' && spec ? clean(spec, b.payload) : undefined;
     if (status === 'ok' && payload === undefined) why.push('payload 要是对象');
     if (why.length) { bad.push(`blocks[${i}]: ${why.join('; ')}`); return; }
     if (status === 'ok') {

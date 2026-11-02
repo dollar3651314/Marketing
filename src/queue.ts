@@ -111,7 +111,10 @@ export async function doneToday(env: Env, now: number, product: string = DEFAULT
 
 /** 后台"每天回帖上限"一行：每个有项目页的项目（src/projects.ts PROJECT_PAGES） */
 async function replyCapRows(env: Env, now: number): Promise<{ project: string; cap: number; doneToday: number }[]> {
-  return Promise.all(PROJECT_PAGES.map(async (project) => ({ project, cap: await replyCap(env, project), doneToday: await doneToday(env, now, project) })));
+  return Promise.all(PROJECT_PAGES.map(async (project) => {
+    const [cap, done] = await Promise.all([replyCap(env, project), doneToday(env, now, project)]);
+    return { project, cap, doneToday: done };
+  }));
 }
 
 /** POST /api/reply-cap {caps:{项目: n}}：n 是 1～50 的整数、项目要有项目页；有一个不对就一个都不存 */
@@ -180,7 +183,10 @@ export async function adminApi(env: Env, req: Request, now: number): Promise<Res
     // 每天回帖上限按项目（D-2）：doneToday、cap 是筛的那个项目的（没筛按 forecast，和 /v1/today 一样）；caps 是清单里每个项目各自的，页面按条目所在项目判断"到上限"
     const prodList = (products.results ?? []).map((x) => x.product);
     const caps: Record<string, { doneToday: number; cap: number }> = {};
-    for (const pj of new Set([...prodList, prod || DEFAULT_PROJECT])) caps[pj] = { doneToday: await doneToday(env, now, pj), cap: await replyCap(env, pj) };
+    await Promise.all([...new Set([...prodList, prod || DEFAULT_PROJECT])].map(async (pj) => {
+      const [doneN, capN] = await Promise.all([doneToday(env, now, pj), replyCap(env, pj)]);
+      caps[pj] = { doneToday: doneN, cap: capN };
+    }));
     const cur = caps[prod || DEFAULT_PROJECT];
     return json({ items, total: total?.n ?? 0, max: LIST_MAX, products: prodList, doneToday: cur.doneToday, cap: cur.cap, caps });
   }

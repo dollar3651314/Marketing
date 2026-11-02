@@ -262,6 +262,8 @@ try {
       // 外部平台的：保留原来的外链，不展开
       const ext = li(W.ext).locator('.go a.btn.primary');
       check(`${tag} 要到外部平台操作的（去 X 发帖）：还是外链、新窗口打开，没有正文框`, (await ext.getAttribute('href').catch(() => null)) === 'https://x.com/compose/post' && (await ext.getAttribute('target').catch(() => null)) === '_blank' && (await li(W.ext).locator('.detail').count()) === 0, await ext.evaluate((a) => a.outerHTML).catch(() => null));
+      // 审查 R7：375 宽的展开截图（1440 宽的在下面 PR 那段之后存）；只在 --shots 时存，不影响判断
+      if (SHOTS && width === 375) { mkdirSync(SHOTS, { recursive: true }); await li(W.look).scrollIntoViewIfNeeded().catch(() => {}); await page.screenshot({ path: path.join(SHOTS, `todo-detail-${width}.png`) }); }
       if (sel === '#w-todos') {
         // PR：说明正文 + 问题表（每条带建议）；长正文先折叠，点了展开；HTML 只当文字
         const o3 = await openDetail(W.pr);

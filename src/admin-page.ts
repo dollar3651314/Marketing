@@ -43,7 +43,14 @@ main{max-width:1120px;margin:0 auto;padding:16px max(16px,env(safe-area-inset-ri
 .crumb{display:flex;gap:8px 10px;align-items:baseline;flex-wrap:wrap;margin:0}.crumb h1{font-size:22px;margin:0}
 .mh{font-size:16px;margin:0 0 10px;display:flex;align-items:center;gap:8px;flex-wrap:wrap}.mh .sp{flex:1}.mh #count{font-size:13px;font-weight:400;color:var(--muted)}
 @media (max-width:640px){.brand{display:none}.nav1{gap:2px}.nav1 a{padding:4px 9px}.nav1 .grp-l{display:none}.top{padding:6px 12px;min-height:44px;gap:4px 6px}
-  .top #nav,.top #extnav{display:none}.top button{padding:2px 8px}.sub a{padding:8px 10px 7px}}
+  .top #nav,.top #extnav{display:none}.top button{padding:2px 8px}.sub a{padding:8px 10px 7px}
+  /* 批 2 审查 R8：公共工具只有 5 项，手机上折成两行，"插件下载"不用横滑就看得到 */
+  #sub-tools .in{flex-wrap:wrap;overflow-x:visible;row-gap:0}#sub-tools a{padding:6px 9px 5px}}
+/* 其他二级菜单能横滑时，右边缘渐隐提示"还有"（R8） */
+.sub .in.more{-webkit-mask-image:linear-gradient(90deg,#000 82%,transparent);mask-image:linear-gradient(90deg,#000 82%,transparent)}
+/* 批 2 审查 R9：手机横屏（矮屏）两层菜单收紧，加起来 ≤ 屏幕高度 25% */
+@media (max-height:500px){.top{min-height:0;padding:3px 12px;gap:2px 6px;flex-wrap:nowrap}.brand,.nav1 .grp-l,.top #nav,.top #extnav{display:none}.nav1{flex-wrap:nowrap;gap:2px}.nav1 a{padding:2px 9px}.top button{padding:1px 8px}
+  .sub a{padding:4px 10px 3px}#sub-tools .in{flex-wrap:nowrap;overflow-x:auto}}
 .filters{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin:4px 0 10px}
 .chip{font:inherit;font-size:14px;padding:5px 12px;border-radius:99px;border:1px solid var(--line);background:var(--surface);color:var(--ink);cursor:pointer}
 .chip[aria-pressed="true"]{background:var(--teal-soft);border-color:var(--teal);font-weight:700}
@@ -112,6 +119,9 @@ th{font-size:12px;color:var(--muted);font-weight:600}td.n{text-align:right}
 #v-company .co-err-t{color:var(--err)}
 #v-company .co-empty{padding:20px 16px;color:var(--muted);text-align:center;margin:0}
 #v-company .msg{padding:0 16px}#v-company .msg:not(:empty){padding:8px 16px 0}
+#v-company .list .what .detail{display:grid;gap:8px;margin-top:8px;padding:10px 12px;border:1px solid var(--line);border-radius:10px;background:var(--bg);justify-items:start}
+#v-company .detail-text{white-space:pre-wrap;overflow-wrap:anywhere;width:100%}#v-company .detail-text.fold{max-height:12.8em;overflow:hidden}
+#v-company .detail .qs{margin:0;padding-left:20px}#v-company .detail a.gh{font-size:13px;color:var(--muted)}
 #v-company .co-foot{padding:10px 16px;display:grid;gap:4px;border-top:1px solid var(--line)}
 /* 项目表（2026-11-01 Amos 截图：长数字把"本周"挤成一字一行、右边被截掉）：固定列宽，全部可换行；数字一条一行"名称 · 现在 → 目标"；本周最多 3 行，点一下展开 */
 #v-company table.co-proj{table-layout:fixed}
@@ -201,6 +211,7 @@ th{font-size:12px;color:var(--muted);font-weight:600}td.n{text-align:right}
 .plat .detail-text{white-space:pre-wrap;overflow-wrap:anywhere;font-size:14px;line-height:1.6;width:100%}
 .plat .detail-text.fold{max-height:12.8em;overflow:hidden;-webkit-mask-image:linear-gradient(180deg,#000 75%,transparent);mask-image:linear-gradient(180deg,#000 75%,transparent)}
 .plat .detail .qs{margin:0;padding-left:20px;display:grid;gap:4px;width:100%}.plat .detail .qs li{overflow-wrap:anywhere}
+.plat .todo .go a.gh{font-size:14px;color:var(--ink)}
 .plat .detail .cutnote{margin:0;font-size:13px;color:var(--amber)}.plat .detail a.gh{font-size:13px;color:var(--muted)}
 #t-reply .cap-in{width:70px}
 #p-toast{position:fixed;left:16px;right:16px;bottom:20px;margin:0 auto;max-width:520px;background:var(--navy);color:#fff;padding:10px 16px;border-radius:10px;font-size:14px;z-index:50;box-shadow:0 6px 20px rgba(0,0,0,.25);text-align:center}
@@ -343,7 +354,7 @@ async function call(path,body){const r=await fetch(path,{method:body?'POST':'GET
 let authed=false;
 function showLogin(m){authed=false;$('app').hidden=true;$('subs').hidden=true;$('nav1').hidden=true;$('logout').hidden=true;$('nav').hidden=true;$('extnav').hidden=true;$('conav').hidden=true;$('login').hidden=false;$('count').textContent='';$('lmsg').textContent=m||'';$('pw').focus();try{platformStop();}catch(e){}}
 // #app 由 route() 决定什么时候显示：工作台、项目页等第一次读到数据再显示（免得看到空模块），清单、用量、插件下载、公司总览马上显示
-function showApp(){authed=true;$('subs').hidden=false;$('nav1').hidden=false;$('logout').hidden=false;frameButtons();}
+function showApp(){authed=true;$('subs').hidden=false;$('nav1').hidden=false;$('logout').hidden=false;frameButtons();setTimeout(()=>{try{subHint();}catch(e){}},0);}
 $('login').addEventListener('submit',async(e)=>{e.preventDefault();const b=$('go');b.disabled=true;b.textContent='正在登录…';$('lmsg').textContent='';
   try{await call('/api/login',{password:$('pw').value});$('pw').value='';$('login').hidden=true;await load();route();}catch(err){$('lmsg').textContent=err.message;}finally{b.disabled=false;b.textContent='登录';}});
 $('logout').addEventListener('click',async()=>{await call('/api/logout',{}).catch(()=>{});showLogin('已登出');});
@@ -352,7 +363,7 @@ const TITLES={list:'跟帖评论清单',usage:'用量和限额',reply:'每天回
 let page='';
 const PFX={work:'w-',forecast:'f-',tools:'t-',company:''}, TOOLV={queue:'list',usage:'usage',ext:'ext',reply:'reply',byproj:'usage'};
 function frameButtons(){const t=page==='tools'||page==='company';$('nav').hidden=!t;$('extnav').hidden=!t||view==='ext';$('conav').hidden=false;$('nav').textContent=view==='list'?'用量和限额 →':'← 跟帖评论清单';}
-function hashOf(){const m=/^#\\/([a-z]+)(?:\\/([a-z0-9-]+))?/.exec(location.hash);return m&&Object.prototype.hasOwnProperty.call(PFX,m[1])?{p:m[1],m:m[2]||''}:null;}
+function hashOf(){const m=/^#\\/([a-z]+)(?:\\/([a-z0-9-]+))?/.exec(location.hash);return m&&Object.hasOwn(PFX,m[1])?{p:m[1],m:m[2]||''}:null;}
 function route(){if(!authed)return;let h=hashOf();
   if(!h){history.replaceState(null,'',location.pathname+location.search+(location.pathname==='/queue'?'#/tools/queue':'#/work'));h=hashOf();}
   const prev=page;page=h.p;view=page==='tools'?(TOOLV[h.m]||'list'):page;
@@ -494,6 +505,10 @@ $('rc-save').addEventListener('click',async()=>{const b=$('rc-save'),m=$('rc-msg
 // 两层菜单固定在屏幕顶部（批 2，Amos 2026-11-02）：量出菜单高度，跳到模块时模块顶端停在菜单下面
 function barsH(){const h=Math.ceil($('bars').getBoundingClientRect().height);document.documentElement.style.setProperty('--bars-h',h+'px');}
 try{new ResizeObserver(barsH).observe($('bars'));}catch(e){window.addEventListener('resize',barsH);}barsH();
+/** 二级菜单能往右横滑时加 .more（右边缘渐隐），滑到底就去掉 */
+function subHint(){document.querySelectorAll('.sub .in').forEach(x=>x.classList.toggle('more',x.scrollWidth>x.clientWidth+1&&x.scrollLeft+x.clientWidth<x.scrollWidth-1));}
+document.querySelectorAll('.sub .in').forEach(x=>x.addEventListener('scroll',subHint,{passive:true}));window.addEventListener('resize',subHint);
+window.addEventListener('hashchange',()=>setTimeout(subHint,0));setTimeout(subHint,0);
 $('u-save').addEventListener('click',async()=>{const b=$('u-save'),m=$('u-msg');const caps={};const bad=[];
   usage.forEach((u,i)=>{const el=$('cap-'+i);const v=Number(el.value);const ok=Number.isInteger(v)&&v>=1&&v<=u.max;el.setAttribute('aria-invalid',String(!ok));if(!ok)bad.push(u.label+' 要在 1～'+u.max.toLocaleString()+' 之间');caps[u.model]=v;});
   if(bad.length){m.className='msg';m.textContent='没保存：'+bad.join('；');return;}
@@ -504,7 +519,7 @@ call(query()).then(j=>{state=j;showApp();render();route();}).catch(()=>{});
 <script>
 // 公司页（运营仪表盘）：整段 try/catch；这里只定义函数，打开"公司"页（go('company')）时才读数据、渲染，出错只影响这一页
 try{
-const CO={data:null,latest:null,done:new Map(),week:''};
+const CO={data:null,latest:null,done:new Map(),week:'',open:'',more:false};
 const SRCN={agents:'agents','new-forecast':'new-forecast',marketing:'Marketing'};
 const KINDN={projects:'项目版图',status:'状态卡',handoff:'交接记录',todo:'Amos 待办',weekly:'周报',learning:'岗位学习',prs:'要你决定的 PR',ci:'自动检查'};
 const ROLES=['产品','市场','研发','测试','运维安全','运维','安全','经营'];
@@ -522,11 +537,15 @@ function pill(text,cls){return el('span','pill '+cls,text);}
 function table(heads,rows,widths,cls){const w=el('div','tablewrap');const t=el('table','stack'+(cls?' '+cls:''));if(widths){const cg=el('colgroup');widths.forEach(x=>{const c=el('col');c.style.width=x;cg.append(c);});t.append(cg);}const th=el('thead');const tr=el('tr');heads.forEach(h=>tr.append(el('th',null,h)));th.append(tr);const tb=el('tbody');rows.forEach(r=>tb.append(r));t.append(th,tb);w.append(t);return w;}
 function td(label,content,cls){const c=el('td',cls||null);if(label)c.dataset.label=label;(Array.isArray(content)?content:[content]).forEach(x=>{if(x==null||x==='')return;c.append(x);});if(!c.childNodes.length)c.append('—');return c;}
 const lines=(parts)=>{const out=[];parts.filter(x=>x!=null&&x!=='').forEach((x,i)=>{if(i)out.push(el('br'));out.push(x);});return out;};
-function needItems(){const out=[];const add=(o)=>out.push(o);
-  blocks('todo').filter(b=>b.payload).forEach(b=>(b.payload.items||[]).filter(it=>it.type==='confirm').forEach((it,i)=>add({key:'todo:'+b.key+':'+(it.id||'c'+i),who:'决定'+(it.level?' · '+it.level:''),id:it.id,text:it.text,hint:it.hint,link:it.link,linkText:it.link_text})));
-  blocks('prs').filter(b=>b.payload).forEach(b=>(b.payload.items||[]).forEach(it=>add({key:'pr:'+b.source+':'+it.number,who:'PR 要你决定',id:'#'+it.number,text:it.title,hint:(SRCN[b.source]||b.source)+(typeof it.days==='number'?' · 开了 '+it.days+' 天':''),link:it.url,linkText:'看 PR'})));
-  blocks('status').filter(b=>b.payload).forEach(b=>(b.payload.waiting||[]).forEach(it=>add({key:'wait:'+b.key+':'+(it.id||String(it.text||'').slice(0,80)),who:'在等你',id:it.id,text:it.text,hint:(b.payload.product||b.key)+(it.hint?' · '+it.hint:''),link:it.link||b.payload.link,linkText:it.link?'打开':'看状态卡'})));
-  ['action','report'].forEach(t=>blocks('todo').filter(b=>b.payload).forEach(b=>(b.payload.items||[]).filter(it=>it.type===t).forEach((it,i)=>add({key:'todo:'+b.key+':'+(it.id||t[0]+i),who:t==='action'?'操作':'回报',id:it.id,text:it.text,hint:it.hint,link:it.link,linkText:it.link_text}))));
+function needItems(){const out=[];
+  // 批 2 审查 R5：有正文的（只认 agents 推来的）点了在本页展开，同工作台；外部平台的照旧外链。外部人提交的 PR 只给"在 GitHub 打开"
+  const add=(it,b,o)=>{if(b.kind==='prs'&&it.external){o.who='外部提交';o.hint='给你看一下 · '+(SRCN[b.source]||b.source);o.linkText='在 GitHub 打开';out.push(o);return;}
+    const body=b.source==='agents'&&typeof it.body==='string'?it.body:'';const qs=b.source==='agents'&&Array.isArray(it.questions)?it.questions.filter(q=>q&&q.q):[];
+    if((body.trim()||qs.length)&&(!o.link||/^https:\\/\\/github\\.com\\//.test(o.link)))o.detail={body,cut:it.body_cut===true,qs,href:o.link||''};out.push(o);};
+  blocks('todo').filter(b=>b.payload).forEach(b=>(b.payload.items||[]).filter(it=>it.type==='confirm').forEach((it,i)=>add(it,b,{key:'todo:'+b.key+':'+(it.id||'c'+i),who:'决定'+(it.level?' · '+it.level:''),id:it.id,text:it.text,hint:it.hint,link:it.link,linkText:it.link_text})));
+  blocks('prs').filter(b=>b.payload).forEach(b=>(b.payload.items||[]).forEach(it=>add(it,b,{key:'pr:'+b.source+':'+it.number,who:'PR 要你决定',id:'#'+it.number,text:it.title,hint:(SRCN[b.source]||b.source)+(typeof it.days==='number'?' · 开了 '+it.days+' 天':''),link:it.url,linkText:'看 PR'})));
+  blocks('status').filter(b=>b.payload).forEach(b=>(b.payload.waiting||[]).forEach(it=>add(it,b,{key:'wait:'+b.key+':'+(it.id||String(it.text||'').slice(0,80)),who:'在等你',id:it.id,text:it.text,hint:(b.payload.product||b.key)+(it.hint?' · '+it.hint:''),link:it.link||b.payload.link,linkText:it.link?'打开':'看状态卡'})));
+  ['action','report'].forEach(t=>blocks('todo').filter(b=>b.payload).forEach(b=>(b.payload.items||[]).filter(it=>it.type===t).forEach((it,i)=>add(it,b,{key:'todo:'+b.key+':'+(it.id||t[0]+i),who:t==='action'?'操作':'回报',id:it.id,text:it.text,hint:it.hint,link:it.link,linkText:it.link_text}))));
   return out;}
 function heroTiles(need){const h=el('section','hero');h.setAttribute('aria-label','摘要');
   const tile=(n,l,cls)=>{const t=el('div','tile'+(cls?' '+cls:''));t.append(el('div','n',n),el('div','l',l));h.append(t);};
@@ -543,9 +562,20 @@ function needCard(need){const bs=[...blocks('todo'),...blocks('prs'),...blocks('
   const ul=el('ul','list');
   need.forEach(it=>{const at=CO.done.get(it.key);const li=el('li',at?'done':'');li.dataset.key=it.key;li.append(el('span','who',it.who));
     const w=el('span','what');if(it.id)w.append(el('b',null,it.id),' ');w.append(it.text||'');if(it.hint)w.append(el('br'),el('span','hint',it.hint));if(at)w.append(el('br'),el('span','hint co-done','✓ 已做 '+tw(at)));li.append(w);
-    const act=el('span','act');if(it.link){const a=el('a','btn',it.linkText||'打开');a.href=it.link;a.target='_blank';a.rel='noopener';act.append(a);}
+    const act=el('span','act');
+    if(it.detail){const on=CO.open===it.key;const d=el('button','btn',(it.linkText||'看说明')+(on?' ↑':' ↓'));d.type='button';d.setAttribute('aria-expanded',String(on));d.addEventListener('click',()=>{CO.open=CO.open===it.key?'':it.key;renderCompany();});act.append(d);if(on)w.append(coDetail(it));}
+    else if(it.link){const a=el('a','btn',it.linkText||'打开');a.href=it.link;a.target='_blank';a.rel='noopener';act.append(a);}
     const b=el('button','btn',at?'取消':'我做了');b.type='button';b.addEventListener('click',()=>markDone(it,!at,b));act.append(b);li.append(act);ul.append(li);});
   c.sec.append(ul);return c.sec;}
+/** 公司总览的正文（同工作台 detailEl）：全部 textContent；长的先折叠；被截断写明；问题表每条带建议；小链接"在 GitHub 打开" */
+function coDetail(it){const D=it.detail;const d=el('div','detail');
+  if(D.body.trim()){const t=el('div','detail-text'+(CO.more?'':' fold'),D.body);d.append(t);const m=el('button','btn',CO.more?'收起':'展开全文');m.type='button';m.dataset.more='1';m.setAttribute('aria-expanded',String(!!CO.more));
+    m.addEventListener('click',()=>{CO.more=!CO.more;t.classList.toggle('fold',!CO.more);m.setAttribute('aria-expanded',String(CO.more));m.textContent=CO.more?'收起':'展开全文';});d.append(m);
+    if(!CO.more)requestAnimationFrame(()=>{if(t.isConnected&&t.scrollHeight<=t.clientHeight+2){t.classList.remove('fold');m.hidden=true;}});}
+  if(D.cut)d.append(el('p','hint','已截断：正文太长，这里只显示前面一部分。'));
+  if(D.qs.length){d.append(el('b',null,'要你决定的问题（'+D.qs.length+'）'));const ul=el('ul','qs');D.qs.forEach(q=>{const li=el('li');li.append(el('span',null,q.q));if(q.advice)li.append(el('br'),el('span','hint','建议：'+q.advice));ul.append(li);});d.append(ul);}
+  if(D.href){const a=el('a','gh',/^https:\\/\\/github\\.com\\//.test(D.href)?'在 GitHub 打开':'打开原文');a.href=D.href;a.target='_blank';a.rel='noopener';d.append(a);}
+  return d;}
 async function markDone(it,done,b){const label=b.textContent;b.disabled=true;b.textContent='处理中…';const m=$('co-msg');m.className='msg';m.textContent='';
   try{const r=await call('/api/company/done',{key:it.key,done});if(done)CO.done.set(it.key,r.at);else CO.done.delete(it.key);renderCompany();
     const m2=$('co-msg');m2.className='msg ok';m2.textContent=done?'✓ 已记下：'+(it.id?it.id+' ':'')+'做完了（'+tw(r.at)+'）':'已取消"我做了"：'+(it.id||it.text||'');}
@@ -625,7 +655,7 @@ $('co-refresh').addEventListener('click',()=>loadCompany(CO.week));
 // 时间一律用浏览器的 Date.now()（台湾时间显示）；停在这两页时每 30 秒重读一次，切走停、切回马上读。
 try{
 const CFG=${JSON.stringify(PLATFORM_CONFIG)};
-const PL={data:null,qAll:null,qProj:{},done:new Map(),reports:[],page:'',scroll:'',timer:null,busy:false,again:false,err:'',at:0,want:new Map(),copy:null,open:new Set(),vals:{},det:new Set(),more:new Set()};
+const PL={data:null,qAll:null,qProj:{},done:new Map(),reports:[],page:'',scroll:'',timer:null,busy:false,again:false,err:'',at:0,want:new Map(),copy:null,open:new Set(),vals:{},det:new Set(),more:new Set(),peek:false,retry:0};
 const HR=3600e3,DY=864e5,WD='日一二三四五六';
 const SRC={agents:'agents','new-forecast':'new-forecast',marketing:'Marketing'};
 const pe=(tag,cls,text)=>{const e=document.createElement(tag);if(cls)e.className=cls;if(text!=null)e.textContent=String(text);return e;};
@@ -661,7 +691,11 @@ function items(){const out=[];const pj=projects();const projOf=(k)=>pj.indexOf(k
     const o={key:'todo:'+b.key+':'+(it.id||(t==='confirm'?'c':t.charAt(0))+n[t]),proj:projOf(b.key),title:it.text||'',why:[t==='confirm'?'要你决定'+(it.level?'（'+it.level+'）':''):'',it.hint||''].filter(Boolean).join(' · '),due:typeof it.due==='number'?it.due:null};
     const f=t==='report'?formFor(it.text):null;if(f){o.form=f;o.btn='去填数字';}else{if(it.link){o.href=it.link;o.btn=it.link_text||'打开';}withDetail(o,it,it.link);if(o.detail&&!o.btn)o.btn='看说明';}out.push(o);});});
   okBlocks('prs').forEach((b)=>(b.payload.items||[]).forEach((it)=>{const look=it.tag==='look';
-    out.push(withDetail({key:'pr:'+b.source+':'+it.number,proj:repoProj(b.source),title:it.title||'',why:(look?'只要看，不用回；你不反对的话开 PR 后 48 小时自动生效。':'要你决定：看完在 PR 里回复。')+'（'+(SRC[b.source]||b.source)+' #'+it.number+'）',due:look&&typeof it.opened_at==='number'?it.opened_at+48*HR:null,href:it.url,btn:look?'去看这份改动':'看 PR'},it,it.url));}));
+    // 批 2 新口径（Amos 2026-11-02："只有agents才是公司……如果真有人提交了，只需要给我看就好"）：外部人提交的单独一条，只给"在GitHub 打开"，不当"要你决定"
+    if(it.external){out.push({key:'pr:'+b.source+':'+it.number,proj:repoProj(b.source),title:it.title||'',why:'外部提交，给你看一下（'+(SRC[b.source]||b.source)+' #'+it.number+'）',due:null,gh:it.url});return;}
+    // 正文只认 agents：代码仓库推来的 PR 只显示标题和链接（服务端也不存，这里再挡一次）
+    const src=b.source==='agents'?it:{};
+    out.push(withDetail({key:'pr:'+b.source+':'+it.number,proj:repoProj(b.source),title:it.title||'',why:(look?'只要看，不用回；你不反对的话开 PR 后 48 小时自动生效。':'要你决定：看完在 Claude 窗口里回复。')+'（'+(SRC[b.source]||b.source)+' #'+it.number+'）',due:look&&typeof it.opened_at==='number'?it.opened_at+48*HR:null,href:it.url,btn:look?'去看这份改动':'看 PR'},src,it.url));}));
   okBlocks('status').forEach((b)=>(b.payload.waiting||[]).forEach((it)=>out.push(withDetail({key:'wait:'+b.key+':'+(it.id||String(it.text||'').slice(0,80)),proj:projOf(b.key),title:it.text||'',why:'状态卡"在等谁"'+(it.hint?' · '+it.hint:''),due:null,href:it.link||b.payload.link,btn:it.link?'打开':'看状态卡'},it,it.link||b.payload.link))));
   okBlocks('pack').forEach((b)=>{const p=b.payload;if(!p.project||!p.date)return;const first=(p.posts||[])[0];
     const o={key:packKey(p),proj:p.project,title:'照操作指引做完这周的 '+(p.steps||[]).length+' 步（周包 '+p.date.slice(5).replace('-','/')+'）',why:(first?'第 1 条帖子要在 '+(first.at_text||'')+' 发出。':'')+'跟着指引一步步做，每步做完打勾；都勾了这件自动打勾。',due:typeof p.due==='number'?p.due:null};
@@ -689,6 +723,7 @@ function todoLi(x,first,now){const l=lvl(x,now);const li=pe('li','todo '+l+(firs
   const go=pe('div','go');
   if(x.form){const f=formEl(x);body.append(f);const b=pe('button','btn primary',x.btn+' →');b.type='button';b.dataset.act=x.key;b.addEventListener('click',()=>{f.hidden=false;PL.open.add(x.key);const i=f.querySelector('input');if(i)i.focus();});go.append(b);}
   else if(x.go)go.append(link(x.btn+' →',x.go,'btn primary'));
+  else if(x.gh)go.append(link('在 GitHub 打开',x.gh,'gh'));
   else if(x.detail){const on=PL.det.has(x.key);const b=pe('button','btn primary',x.btn+(on?' ↑':' ↓'));b.type='button';b.setAttribute('aria-expanded',String(on));
     b.dataset.label=x.btn;
     b.addEventListener('click',()=>{const open=!PL.det.has(x.key);
@@ -745,6 +780,7 @@ function renderWork(all,now){const open=fillList('w-todos','w-donelist','w-todo-
   if(!open.length){h.className='hero calm';h.append(pe('p','one','现在没事要做'),pe('p','why','有新的事会出现在这里。团队在做的事可以往下看。'));}
   else{const x=open[0];h.className='hero';const w=pe('div','when');w.append(badge(x,now),pe('span',null,dueText(x)));h.append(pe('p','one',x.title),w);if(x.why)h.append(pe('p','why',x.why));
     const row=pe('div','row');if(x.form)row.append(link(x.btn+' →','#/work/todo','btn primary big'));else if(x.go)row.append(link(x.btn+' →',x.go,'btn primary big'));
+    else if(x.gh)row.append(link('在 GitHub 打开',x.gh,'btn big'));
     else if(x.detail){const a=link(x.btn+' ↓','#/work/todo','btn primary big');a.addEventListener('click',()=>{PL.det.clear();PL.det.add(x.key);setTimeout(renderAll,0);});row.append(a);}else if(x.href)row.append(link(x.btn+' →',x.href,'btn primary big'));
     if(open.length>1)row.append(link('做完了？后面还有 '+(open.length-1)+' 件，已经按截止时间排好 ↓','#/work/todo','sec'));h.append(row);}
   const g=$('w-glance');g.replaceChildren();const tile=(n,l,href,cls)=>{const a=href?link('',href,'gl'+(cls?' '+cls:'')):pe('div','gl'+(cls?' '+cls:''));a.append(pe('div','n',n),pe('div','l',l));g.append(a);};
@@ -835,16 +871,19 @@ async function getJ(u){const r=await fetch(u,{credentials:'same-origin'});if(r.s
 async function refresh(){if(PL.busy){PL.again=true;return;}PL.busy=true;
   try{const [c,qa,qp]=await Promise.all([getJ('/api/company'),getJ('/api/queue?status=pending').catch(()=>null),getJ('/api/queue?status=pending&product=forecast').catch(()=>null)]);
     PL.data=c;PL.done=new Map((c.done||[]).map((x)=>[x.key,x.at]));PL.reports=c.reports||[];PL.qAll=qa;PL.qProj.forecast=qp;PL.err='';PL.at=Date.now();}
-  catch(e){if(e.message==='请重新登录'){PL.busy=false;return;}PL.err='暂时读不到最新情况：'+e.message+'（30 秒后自动再试）';if(!PL.data)PL.data={blocks:[],done:[],reports:[],weekly:null};}
+  catch(e){if(e.message==='请重新登录'){PL.busy=false;return;}PL.err='暂时读不到最新情况：'+e.message+'（过一会儿自动再试）';if(!PL.data)PL.data={blocks:[],done:[],reports:[],weekly:null};
+    // 读取失败：5 秒后先重试一次，之后照 30 秒一次（R10）
+    clearTimeout(PL.retry);PL.retry=setTimeout(()=>{if(PL.page||PL.peek)refresh();},5000);}
   finally{PL.busy=false;}
   renderAll();if(PL.again){PL.again=false;refresh();}}
-function tickTimer(){clearInterval(PL.timer);PL.timer=setInterval(()=>{if(PL.page&&document.visibilityState==='visible')refresh();},30000);}
-document.addEventListener('visibilitychange',()=>{if(PL.page&&document.visibilityState==='visible')refresh();});
-var platformOpen=function(p,mod){const changed=PL.page!==p;PL.page=p;if(!PL.timer)tickTimer();
+// 批 2 审查 R10：停在工作台、项目页，或者停在公共工具、公司总览（只为一级菜单上的数字，PL.peek）时，都每 30 秒重读一次
+function tickTimer(){clearInterval(PL.timer);PL.timer=setInterval(()=>{if((PL.page||PL.peek)&&document.visibilityState==='visible')refresh();},30000);}
+document.addEventListener('visibilitychange',()=>{if((PL.page||PL.peek)&&document.visibilityState==='visible')refresh();});
+var platformOpen=function(p,mod){const changed=PL.page!==p;PL.page=p;PL.peek=false;if(!PL.timer)tickTimer();
   if(!PL.data||changed||Date.now()-PL.at>30000){PL.scroll=mod||'';refresh();}};
-var platformStop=function(){PL.page='';};
+var platformStop=function(){PL.page='';PL.peek=false;};
 /** 停在公共工具、公司总览时：还没读过就读一次，让一级菜单上的待办数量马上显示（批 1 问题，Amos 2026-11-02） */
-var platformPeek=function(){if(!PL.data&&!PL.busy)refresh();};
+var platformPeek=function(){PL.peek=true;if(!PL.timer)tickTimer();if(!PL.data&&!PL.busy)refresh();};
 /** 第一次读到数据之前，工作台、项目页先不显示（免得看到空的模块） */
 var platformReady=function(){return !!PL.data;};
 }catch(e){var platformReady=function(){return true;};var platformOpen=function(){['w-err','f-err'].forEach((id)=>{const x=document.getElementById(id);if(x){x.hidden=false;x.textContent='这一页出错了：'+e.message;}});};var platformStop=function(){};var platformPeek=function(){};}
