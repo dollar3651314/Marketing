@@ -1045,3 +1045,45 @@ describe('复审 R2：处理时出别的约束错误（例如 NOT NULL constrain
     expect(find(await active(T0 + 2 * M), 'claude/dev-platform-nn', 'marketing')).toMatchObject({ _in: 'items' });
   });
 });
+
+// ======================================================================
+// 批 3 第三轮审查 🟡：workflow_run 的 head_repository 为 null / 缺失，当外部单独成行，不能改内部同名分支的 ci
+describe('三审：workflow_run 的 head_repository 不是明确的我们仓库，就不落在内部行上', () => {
+  const BR = 'claude/dev-platform-w';
+  const all = (a: Active) => [...a.items, ...a.ended];
+  const inner = (a: Active) => { const x = all(a).filter((i) => i.repo === 'marketing' && i.branch === BR && !i.external); expect(x.length, '内部那一行正好一条').toBe(1); return x[0]; };
+  async function seedInner() {
+    await hook({ event: 'push', body: push({ repo: 'marketing', branch: BR, msg: '开工', created: true, at: T0 }), now: T0 });
+    await hook({ event: 'workflow_run', body: run({ repo: 'marketing', branch: BR, conclusion: 'success', at: T0 + M }), now: T0 + M });
+    expect(inner(await active(T0 + 2 * M))).toMatchObject({ ci: 'success' });
+  }
+  const failing = (hr: unknown | 'missing') => {
+    const ev = run({ repo: 'marketing', branch: BR, conclusion: 'failure', at: T0 + 3 * M }) as { workflow_run: Record<string, unknown> };
+    if (hr === 'missing') delete ev.workflow_run.head_repository; else ev.workflow_run.head_repository = hr;
+    return ev;
+  };
+  const cases: [string, unknown][] = [
+    ['head_repository = null（审查的复现）', null],
+    ['没有 head_repository 这个字段', 'missing'],
+    ['所有者是我们、但 fork = true', { full_name: `${OWNER}/marketing`, name: 'marketing', fork: true, owner: { login: OWNER } }],
+    ['所有者不是我们（fork 没标）', { full_name: 'evil/marketing', name: 'marketing', owner: { login: 'evil' } }],
+  ];
+  for (const [name, hr] of cases) {
+    it(`${name}：内部那一行 ci 还是 success；红的另起一行、标外部`, async () => {
+      await seedInner();
+      const r = await hook({ event: 'workflow_run', body: failing(hr), now: T0 + 3 * M });
+      expect(r.status).toBeLessThan(300);
+      const a = await active(T0 + 4 * M);
+      expect(inner(a)).toMatchObject({ ci: 'success', external: false });
+      const ext = all(a).filter((i) => i.repo === 'marketing' && i.external && i.ci === 'failure');
+      expect(ext.length, '外部单独成行').toBe(1);
+    });
+  }
+  it('明确是我们仓库（所有者 dollar3651314、fork 不是 true）：落在内部那一行（ci 变 failure）——现在就绿，守住正常路径', async () => {
+    await seedInner();
+    await hook({ event: 'workflow_run', body: failing({ full_name: `${OWNER}/marketing`, name: 'marketing', fork: false, owner: { login: OWNER } }), now: T0 + 3 * M });
+    const a = await active(T0 + 4 * M);
+    expect(inner(a)).toMatchObject({ ci: 'failure' });
+    expect(all(a).filter((i) => i.external).length).toBe(0);
+  });
+});
