@@ -50,14 +50,49 @@ export async function usedReq(env: Env, model: string, now: number): Promise<num
   return r?.req ?? 0;
 }
 
-/** 记一次请求（不管成功与否都算一次，Google 也是这样算的） */
-export async function recordUse(env: Env, model: string, now: number, u: { status: number; tokIn?: number; tokOut?: number }) {
+/** "测试 AI"这类平台自己的调用记到这个项目名下（D-3，公司平台批 2） */
+export const PLATFORM_PROJECT = '_platform';
+
+/**
+ * 记一次请求（不管成功与否都算一次，Google 也是这样算的）。
+ * 带 project 时再按项目记一行到 usage_by_project（公司平台批 2，D-3：只记、不当限额）；那一行写失败（例如表还没建）只打日志，不影响调用方。
+ */
+export async function recordUse(env: Env, model: string, now: number, u: { status: number; tokIn?: number; tokOut?: number; project?: string; neurons?: number }) {
   await env.DB.prepare(
     'INSERT INTO model_usage (day, model, req, tok_in, tok_out, last_status, last_at) VALUES (?1, ?2, 1, ?3, ?4, ?5, ?6) ' +
       'ON CONFLICT (day, model) DO UPDATE SET req = req + 1, tok_in = tok_in + ?3, tok_out = tok_out + ?4, last_status = ?5, last_at = ?6',
   )
     .bind(dayFor(model, now), model, Math.max(0, Math.round(u.tokIn ?? 0)), Math.max(0, Math.round(u.tokOut ?? 0)), u.status, now)
     .run();
+  if (u.project) await recordByProject(env, model, now, u.project, u);
+}
+
+async function recordByProject(env: Env, model: string, now: number, project: string, u: { tokIn?: number; tokOut?: number; neurons?: number }) {
+  try {
+    await env.DB.prepare(
+      'INSERT INTO usage_by_project (day, project, model, req, tok_in, tok_out, neurons) VALUES (?1, ?2, ?3, 1, ?4, ?5, ?6) ' +
+        'ON CONFLICT (day, project, model) DO UPDATE SET req = req + 1, tok_in = tok_in + ?4, tok_out = tok_out + ?5, neurons = neurons + ?6',
+    )
+      .bind(dayFor(model, now), project.slice(0, 32), model, Math.max(0, Math.round(u.tokIn ?? 0)), Math.max(0, Math.round(u.tokOut ?? 0)), Math.max(0, u.neurons ?? 0))
+      .run();
+  } catch (e) {
+    console.log(JSON.stringify({ event: 'copilot.usage_by_project_failed', detail: String((e as Error)?.message ?? e).slice(0, 200) }));
+  }
+}
+
+export interface ProjectUsage { project: string; gemini: number; workersAi: number }
+
+/** 后台用量页"按项目看"：今天（各家的重置时间）每个项目的 Gemini 次数（几个模型加起来）和 Workers AI neurons；表还没建时返回 [] */
+export async function usageByProject(env: Env, now: number): Promise<ProjectUsage[]> {
+  try {
+    const r = await env.DB.prepare(
+      "SELECT project, SUM(CASE WHEN model != ?1 AND day = ?2 THEN req ELSE 0 END) AS gemini, SUM(CASE WHEN model = ?1 AND day = ?3 THEN neurons ELSE 0 END) AS wai " +
+        'FROM usage_by_project WHERE day IN (?2, ?3) GROUP BY project ORDER BY project',
+    ).bind(WAI_KEY, pacificDay(now), utcDay(now)).all<{ project: string; gemini: number; wai: number }>();
+    return (r.results ?? []).filter((x) => x.gemini > 0 || x.wai > 0).map((x) => ({ project: x.project, gemini: x.gemini, workersAi: x.wai }));
+  } catch {
+    return [];
+  }
 }
 
 export interface UsageRow { model: string; label: string; unit: '次' | 'neurons'; req: number; tokIn: number; tokOut: number; used: number; cap: number; max: number; state: 'ok' | 'google_429' | 'our_cap' | 'error'; stateText: string; resetAt: number }

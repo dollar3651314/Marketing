@@ -104,7 +104,7 @@ export function repairBrackets(s: string): string {
   return out + stack.reverse().join('');
 }
 
-export async function askWorkersAi(env: Env, system: string, user: string, now: number): Promise<unknown> {
+export async function askWorkersAi(env: Env, system: string, user: string, now: number, project?: string): Promise<unknown> {
   const ai = env.AI as AiLike | undefined;
   if (!ai) throw new WorkersAiError('Workers AI 没有绑定');
   const cap = await dailyCap(env);
@@ -122,14 +122,15 @@ export async function askWorkersAi(env: Env, system: string, user: string, now: 
   } catch (e) {
     // 失败的调用不一定计费，但保守起见按一次最多可能用的量记账
     await addUsage(env, now, RESERVE);
-    await recordUse(env, WAI_KEY, now, { status: 0 });
+    await recordUse(env, WAI_KEY, now, { status: 0, project, neurons: RESERVE });
     throw new WorkersAiError(`Workers AI 出错：${String((e as Error)?.message ?? e).replace(/\s+/g, ' ').slice(0, 120)}`);
   }
   const { text, inTok, outTok } = readResult(r);
   // 没有 token 数时按字数估（中文 1 个字算 1 个 token，偏多）
   const inT = inTok ?? [...system].length + [...user].length;
   const outT = outTok ?? [...text].length;
-  await addUsage(env, now, (inT * IN_PER_M + outT * OUT_PER_M) / 1e6);
-  await recordUse(env, WAI_KEY, now, { status: 200, tokIn: inT, tokOut: outT });
+  const neurons = (inT * IN_PER_M + outT * OUT_PER_M) / 1e6;
+  await addUsage(env, now, neurons);
+  await recordUse(env, WAI_KEY, now, { status: 200, tokIn: inT, tokOut: outT, project, neurons });
   return extractJson(text);
 }

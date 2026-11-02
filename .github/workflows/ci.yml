@@ -50,6 +50,8 @@ jobs:
         run: npm run e2e:queue
       - name: 公司平台批 1 验收（三层导航、工作台、待办按截止排和红橙、打勾跨设备、填数字、forecast 项目页、375 / 1440 宽、深浅色）
         run: npm run e2e:platform
+      - name: 公司平台批 2 验收（菜单待办数刷新后马上显示、每天回帖上限按项目、按项目看用量；375 / 1440 宽）
+        run: npm run e2e:tools
 
   # 汇总：分支保护只把这一项设为"必须通过"
   ci-ok:

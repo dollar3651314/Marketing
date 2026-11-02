@@ -19,7 +19,7 @@
 
 ## 每次改动都要做
 - 在同一个 PR 里更新《项目地图》和《项目索引》（C53）。
-- 提交前在本地跑：`npm run typecheck && npm test && node scripts/e2e-ext.mjs && node scripts/e2e-admin.mjs && node scripts/e2e-queue.mjs && node scripts/e2e-platform.mjs && node scripts/check-project-index.mjs`。
+- 提交前在本地跑：`npm run typecheck && npm test && node scripts/e2e-ext.mjs && node scripts/e2e-admin.mjs && node scripts/e2e-queue.mjs && node scripts/e2e-platform.mjs && node scripts/e2e-tools.mjs && node scripts/check-project-index.mjs`。
 - 改了插件：`extension/manifest.json` 的版本号加一，打包发给 Amos；按状态清单走一遍并截图（C127、C141）。
 - 合并前确认 PR 页面的 CI 是绿的（C54）。
 - 每个任务一个开发分支，PR 到 `staging`；`staging` → `main` 要 Amos 说"合并"。
