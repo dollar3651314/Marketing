@@ -7,6 +7,7 @@
  * - GET  /v1/today   当天（台湾日期）的记录和计数，给插件"今天"页和晚上的小结；按项目算（不带 product = forecast，D-2）
  * - GET  /v1/diag    每个 Gemini 模型和备用 AI 各发一个很小的请求，报状态和用时（设置页"测试 AI"；不含 Key）
  * - POST /v1/queue   {product, platform, post, score, reasons, draft, source}  存进跟帖评论清单（草稿再过一遍程序检查；同一条只存一次）
+ * - POST /hooks/github       GitHub Webhook 实时进度（COMPANY_INGEST_TOKEN 当签名密钥，没填时 404；hooks.ts）
  * - POST /api/company/ingest  公司运营仪表盘：各仓库的自动检查推数据（COMPANY_INGEST_TOKEN，没填时 404；company.ts）
  * - GET  /           网页后台：跟帖评论清单、用量和限额、插件下载、公司（COPILOT_PASSWORD 没填时 404）；接口在 /api/*（queue.ts、usage.ts、company.ts）
  * 令牌：Authorization: Bearer <COPILOT_TOKEN>（≥ 24 个字符）。COPILOT_TOKEN 或 GEMINI_API_KEY 没填时 /v1/* 全部 404（默认关着，C102）。
@@ -22,6 +23,7 @@ import { FORECAST_RULES } from '../rules/forecast';
 import { ADMIN_PAGE } from './admin-page';
 import { adminApi, adminEnabled, DEFAULT_PROJECT, doneToday, replyCap, saveToQueue } from './queue';
 import { companyEnabled, companyIngest } from './company';
+import { githubHook } from './hooks';
 
 const RULES: Record<string, string> = { forecast: FORECAST_RULES };
 const PER_MINUTE = 60;
@@ -217,6 +219,9 @@ export async function handle(req: Request, env: Env, now: number, fetcher?: Fetc
     return new Response(ADMIN_PAGE, { headers: { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-store', 'x-robots-tag': 'noindex', 'x-frame-options': 'DENY', 'referrer-policy': 'no-referrer' } });
   }
   // 公司仪表盘的推送接口只依赖 COMPANY_INGEST_TOKEN，在后台（密码）判断之前处理
+  // GitHub Webhook 也只依赖 COMPANY_INGEST_TOKEN（同一个值当签名密钥），同样在后台判断之前处理（hooks.ts）
+  const gh = await githubHook(env, req, now);
+  if (gh) return gh;
   const ingest = await companyIngest(env, req, now);
   if (ingest) return ingest;
   const admin = await adminApi(env, req, now);

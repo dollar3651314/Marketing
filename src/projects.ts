@@ -17,17 +17,24 @@ export const REPORT_FORMS: { match: string; fields: string[] }[] = [
   { match: '关注|名单', fields: ['X 关注', 'Threads 关注', '名单人数'] },
 ];
 
-/** 状态卡数字表里写"见公司平台"的那一格，换成平台里哪几个名称的值（多个就加起来） */
+/** 状态卡数字表里写"见工作平台"的那一格，换成平台里哪几个名称的值（多个就加起来） */
 export const METRIC_FROM_REPORT: Record<string, string[]> = {
   'X + Threads 关注合计': ['X 关注', 'Threads 关注'],
   '等候名单确认订阅': ['名单人数'],
 };
 
-/** 状态卡里写这几个字时，页面换成平台里的最新值 */
-export const SEE_PLATFORM = '见公司平台';
+/**
+ * 状态卡里写这几个字时，页面换成平台里的最新值。改名过渡期（Marketing 先上、agents 改名后合）新旧两种写法都认：
+ * 新的"见工作平台"、旧的"见公司平台"；agents 改完、旧写法不再出现以后可以删掉旧的。
+ */
+export const SEE_PLATFORM = ['见工作平台', '见公司平台'];
+/** 这一格是不是"见工作平台"（新旧写法都认） */
+export const seesPlatform = (v: unknown): boolean => typeof v === 'string' && SEE_PLATFORM.some((k) => v.includes(k));
 
-/** 有状态卡但不是项目（工具层，项目概况、一级菜单都不列；v0.34 起状态卡 key 是"公司平台"） */
-export const NOT_PROJECTS = ['公司平台', 'Marketing'];
+/** 有状态卡但不是项目（工具层，项目概况、一级菜单都不列）。改名过渡期新旧 key 都认："工作平台"、"公司平台" */
+export const NOT_PROJECTS = ['工作平台', '公司平台', 'Marketing'];
+/** 这张状态卡是不是工具层的（新旧 key 都认） */
+export const isToolCard = (key: string): boolean => NOT_PROJECTS.includes(key);
 
 /** 推 PR / CI 的仓库属于哪个项目；没写的算"公司" */
 export const REPO_PROJECT: Record<string, string> = { 'new-forecast': 'forecast' };
