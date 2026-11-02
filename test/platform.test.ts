@@ -264,3 +264,56 @@ describe('填数字 POST /api/company/report（只存 D1）', () => {
     expect((await post('/api/company/report', { ...REP, values: { 'X 关注': '1' } }, ck, T0, 'https://evil.example')).status).toBe(403);
   });
 });
+
+// ---------------- 有项目页的项目：按推上来的 projects 块算（2026-11-02，不再写死）----------------
+// Amos 2026-11-02："项目也只有 forecast 一个，新项目哪儿去了？"→ src/projects.ts 的写死名单换成 src/company.ts projectPages(env)。
+// 这一组守住三件事：① 推了几个项目就认几个；② 块没推上来退回兜底（不白屏、校验不失效）；③ **始终是白名单**，不在名单里的项目名照旧拒收。
+describe('有项目页的项目按 projects 块动态算（projectPages）', () => {
+  const pjBlock = (names: string[]) => ({ source: 'agents', blocks: [{ kind: 'projects', key: '', payload: { items: names.map((name) => ({ name, stage: '样例' })) } }] });
+  const caps = (c: unknown, ck: string) => handle(page('/api/reply-cap', { method: 'POST', cookie: ck, body: JSON.stringify({ caps: c }) }), env(), T0);
+  const rows = async (ck: string) => (await (await handle(page('/api/reply-cap', { cookie: ck }), env(), T0)).json() as { rows: { project: string }[] }).rows.map((x) => x.project);
+  // 这一组会写 settings 的 reply_cap:*（文件级 beforeEach 不清它），每个用例前清掉
+  beforeEach(async () => { await db.prepare("DELETE FROM settings WHERE key LIKE 'reply_cap:%'").run(); });
+
+  it('块还没推上来：退回兜底名单（forecast），"每天回帖上限"照常一行，不是空的', async () => {
+    const ck = await cookie();
+    expect(await rows(ck)).toEqual(['forecast']);
+  });
+
+  it('推了两个项目：两个都认（上限两行、填数字两个都能存）', async () => {
+    expect((await ingest(pjBlock(['forecast', 'Practical']))).status).toBe(200);
+    const ck = await cookie();
+    expect(await rows(ck)).toEqual(['forecast', 'Practical']);
+    expect((await caps({ Practical: 7 }, ck)).status).toBe(200);
+    expect((await post('/api/company/report', { key: 'todo:Practical:R1', project: 'Practical', values: { 'X 关注': '3' } }, ck)).status).toBe(200);
+  });
+
+  it('工具层（工作平台 / 公司平台 / Marketing）不算项目；重复的只算一次', async () => {
+    expect((await ingest(pjBlock(['forecast', '工作平台', 'Marketing', '公司平台', 'forecast']))).status).toBe(200);
+    expect(await rows(await cookie())).toEqual(['forecast']);
+  });
+
+  it('仍然是白名单：不在 projects 块里的项目名，上限和填数字都拒收（400，一行都不写）', async () => {
+    expect((await ingest(pjBlock(['forecast', 'Practical']))).status).toBe(200);
+    const ck = await cookie();
+    for (const bad of ['报价', '工作平台', 'forecast2', '']) {
+      expect((await caps({ [bad]: 5 }, ck)).status, `上限 ${bad}`).toBe(400);
+      expect((await post('/api/company/report', { key: 'todo:x:R1', project: bad, values: { 'X 关注': '1' } }, ck)).status, `填数字 ${bad}`).toBe(400);
+    }
+    expect((await db.prepare("SELECT COUNT(*) AS n FROM settings WHERE key LIKE 'reply_cap:%'").first<{ n: number }>())!.n).toBe(0);
+    expect((await db.prepare('SELECT COUNT(*) AS n FROM company_report').first<{ n: number }>())!.n).toBe(0);
+  });
+
+  it('块里一个项目都没有（空表）：退回兜底，不会变成"什么项目名都收"', async () => {
+    expect((await ingest(pjBlock([]))).status).toBe(200);
+    const ck = await cookie();
+    expect(await rows(ck)).toEqual(['forecast']);
+    expect((await caps({ 报价: 5 }, ck)).status).toBe(400);
+  });
+
+  it('块坏了（payload 不是对象 / status=error）：退回兜底，接口不 500', async () => {
+    expect((await ingest({ source: 'agents', blocks: [{ kind: 'projects', key: '', status: 'error', error: '解析失败（样例）' }] })).status).toBe(200);
+    const ck = await cookie();
+    expect(await rows(ck)).toEqual(['forecast']);
+  });
+});
