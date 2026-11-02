@@ -52,6 +52,8 @@ jobs:
         run: npm run e2e:platform
       - name: 公司平台批 2 验收（菜单待办数刷新后马上显示、每天回帖上限按项目、按项目看用量；375 / 1440 宽）
         run: npm run e2e:tools
+      - name: 公司平台批 3 验收（团队在做什么：开工、上一步、未标、变灰、最近结束、CI 红提醒、外部、签名不对、有延迟、Webhook 开关；375 / 1440 宽）
+        run: npm run e2e:live
 
   # 汇总：分支保护只把这一项设为"必须通过"
   ci-ok:
