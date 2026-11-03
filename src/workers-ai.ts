@@ -40,6 +40,17 @@ async function addUsage(env: Env, now: number, neurons: number) {
   await env.DB.prepare('INSERT INTO ai_usage (day, neurons) VALUES (?1, ?2) ON CONFLICT (day) DO UPDATE SET neurons = neurons + ?2').bind(utcDay(now), neurons).run();
 }
 
+/**
+ * 别的功能也走同一本账（素材生成器 src/assets.ts）：记一次 Workers AI 的用量。
+ * 和 askWorkersAi 里的记法一模一样——写 ai_usage（当天 neurons，到上限就停，C117）＋ model_usage / usage_by_project（按项目看）。
+ * 调用方自己先用 usedToday + dailyCap 判断够不够，再调模型；失败的调用也要记（按估算），宁可多记不要漏记。
+ */
+export async function chargeNeurons(env: Env, now: number, neurons: number, project: string, status = 200): Promise<void> {
+  const n = Math.max(0, neurons);
+  await addUsage(env, now, n);
+  await recordUse(env, WAI_KEY, now, { status, project, neurons: n });
+}
+
 /** 从回答里取出文字和 token 数（新旧两种回答格式都认） */
 function readResult(r: unknown): { text: string; inTok: number | null; outTok: number | null } {
   const o = (r ?? {}) as { response?: unknown; choices?: { message?: { content?: unknown } }[]; usage?: { prompt_tokens?: number; completion_tokens?: number } };

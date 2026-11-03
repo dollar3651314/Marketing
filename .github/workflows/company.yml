@@ -1,14 +1,28 @@
 # 公司运营仪表盘上报（agents 公司平台/技术方案-运营仪表盘.md 第二、五节）：把本仓库的【要你决定】PR 和 main 的 CI / 最近部署
 # 推到 Marketing 的 /api/company/ingest。脚本 scripts/company-report.mjs（new-forecast、Marketing 两个仓库内容相同，只是 COMPANY_SOURCE 不同）。
-#   - 只在推送到 main、PR 开 / 关 / 重开 / 改标题、main 的 CI（ci.yml，name: ci）跑完时运行；都是事件触发，不设定时任务（Amos B-6）。
-#     CI 跑完再报一次（Amos 2026-11-01）：push 时 CI 多半还在跑，报的是"运行中"；CI 跑完触发 workflow_run，再读一次就是最终结论。
+#   - 只在 PR 开 / 关 / 重开 / 改标题、main 的 CI（ci.yml，name: ci）跑完时运行；都是事件触发，不设定时任务（Amos B-6）。
+#   - **为什么没有 push: branches: [main]**（2026-11-03 去掉，Amos："Marketing 也照修"，照 agents 同一个毛病改）：
+#     原来 push main 和 workflow_run 都会触发，两者共用 concurrency: group: company + cancel-in-progress，
+#     push 那一次总是先起、还没跑完就被 CI 跑完触发的 workflow_run 取消掉，**每次合并都在 main 上留下一个 cancelled 的运行**，
+#     分支页把它显示成 ❌（查过近 60 次运行：push 触发的 6 次**全是** cancelled，一次成功都没有）。
+#     前提单独核过（**没照搬 agents 的结论**）：ci.yml 对 push main 是 branches: [staging, main]、**没有任何路径过滤**，推 main 必触发；
+#     它自己被同分支下一次推送取消时，workflow_run 的 types: [completed] 对 cancelled 也照样触发 → 不会漏掉上报。
+#     和 agents 不同的一点：本仓库的 ci 里还有 deploy job，整个 ci 跑完才算 completed，所以仪表盘比以前晚
+#     **约 1.7～4.5 分钟**（实测 main 上近 8 次 ci 是 99～272 秒），比 agents 的 1 分钟久。可以接受，因为
+#     工作台"团队在做什么"的实时数据走的是 GitHub Webhook（src/hooks.ts），这条上报本来就是慢一步的那条路；
+#     而且现在报的是**跑完 deploy 之后的最终结论**，比以前的"运行中"更有用。
 #   - 没填 GitHub Secret COMPANY_INGEST_TOKEN 时打印"跳过"并成功（C103）；来自 fork 的 PR 拿不到 Secret，同样跳过。
 #   - Marketing 用单独的这个文件上报，不改 ci.yml 的 deploy job，免得影响部署。
-#   - 同一时间只留最新一次（每次都报完整状态，旧的取消也不丢数据），也让每分钟上报次数远低于接口上限 6 次。
+#   - **并发组按事件和 PR 号分开**（2026-11-03，Amos："并发组按事件和 PR 号分开"、"Marketing 也照修"）：
+#     原来所有事件共用 group: company + cancel-in-progress，**不同来源的运行互相砍**——本仓库近 60 次运行里
+#     pull_request 被取消 1 次（agents 那边更严重，连 workflow_run 都被 PR 事件砍掉过 2 次，那是真漏更）。
+#     现在 group 里带上 github.event_name，workflow_run 和 pull_request **永远不在同一个组**，上报不会再被 PR 事件砍掉；
+#     再带上 PR 号，**不同 PR 之间互不取消**；同一个 PR 连改两次标题还是取消前一次（该省的照旧）。
+#     第二段 || 是兜底：workflow_run 事件没有 pull_request.number，用它的 head_branch（实际总是 main）；都取不到退回 github.ref。
+#     **运行次数不增加**（分组只决定砍不砍，不决定起不起）；加上去掉 push 触发，本仓库每天反而**少跑约 4 次**。
+#     每分钟上报次数仍远低于接口上限 6 次。本仓库是公开仓库，Actions 不计私有仓那笔分钟费，但口径照旧按"写得很省"来。
 name: company
 on:
-  push:
-    branches: [main]
   pull_request:
     types: [opened, closed, reopened, edited]
   workflow_run:
@@ -20,7 +34,7 @@ permissions:
   pull-requests: read
   actions: read
 concurrency:
-  group: company
+  group: company-${{ github.event_name }}-${{ github.event.pull_request.number || github.event.workflow_run.head_branch || github.ref }}
   cancel-in-progress: true
 jobs:
   report:

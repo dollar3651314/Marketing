@@ -204,10 +204,15 @@ try {
     const resp = page.waitForResponse((r) => r.url().endsWith('/api/hook') && r.request().method() === 'POST', { timeout: WAIT }).catch(() => null);
     await page.click('#hook-toggle');
     const r = await resp;
-    check('点开关：POST /api/hook 成功、按钮变成关（aria-pressed = false）', r?.status() === 200 && (await page.getAttribute('#hook-toggle', 'aria-pressed')) === 'false', [r?.status(), await page.getAttribute('#hook-toggle', 'aria-pressed')]);
+    // 按钮是收到响应之后才改的：等它真的变成关（等不到就红，和下面审查 R8 同一个写法）。
+    // 2026-11-03：原来把"判定"和"实际值"各读一次 aria-pressed，两次之间按钮刚好改了，
+    // 会报出"失败，实际 [200,\"false\"]"这种自相矛盾的话（e2e-platform + e2e-live 跑 20 遍撞到 1 次）。
+    const offNow = await page.waitForFunction(() => document.querySelector('#hook-toggle')?.getAttribute('aria-pressed') === 'false', null, { timeout: WAIT }).then(() => true, () => false);
+    check('点开关：POST /api/hook 成功、按钮变成关（aria-pressed = false）', r?.status() === 200 && offNow, [r?.status(), await page.getAttribute('#hook-toggle', 'aria-pressed').catch(() => null)]);
     await page.reload();
     await waitFor(page, '#hook-toggle');
-    check('刷新后还是关', (await page.getAttribute('#hook-toggle', 'aria-pressed').catch(() => null)) === 'false', await page.getAttribute('#hook-toggle', 'aria-pressed').catch(() => null));
+    const afterReload = await page.getAttribute('#hook-toggle', 'aria-pressed').catch(() => null);
+    check('刷新后还是关', afterReload === 'false', afterReload);
     const s1 = await send('push', push({ branch: 'claude/dev-company-off', msg: '关着时推的' }));
     await page.goto(BASE + '/#/work/live');
     await waitFor(page, '#w-live');

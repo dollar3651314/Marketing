@@ -10,10 +10,10 @@
  */
 import { spawn, execFileSync } from 'node:child_process';
 import { existsSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
-import net from 'node:net';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { chromium } from 'playwright';
+import { waitForServer } from './e2e-server.mjs';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const WORK = path.join(ROOT, '.wrangler/e2e-admin');
@@ -36,19 +36,11 @@ const WRANGLER = path.join(ROOT, 'node_modules/wrangler/bin/wrangler.js');
 const wenv = { ...process.env, WRANGLER_SEND_METRICS: 'false', CI: '1' };
 const cfg = ['--config', path.join(WORK, 'wrangler.toml'), '--persist-to', path.join(WORK, 'state')];
 execFileSync(process.execPath, [WRANGLER, 'd1', 'migrations', 'apply', 'DB', '--local', ...cfg], { cwd: ROOT, env: wenv, stdio: 'pipe' });
-const port = await new Promise((ok) => { const s = net.createServer().listen(0, '127.0.0.1', () => { const p = s.address().port; s.close(() => ok(p)); }); });
-const BASE = `http://127.0.0.1:${port}`;
-const dev = spawn(process.execPath, [WRANGLER, 'dev', ...cfg, '--port', String(port), '--ip', '127.0.0.1', '--var', `COPILOT_PASSWORD:${PASS}`, '--var', `COMPANY_INGEST_TOKEN:${TOKEN}`], { cwd: ROOT, env: wenv, stdio: ['ignore', 'pipe', 'pipe'], detached: true });
-let devLog = '';
-dev.stdout.on('data', (d) => { devLog += d; });
-dev.stderr.on('data', (d) => { devLog += d; });
+// 端口交给 workerd 自己要（--port 0）、按条件等就绪：原因和 CI 实例见 scripts/e2e-server.mjs 的 waitForServer
+const dev = spawn(process.execPath, [WRANGLER, 'dev', ...cfg, '--port', '0', '--ip', '127.0.0.1', '--var', `COPILOT_PASSWORD:${PASS}`, '--var', `COMPANY_INGEST_TOKEN:${TOKEN}`], { cwd: ROOT, env: wenv, stdio: ['ignore', 'pipe', 'pipe'], detached: true });
 const stopDev = () => { try { process.kill(-dev.pid, 'SIGTERM'); } catch { /* 已经停了 */ } };
 process.on('exit', stopDev);
-for (let i = 0; ; i++) {
-  try { if ((await fetch(BASE + '/health')).ok) break; } catch { /* 还没起来 */ }
-  if (i > 120) { console.error(devLog.slice(-3000)); throw new Error('本地服务 60 秒没起来'); }
-  await new Promise((r) => setTimeout(r, 500));
-}
+const BASE = await waitForServer(dev, { name: 'e2e-admin', stop: stopDev });
 
 // ---- 样例数据：原型（2026-11-01 17:30 agents 的真实文件）里的数字 ----
 const H = 3600_000, DAY = 24 * H;
