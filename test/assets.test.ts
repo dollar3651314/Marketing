@@ -228,4 +228,17 @@ describe('收编进后台的公共工具（Amos 2026-11-03"工具越来越多，
   it('后台页面里再没有发音探针（2026-11-03 下线）：菜单、模块、接口地址都不剩', async () => {
     for (const s of ['#/tools/probe', 'id="t-probe"', '发音探针', '__probeBase', '/api/probe/']) expect(ADMIN_PAGE).not.toContain(s);
   });
+
+  // 2026-11-03 Amos 实际撞上：点"全部生成"只看到"停下了，已经生成 0 个"，看不到任何原因，
+  // 以为是额度用光了（其实今天只用了 58 / 9500）。原因是出错时 agMsg 写的真报错被紧接着的
+  // next() 用那句泛泛的话覆盖了。服务端的报错本来写得很清楚（没绑 AI / 没提示词 / 额度不够），全被盖掉。
+  it('生成出错时，真正的原因不许被"停下了"那句话盖掉（AG.err 优先）', async () => {
+    const run = ADMIN_PAGE.slice(ADMIN_PAGE.indexOf('function agRun('), ADMIN_PAGE.indexOf('agq(\'ag-six\').onclick'));
+    expect(run, '每次开跑要先把上一次的报错清掉').toContain("AG.err=''");
+    expect(run, '出错时要把原因存进 AG.err，而不只是喊一声就被覆盖').toContain('AG.err=\'停在 \'');
+    expect(run, '收尾时 AG.err 要优先于"停下了"那句泛泛的话').toContain('if(AG.err)agMsg(AG.err');
+    // 收尾那句必须在 if(AG.err) 的 else 里，不能无条件执行
+    const tail = run.slice(run.indexOf('if(AG.err)agMsg(AG.err'));
+    expect(tail.indexOf('else agMsg(AG.stop?'), '"停下了"那句必须挂在 else 上').toBeGreaterThan(-1);
+  });
 });
