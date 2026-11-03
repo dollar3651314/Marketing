@@ -10,7 +10,7 @@
  * 页面约定（照原型 v2 的元素；研发要改名就同一个 PR 改这里并在 PR 描述写明）：
  *   一级菜单 nav.nav1 a[data-p="work" | "project" | "tools"]（项目链接另带 data-proj="<项目名>"，有几个项目出几个）；
  *   二级菜单 #sub-work、#sub-project、#sub-tools 里的 a[data-s="<模块 id>"]，地址 #/work/todo、#/<项目>/guide 这类锚点
- *   页面 #v-work、#v-project（一套 DOM 轮流显示每个项目）、#v-tools；工作台模块 #w-now（#hero）、#w-todo（#w-todos li.todo、#w-donelist）、#w-live、#w-proj、#w-num、#w-meet
+ *   页面 #v-work、#v-project（一套 DOM 轮流显示每个项目）、#v-tools；工作台模块 #w-now（#hero）、#w-todo（#w-todos li.todo、#w-donelist）、#w-live、#w-proj、#w-num、#w-meet、#w-english（英语练习：8 条提示词 + 每条一个复制按钮）
  *   待办 li.todo 带颜色类 over（红，超时）/ soon（橙，24 小时内）/ later / none（没定截止时间）；打勾按钮 .tick；撤销 [data-undo]
  *   全部待办按项目分组（2026-11-02）：逾期的在 #w-todos .over-grp 里置顶常显，其余在 #w-todos details.tgrp[data-proj] 里、默认收起（#w-todo-all 全部展开）
  *   填数字：待办里的表单 .form，输入框用 <label> 包住（标签文字 X 关注、Threads 关注、名单人数），按钮"保存"
@@ -139,7 +139,7 @@ try {
   await section('二级菜单', async () => {
     // 页名（#sub-<页>、#v-<页>）和地址段分开：项目页的页名一律是 project，地址段是项目名
     const SUB = [
-      { nav: 'work', page: 'work', seg: 'work', mods: ['w-now', 'w-todo', 'w-live', 'w-proj', 'w-num', 'w-meet'] },
+      { nav: 'work', page: 'work', seg: 'work', mods: ['w-now', 'w-todo', 'w-live', 'w-proj', 'w-num', 'w-meet', 'w-english'] },
       { nav: 'forecast', page: 'project', seg: 'forecast', mods: ['f-next', 'f-guide', 'f-live', 'f-card', 'f-pack', 'f-match', 'f-tools', 'f-handoff'] },
       { nav: 'Practical', page: 'project', seg: 'Practical', mods: ['f-next', 'f-card', 'f-handoff'] },
       { nav: 'tools', page: 'tools', seg: 'tools', mods: ['t-queue'] },
@@ -362,6 +362,59 @@ try {
         }
         await p.context().close();
       }
+    }
+  });
+
+
+  // ---------- 8.5 英语练习（2026-11-03 晚，Amos 睡前点名要的）----------
+  // 守四件事：① 在工作台二级菜单第 7 项（公共工具满 8 项了，T-4 不许加第 9 项）；② 8 条提示词都在；
+  // ③ 每条的"复制"按钮**不展开 details 就点得到**，点了剪贴板里真的是那一整条、按钮变"已复制 ✓"；
+  // ④ 手机 390 宽菜单不撑破、不横向滚动（和 T-4 同一个口径）。
+  await section('英语练习', async () => {
+    for (const width of [390, 1280]) {
+      const p = await open({ width, height: 900, clip: 'ok' });
+      await login(p, '/#/work');
+      // ① 菜单第 7 项
+      const mods = await p.locator('#sub-work a[data-s]').evaluateAll((a) => a.map((x) => x.dataset.s));
+      check(`${width} 宽：工作台二级菜单 7 项、第 7 项是 w-english（不是 9 项以上）`, mods.length === 7 && mods[6] === 'w-english', mods);
+      await p.click('#sub-work a[data-s="w-english"]', { timeout: WAIT });
+      await p.waitForTimeout(400);
+      const seen = await p.evaluate(() => { const e = document.getElementById('w-english'); if (!e) return null; const r = e.getBoundingClientRect(); return { top: r.top, h: innerHeight, hash: location.hash }; });
+      check(`${width} 宽：点菜单滚到"英语练习"，地址是 #/work/english`, !!seen && seen.top >= -2 && seen.top < seen.h && seen.hash === '#/work/english', seen);
+      // ② 8 条
+      const codes = await p.locator('#w-english .en-code').allInnerTexts();
+      check(`${width} 宽：8 条提示词都在（C-1～C-6、N-1、N-2）`, JSON.stringify(codes) === JSON.stringify(['C-1', 'C-2', 'C-3', 'C-4', 'C-5', 'C-6', 'N-1', 'N-2']), codes);
+      // ③ 不展开就能点到复制；点了剪贴板里是整条
+      const btns = p.locator('#w-english .en-copy');
+      const n = await btns.count();
+      const foldedN = await p.locator('#w-english details.en-fold:not([open])').count();
+      const clickable = await btns.first().isVisible();
+      check(`${width} 宽：8 个复制按钮，正文默认折叠，按钮不展开就看得见`, n === 8 && foldedN === 8 && clickable, { n, foldedN, clickable });
+      await btns.first().click();
+      await p.waitForTimeout(300);
+      const label = await btns.first().innerText();
+      const clip = await p.evaluate(() => navigator.clipboard.readText().catch(() => '')); 
+      const want = await p.locator('#en-p1-t').evaluate((e) => e.textContent);
+      check(`${width} 宽：点第一条"复制"，按钮变"已复制 ✓"`, label.includes('已复制'), label);
+      check(`${width} 宽：剪贴板里是 C-1 一整条原文（${want.length} 字）`, clip === want, { clipLen: clip.length, wantLen: want.length, head: clip.slice(0, 20) });
+      await p.waitForTimeout(2000);
+      check(`${width} 宽：2 秒后按钮变回"复制"`, (await btns.first().innerText()).trim() === '复制', await btns.first().innerText());
+      // ④ 不横向滚动、菜单不超出屏幕
+      const fit = await p.evaluate(() => {
+        const nav = document.querySelector('#sub-work .in');
+        const as = [...nav.querySelectorAll('a')];
+        const bars = document.getElementById('bars').getBoundingClientRect().height;
+        return {
+          nav: nav.scrollWidth <= nav.clientWidth + 1,                                    // 菜单自己不横滑
+          allIn: as.every((a) => a.getBoundingClientRect().right <= innerWidth + 0.5),     // 7 项都在屏幕里，不用滑才看得到
+          pre: [...document.querySelectorAll('#w-english .en-pre')].every((e) => e.scrollWidth <= e.clientWidth + 1),
+          barsPct: +(bars / innerHeight * 100).toFixed(1),                                 // 两层菜单 ≤ 屏幕高度 25%（批 2 审查 R9）
+        };
+      });
+      check(`${width} 宽：不横向滚动；7 项全在屏幕里（不用横滑）；两层菜单 ${fit.barsPct}% ≤ 25%（T-4 / R9 同一个口径）`, (await noHScroll(p)) && fit.nav && fit.allIn && fit.pre && fit.barsPct <= 25, { h: await noHScroll(p), ...fit });
+      // 截图（--shots 时才存）
+      if (SHOTS) { mkdirSync(SHOTS, { recursive: true }); await p.locator('#w-english details.en-fold').first().evaluate((d) => { d.open = true; }); await p.waitForTimeout(200); await p.screenshot({ path: path.join(SHOTS, `work-english-${width}.png`), fullPage: true }); }
+      await p.context().close();
     }
   });
 
