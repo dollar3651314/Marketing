@@ -5,14 +5,14 @@
  *   GET /api/queue?status=pending|done|skip&product=&platform=&from=YYYY-MM-DD&to=YYYY-MM-DD（按存进来的台湾日期）&sort=time|score、POST /api/queue/<id> {status}、
  *   GET /api/company、POST /api/company/done（公司运营仪表盘，company.ts）、GET /api/active、POST /api/hook {on}（团队在做什么、Webhook 开关，hooks.ts）、
  *   GET /api/reply-cap、POST /api/reply-cap {caps:{项目: 1～50}}（每天回帖上限按项目，D-2，公司平台批 2）、
- *   POST /api/queue/delete {ids}（Amos 自己删；记录不自动删，D-4 选 B）、GET /api/usage、POST /api/usage {caps}（用量和限额，usage.ts）、POST /api/login、POST /api/logout、
+ *   POST /api/queue/delete {ids}（Amos 自己删；记录不自动删，D-4 选 B）、GET /api/usage、POST /api/usage {caps}（用量和限额 ＋ 用量监控：还剩多少 left、分别用到了哪里 byPurpose，usage.ts）、POST /api/login、POST /api/logout、
  *   /api/assets/*（素材生成器，assets.ts）、/api/tts/*（语音生成，tts.ts）。
  * 登录：密钥 COPILOT_PASSWORD（≥ 16 个字符，没填时后台 404）；同一 IP 15 分钟错 5 次锁 15 分钟，全站 1 小时错 20 次锁 1 小时；
  * 失败一律回答同一句（不透露锁定规则，C128）；会话 12 小时，签名密钥由密码派生，改密码旧会话全部失效。
  */
 import type { Env } from './env';
 import { modelList } from './gemini';
-import { saveCaps, usageByProject, usageReport, WAI_KEY } from './usage';
+import { saveCaps, unlabeledUsage, usageByProject, usageByPurpose, usageLeft, usageReport, WAI_KEY } from './usage';
 import { usedToday } from './workers-ai';
 import { extensionZip } from './extension-download';
 import { companyApi, projectPages } from './company';
@@ -216,7 +216,13 @@ export async function adminApi(env: Env, req: Request, now: number): Promise<Res
   }
   if (p === '/api/usage' && req.method === 'GET') {
     // byProject：今天每个项目的 Gemini 次数、Workers AI neurons（D-3，只记、不当限额；11/2 以前的没分项目）
-    return json({ rows: await usageReport(env, now, modelList(env), await usedToday(env, now), !!env.AI), byProject: await usageByProject(env, now) });
+    // left / byPurpose：用量监控（Amos 2026-11-03"可以看到剩余和分别用到了哪里"）——还剩多少、分别用到了哪里。
+    // 两本账分开（Workers AI 按 neurons、Gemini 按次数），**不加在一起**；没按用途记下来的单独一行，不摊进任何一项（底线 3）。
+    const rows = await usageReport(env, now, modelList(env), await usedToday(env, now), !!env.AI);
+    const left = usageLeft(rows);
+    const byPurpose = await usageByPurpose(env, now);
+    const rest = unlabeledUsage(byPurpose, left);
+    return json({ rows, byProject: await usageByProject(env, now), left, byPurpose: rest ? [...byPurpose, rest] : byPurpose });
   }
   if (p === '/api/reply-cap' && req.method === 'GET') return json({ rows: await replyCapRows(env, now) });
   if (p === '/api/reply-cap' && req.method === 'POST') {
@@ -233,7 +239,9 @@ export async function adminApi(env: Env, req: Request, now: number): Promise<Res
     if (!caps || typeof caps !== 'object' || Array.isArray(caps)) return json({ error: '请求不对' }, 400);
     const bad = await saveCaps(env, now, caps, [...modelList(env), WAI_KEY]);
     if (bad.length) return json({ error: '没保存：' + bad.join('；') }, 400);
-    return json({ ok: true, rows: await usageReport(env, now, modelList(env), await usedToday(env, now), !!env.AI) });
+    // 改完上限，"还剩多少"那一块要跟着一起回新的（不然页面上还显示旧的上限）
+    const saved = await usageReport(env, now, modelList(env), await usedToday(env, now), !!env.AI);
+    return json({ ok: true, rows: saved, left: usageLeft(saved) });
   }
   const m = p.match(/^\/api\/queue\/(\d{1,10})$/);
   if (m && req.method === 'POST') {

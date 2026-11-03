@@ -3,6 +3,12 @@
  * - Gemini 的真实免费额度 Google 不提供查询接口：这里只数我们自己发了几次、用了多少 token；Google 回 429 时记下来，后台标"Google 说额度用完"。
  * - 一天怎么算跟着各家的重置时间：Gemini 按美国太平洋时间半夜，Workers AI 按 UTC 0 点（台湾早上 8 点）。
  * - 上限存在 settings 表（后台"用量和限额"页改）；Gemini 默认每个模型每天 200 次，Workers AI 默认 8000 neurons、最多 9500（免费额度 10000，C117）。
+ *
+ * 用量监控（Amos 2026-11-03："最好提炼出一个 token 监控的模块，可以看到剩余和分别用到了哪里"）也在这个文件里，**没有另开一个页**：
+ *   ① 还剩多少 → usageLeft()，直接从 usageReport 的行算（两本账分开：Workers AI 按 neurons、Gemini 按次数，不加在一起）；
+ *   ② 分别用到了哪里 → usageByPurpose()，读迁移 0010 建的 usage_by_purpose（按用途记，和按项目记的 usage_by_project 并存）；
+ *   ③ 什么时候清零 → 还是 dayFor() / nextReset() 这两个函数，没有第二套口径。
+ * 都挂在后台"公共工具 → 用量和限额"（#/tools/usage）下面，接口是 GET /api/usage 的 left / byPurpose 两个字段。
  */
 import type { Env } from './env';
 
@@ -53,11 +59,37 @@ export async function usedReq(env: Env, model: string, now: number): Promise<num
 /** "测试 AI"这类平台自己的调用记到这个项目名下（D-3，公司平台批 2） */
 export const PLATFORM_PROJECT = '_platform';
 
+// ======================================================================
+// 用量监控：按**用途**记一本（Amos 2026-11-03"可以看到剩余和分别用到了哪里"）。
+// 和"按项目记"（usage_by_project）的区别：素材生成器的图片和音频都算 practical-assets，
+// 按项目看分不出哪一笔是出图、哪一笔是配音；按用途就分得出。只记、不当限额。
+// ======================================================================
+
+/** 用途的全集（页面按这个顺序排）。新增用途要同时在这里和 PURPOSE_LABEL 里加一项。 */
+export const PURPOSES = ['assets-image', 'assets-audio', 'tts', 'draft', 'score', 'platform', 'other'] as const;
+export type Purpose = (typeof PURPOSES)[number];
+export const PURPOSE_LABEL: Record<Purpose, string> = {
+  'assets-image': '素材生成器 · 图片',
+  'assets-audio': '素材生成器 · 音频',
+  tts: '语音生成',
+  draft: '跟帖草稿',
+  score: '跟帖评分',
+  platform: '平台自己（"测试 AI"）',
+  other: '其他',
+};
+/** 这一版上线以前记下的用量没有用途：单独一行，不摊到任何一项头上（不编数字，底线 3） */
+export const UNLABELED = '_unlabeled';
+export const purposeLabel = (p: string): string => (p === UNLABELED ? '没按用途记下来的' : (PURPOSE_LABEL[p as Purpose] ?? p));
+const purposeOrder = (p: string): number => {
+  const i = (PURPOSES as readonly string[]).indexOf(p);
+  return i < 0 ? PURPOSES.length : i;
+};
+
 /**
  * 记一次请求（不管成功与否都算一次，Google 也是这样算的）。
  * 带 project 时再按项目记一行到 usage_by_project（公司平台批 2，D-3：只记、不当限额）；那一行写失败（例如表还没建）只打日志，不影响调用方。
  */
-export async function recordUse(env: Env, model: string, now: number, u: { status: number; tokIn?: number; tokOut?: number; project?: string; neurons?: number }) {
+export async function recordUse(env: Env, model: string, now: number, u: { status: number; tokIn?: number; tokOut?: number; project?: string; neurons?: number; purpose?: string }) {
   await env.DB.prepare(
     'INSERT INTO model_usage (day, model, req, tok_in, tok_out, last_status, last_at) VALUES (?1, ?2, 1, ?3, ?4, ?5, ?6) ' +
       'ON CONFLICT (day, model) DO UPDATE SET req = req + 1, tok_in = tok_in + ?3, tok_out = tok_out + ?4, last_status = ?5, last_at = ?6',
@@ -65,6 +97,21 @@ export async function recordUse(env: Env, model: string, now: number, u: { statu
     .bind(dayFor(model, now), model, Math.max(0, Math.round(u.tokIn ?? 0)), Math.max(0, Math.round(u.tokOut ?? 0)), u.status, now)
     .run();
   if (u.project) await recordByProject(env, model, now, u.project, u);
+  if (u.purpose) await recordByPurpose(env, model, now, u.purpose, u);
+}
+
+/** 按用途记一行（和 recordByProject 一样：写失败只打日志，不影响调用方） */
+async function recordByPurpose(env: Env, model: string, now: number, purpose: string, u: { tokIn?: number; tokOut?: number; neurons?: number }) {
+  try {
+    await env.DB.prepare(
+      'INSERT INTO usage_by_purpose (day, purpose, model, req, tok_in, tok_out, neurons) VALUES (?1, ?2, ?3, 1, ?4, ?5, ?6) ' +
+        'ON CONFLICT (day, purpose, model) DO UPDATE SET req = req + 1, tok_in = tok_in + ?4, tok_out = tok_out + ?5, neurons = neurons + ?6',
+    )
+      .bind(dayFor(model, now), purpose.slice(0, 32), model, Math.max(0, Math.round(u.tokIn ?? 0)), Math.max(0, Math.round(u.tokOut ?? 0)), Math.max(0, u.neurons ?? 0))
+      .run();
+  } catch (e) {
+    console.log(JSON.stringify({ event: 'copilot.usage_by_purpose_failed', detail: String((e as Error)?.message ?? e).slice(0, 200) }));
+  }
 }
 
 async function recordByProject(env: Env, model: string, now: number, project: string, u: { tokIn?: number; tokOut?: number; neurons?: number }) {
@@ -93,6 +140,93 @@ export async function usageByProject(env: Env, now: number): Promise<ProjectUsag
   } catch {
     return [];
   }
+}
+
+export interface PurposeUsage {
+  purpose: string;
+  label: string;
+  /** Workers AI 今天的 neurons（估算，和 ai_usage 同一种算法） */
+  neurons: number;
+  /** Workers AI 今天调了几次；没记下来的那一行是 null（页面写"没记录"，不补 0，底线 3） */
+  waiReq: number | null;
+  /** Gemini 今天的请求次数（几个模型加起来） */
+  geminiReq: number;
+}
+
+/**
+ * "分别用到了哪里"：今天（各家的重置时间）每个用途的 Workers AI neurons / 次数和 Gemini 次数。
+ * 表还没建（迁移没跑）时返回 []，页面照样能显示"还剩多少"。
+ */
+export async function usageByPurpose(env: Env, now: number): Promise<PurposeUsage[]> {
+  try {
+    const r = await env.DB.prepare(
+      'SELECT purpose, SUM(CASE WHEN model = ?1 AND day = ?3 THEN neurons ELSE 0 END) AS wn, ' +
+        'SUM(CASE WHEN model = ?1 AND day = ?3 THEN req ELSE 0 END) AS wreq, ' +
+        'SUM(CASE WHEN model != ?1 AND day = ?2 THEN req ELSE 0 END) AS greq ' +
+        'FROM usage_by_purpose WHERE day IN (?2, ?3) GROUP BY purpose',
+    )
+      .bind(WAI_KEY, pacificDay(now), utcDay(now))
+      .all<{ purpose: string; wn: number; wreq: number; greq: number }>();
+    return (r.results ?? [])
+      .filter((x) => x.wreq > 0 || x.greq > 0)
+      .map((x) => ({ purpose: x.purpose, label: purposeLabel(x.purpose), neurons: x.wn, waiReq: x.wreq, geminiReq: x.greq }))
+      .sort((a, b) => purposeOrder(a.purpose) - purposeOrder(b.purpose) || a.purpose.localeCompare(b.purpose));
+  } catch {
+    return [];
+  }
+}
+
+export interface UsageLeft {
+  /** workers-ai / gemini：两本账分开，**不加在一起**（单位都不一样） */
+  key: string;
+  label: string;
+  unit: '次' | 'neurons';
+  used: number;
+  cap: number;
+  left: number;
+  resetAt: number;
+  /** 这一本的"一天"按哪个时区算、几点清零（从 dayFor / nextReset 来的，不是凭印象写的）；长一点的说明在页面的 hint 里 */
+  resetText: string;
+  /** Gemini 的上限是每个模型一个数，这里是几个模型加起来；Workers AI 只有一本，这个是 1 */
+  models: number;
+}
+
+/** 顶上那块"还剩多少"：直接从 usageReport 的行算，不另外查库 */
+export function usageLeft(rows: UsageRow[]): UsageLeft[] {
+  const out: UsageLeft[] = [];
+  const wai = rows.find((r) => r.model === WAI_KEY);
+  if (wai) {
+    out.push({
+      key: WAI_KEY, label: 'Workers AI（备用 AI + 素材生成器 + 语音生成）', unit: 'neurons',
+      used: wai.used, cap: wai.cap, left: Math.max(0, wai.cap - wai.used), resetAt: wai.resetAt,
+      resetText: 'UTC 0 点（台湾早上 8 点）', models: 1,
+    });
+  }
+  const gem = rows.filter((r) => r.model !== WAI_KEY);
+  if (gem.length) {
+    const used = gem.reduce((n, r) => n + r.used, 0);
+    const cap = gem.reduce((n, r) => n + r.cap, 0);
+    out.push({
+      key: 'gemini', label: `Gemini（${gem.length} 个模型的上限加起来）`, unit: '次',
+      used, cap, left: Math.max(0, cap - used), resetAt: Math.min(...gem.map((r) => r.resetAt)),
+      resetText: '美国太平洋时间半夜（台湾下午 3～4 点）', models: gem.length,
+    });
+  }
+  return out;
+}
+
+/**
+ * 今天的总量减掉已经按用途记下的，补成最后一行。
+ * 这一版上线以前的用量没有用途，**不回填、不摊进任何一项**；Workers AI 那边记不出次数就写 null（页面显示"没记录"）。
+ * 差额小于一次调用的量（neurons < 0.5、Gemini < 1 次）就不显示，免得只因为四舍五入多出一行。
+ */
+export function unlabeledUsage(byPurpose: PurposeUsage[], left: UsageLeft[]): PurposeUsage | null {
+  const wai = left.find((x) => x.key === WAI_KEY);
+  const gem = left.find((x) => x.key === 'gemini');
+  const n = Math.max(0, (wai?.used ?? 0) - byPurpose.reduce((a, x) => a + x.neurons, 0));
+  const g = Math.max(0, (gem?.used ?? 0) - byPurpose.reduce((a, x) => a + x.geminiReq, 0));
+  if (n < 0.5 && g < 1) return null;
+  return { purpose: UNLABELED, label: purposeLabel(UNLABELED), neurons: n, waiReq: null, geminiReq: g };
 }
 
 export interface UsageRow { model: string; label: string; unit: '次' | 'neurons'; req: number; tokIn: number; tokOut: number; used: number; cap: number; max: number; state: 'ok' | 'google_429' | 'our_cap' | 'error'; stateText: string; resetAt: number }

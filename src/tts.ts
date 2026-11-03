@@ -33,6 +33,8 @@ export const TTS_AURA = '@cf/deepgram/aura-2-en';
 export const AURA_SPEAKER = 'luna';
 /** 用量按这个项目名记一份，后台"按项目看用量"里看得见（和素材生成器的 practical-assets 分开） */
 export const TTS_PROJECT = 'tts';
+/** 用量再按**用途**记一份（usage_by_purpose，后台"用量和限额 → 分别用到了哪里"）：语音生成单独一项 */
+export const TTS_PURPOSE = 'tts';
 
 /**
  * 单价（Cloudflare 价格页，2026-11-02）：melotts **18.63 neurons / 音频分钟**；aura-2-en **2727.27 neurons / 1000 字符**。
@@ -174,13 +176,13 @@ export async function ttsApi(env: Env, req: Request, now: number, sub: string): 
       mp3 = await toMp3(await ai(env).run(model, input));
     } catch (e) {
       // 失败的调用不一定不计费，保守按估算记一次
-      await chargeNeurons(env, now, est, TTS_PROJECT, 0);
+      await chargeNeurons(env, now, est, TTS_PROJECT, 0, TTS_PURPOSE);
       // 只带模型名和错误文字，不含任何密钥（底线 1）
       const detail = String((e as Error)?.message ?? e).replace(/\s+/g, ' ').slice(0, 300);
       console.log(JSON.stringify({ event: 'tts.error', model, detail }));
       return json({ 出错: detail }, 502);
     }
-    await chargeNeurons(env, now, est, TTS_PROJECT, 200);
+    await chargeNeurons(env, now, est, TTS_PROJECT, 200, TTS_PURPOSE);
     const after = await quota(env, now, 0);
     const sec = ttsSeconds(text);
     return json({

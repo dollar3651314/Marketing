@@ -355,12 +355,21 @@ ${ASSETS_CSS}${TTS_CSS}
       <div class="pad"><button class="btn primary" id="rc-save" type="button">保存上限</button><p class="msg" id="rc-msg" role="status"></p>
         <p class="hint">插件里"同意"和清单里"我回了"合起来算，按台湾日期每天重新数。某个项目到上限后，只有这个项目的"一键回复"变灰，别的项目照常。每个项目 1～50 条；没单独设过的项目用默认值。</p></div></div>
   </section>
-  <section class="mod" id="t-usage"><h2 class="mh">用量和限额</h2>
+  <section class="mod" id="t-usage"><h2 class="mh">用量和限额<span class="sp"></span><span class="hint">还剩多少 · 分别用到了哪里</span></h2>
   <section id="v-usage">
+    <!-- 用量监控（Amos 2026-11-03"可以看到剩余和分别用到了哪里"）第一块：还剩多少。数据来自 /api/usage 的 left（src/usage.ts usageLeft） -->
+    <h3 class="mh">还剩多少</h3>
+    <div class="card"><div class="tablewrap"><table><thead><tr><th>这本账</th><th>今天已用</th><th>每天上限</th><th>还剩</th><th>什么时候清零（台湾时间）</th></tr></thead><tbody id="u-left"><tr><td colspan="5">正在读取…</td></tr></tbody></table></div>
+      <div class="pad"><p class="hint">两本账<b>分开看、不要加在一起</b>（单位都不一样）：Workers AI 按 neurons 算，备用 AI、素材生成器、语音生成花的都是这一本；Gemini 按请求次数算。<b>"一天"按各家自己的重置时间</b>：Workers AI 是 UTC 0 点清零，也就是<b>台湾早上 8 点</b>；Gemini 是美国太平洋时间半夜清零，也就是<b>台湾下午 3 点或 4 点</b>（看美国当时有没有夏令时）。这里的"上限"是我们自己在下面那张表里设的数，<b>不是各家的真实剩余额度</b>——Google 不提供查询接口，Cloudflare 的免费额度是每天 10,000 neurons（C117）。</p></div></div>
+    <h3 class="mh">每个模型的用量和上限</h3>
     <div class="card"><div class="tablewrap"><table><thead><tr><th>模型</th><th>今天请求</th><th>今天 token（入 / 出）</th><th>每天上限</th><th>用量</th><th>状态</th><th>下次重置（台湾时间）</th></tr></thead><tbody id="u-rows"></tbody></table></div>
       <div class="pad"><p class="sum" style="margin:0"><span id="u-at">还没读取</span><span class="sp"></span><button class="btn small" id="u-refresh" type="button">立即刷新</button></p>
         <button class="btn primary" id="u-save" type="button">保存上限</button><p class="msg" id="u-msg" role="status"></p>
         <p class="hint">Gemini 的真实免费额度 Google 不提供查询，这里是我们自己数的次数和 token；Google 说用完（429）时状态会标出来。到了我们设的上限，这个模型今天先跳过，换下一个。Gemini 按次数（1～10,000），Workers AI 按 neurons（1～9,500；免费额度 10,000，超过不让保存）。"今天"按各家的重置时间算。</p></div></div>
+    <!-- 用量监控第二块：分别用到了哪里。数据来自 /api/usage 的 byPurpose（表 usage_by_purpose，迁移 0010） -->
+    <h3 class="mh">分别用到了哪里<span class="sp"></span><span class="hint">今天 · 按用途 · 只看、不设上限</span></h3>
+    <div class="card"><div class="tablewrap"><table><thead><tr><th>用途</th><th>Workers AI（neurons）</th><th>Workers AI 次数</th><th>Gemini 次数</th></tr></thead><tbody id="u-purpose"><tr><td colspan="4">正在读取…</td></tr></tbody></table></div>
+      <div class="pad"><p class="hint">按"这一笔是干什么用的"分开记（表 <code>usage_by_purpose</code>）。为什么不看"按项目看用量"：素材生成器的图片和音频都算同一个项目，按项目分不出哪一笔是出图、哪一笔是配音。neurons 是<b>按价格表估算</b>的，不是 Cloudflare 的账单。<b>这一版上线以前记下的用量没有用途，不回填也不估算</b>，单独列成"没按用途记下来的"；那一行的次数写"没记录"，因为当时确实没记下来。</p></div></div>
   </section></section>
   <!-- 按项目看用量（工作平台批 2，D-3）：/api/usage 的 byProject；只记、不当限额 -->
   <section class="mod" id="t-byproj"><h2 class="mh">按项目看用量<span class="sp"></span><span class="hint">今天 · 只看、不设上限</span></h2>
@@ -557,7 +566,7 @@ $('bulk-yes').addEventListener('click',async()=>{const y=$('bulk-yes');y.disable
 let uTimer=null, uEditing=false;
 function uStamp(){$('u-at').textContent='更新于 '+tw(Date.now()).slice(11)+'（停在这一页时每 30 秒自动刷新）';}
 async function loadUsage(manual){const b=$('u-refresh');if(manual){b.disabled=true;b.textContent='正在刷新…';}
-  try{const j=await call('/api/usage');const rows=j.rows;if(!uEditing||manual){usage=rows;renderUsage();}renderByProject(j.byProject||[]);uStamp();if(manual)$('u-msg').textContent='';}
+  try{const j=await call('/api/usage');const rows=j.rows;if(!uEditing||manual){usage=rows;renderUsage();}renderByProject(j.byProject||[]);renderLeft(j.left||[]);renderPurpose(j.byPurpose||[]);uStamp();if(manual)$('u-msg').textContent='';}
   catch(e){$('u-at').textContent='刷新失败：'+e.message+'（30 秒后再试）';}
   finally{if(manual){b.disabled=false;b.textContent='立即刷新';}}}
 function usageTimer(on){clearInterval(uTimer);uTimer=on?setInterval(()=>{if(page==='tools'&&document.visibilityState==='visible')loadUsage(false);},30000):null;}
@@ -577,6 +586,28 @@ function renderByProject(list){const T=$('bp-rows');T.replaceChildren();
   if(!list.length){const tr=document.createElement('tr');tr.append(Object.assign(document.createElement('td'),{colSpan:3,textContent:'今天还没有按项目记下的用量'}));T.append(tr);return;}
   list.forEach(x=>{const tr=document.createElement('tr');const cell=(t,label,cls)=>{const c=Object.assign(document.createElement('td'),{textContent:t});if(label)c.dataset.label=label;if(cls)c.className=cls;tr.append(c);};
     cell(x.project==='_platform'?'平台自己（"测试 AI"）':(PROD[x.project]?x.project+'（'+PROD[x.project]+'）':x.project));cell(x.gemini.toLocaleString()+' 次','Gemini','n');cell(Math.round(x.workersAi).toLocaleString()+' neurons','Workers AI','n');T.append(tr);});}
+/** 用量监控 · 还剩多少（Amos 2026-11-03）：两本账各一行，单位不一样，不加在一起 */
+function tdc(tr,t,label,cls){const c=Object.assign(document.createElement('td'),{textContent:t});if(label)c.dataset.label=label;if(cls)c.className=cls;tr.append(c);return c;}
+function renderLeft(list){const T=$('u-left');T.replaceChildren();
+  if(!list.length){const tr=document.createElement('tr');tr.append(Object.assign(document.createElement('td'),{colSpan:5,textContent:'读不到额度'}));T.append(tr);return;}
+  list.forEach(x=>{const tr=document.createElement('tr');
+    tdc(tr,x.label,'这本账');
+    tdc(tr,x.used.toLocaleString()+' '+x.unit,'今天已用','n');
+    tdc(tr,x.cap.toLocaleString()+' '+x.unit,'每天上限','n');
+    const pct=x.cap>0?Math.min(100,Math.round(x.used/x.cap*100)):0;
+    const L=tdc(tr,'','还剩','n');L.innerHTML='<span class="meter"><i></i></span> ';L.querySelector('i').style.width=pct+'%';
+    const b=document.createElement('b');b.textContent=x.left.toLocaleString()+' '+x.unit;L.append(b,'（已用 '+pct+'%）');
+    tdc(tr,tw(x.resetAt).slice(5,16)+' · '+x.resetText,'什么时候清零');
+    T.append(tr);});}
+/** 用量监控 · 分别用到了哪里：没记下来的那一行次数写"没记录"，不补 0（底线 3） */
+function renderPurpose(list){const T=$('u-purpose');T.replaceChildren();
+  if(!list.length){const tr=document.createElement('tr');tr.append(Object.assign(document.createElement('td'),{colSpan:4,textContent:'今天还没有按用途记下的用量'}));T.append(tr);return;}
+  list.forEach(x=>{const tr=document.createElement('tr');const n=x.neurons>=10?Math.round(x.neurons):Math.round(x.neurons*10)/10;
+    tdc(tr,x.label,'用途');
+    tdc(tr,n.toLocaleString()+' neurons','Workers AI（neurons）','n');
+    tdc(tr,x.waiReq==null?'没记录':x.waiReq.toLocaleString()+' 次','Workers AI 次数','n');
+    tdc(tr,x.geminiReq.toLocaleString()+' 次','Gemini 次数','n');
+    T.append(tr);});}
 // Webhook 开关（工作平台批 3）：读到状态才显示按钮（免得先显示一个不对的状态）；点了以后等服务端确认再变
 // 审查 R8：每次读 / 切都拿一个序号，只认最新那次的返回（晚到的旧 GET 不能把按钮改回去）
 let hookSeq=0;
@@ -609,7 +640,7 @@ $('u-save').addEventListener('click',async()=>{const b=$('u-save'),m=$('u-msg');
   usage.forEach((u,i)=>{const el=$('cap-'+i);const v=Number(el.value);const ok=Number.isInteger(v)&&v>=1&&v<=u.max;el.setAttribute('aria-invalid',String(!ok));if(!ok)bad.push(u.label+' 要在 1～'+u.max.toLocaleString()+' 之间');caps[u.model]=v;});
   if(bad.length){m.className='msg';m.textContent='没保存：'+bad.join('；');return;}
   b.disabled=true;b.textContent='正在保存…';m.textContent='';
-  try{usage=(await call('/api/usage',{caps})).rows;uEditing=false;renderUsage();uStamp();m.className='msg ok';m.textContent='✓ 已保存，下一次请求开始生效';}catch(e){m.className='msg';m.textContent=e.message;}finally{b.disabled=false;b.textContent='保存上限';}});
+  try{const j=await call('/api/usage',{caps});usage=j.rows;uEditing=false;renderUsage();renderLeft(j.left||[]);uStamp();m.className='msg ok';m.textContent='✓ 已保存，下一次请求开始生效';}catch(e){m.className='msg';m.textContent=e.message;}finally{b.disabled=false;b.textContent='保存上限';}});
 call(query()).then(j=>{state=j;showApp();render();route();}).catch(()=>{});
 </script>
 <script>
