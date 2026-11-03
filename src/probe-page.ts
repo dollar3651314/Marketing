@@ -6,38 +6,40 @@
  * - 页面上不显示任何密钥、账号 ID（底线 1）：结果 JSON 里只有模型名、毫秒、字节、neurons 估算。
  * - 录音只在浏览器和本服务之间传，不落库、不转发第三方；转成 16kHz 单声道 WAV 再传（Whisper 一定吃得下）。
  */
-export const PROBE_PAGE = `<!doctype html>
-<html lang="zh-Hans"><head><meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1">
-<meta name="robots" content="noindex">
-<title>Practical 发音实测（测试版）</title>
-<style>
-:root{color-scheme:light dark}
-*{box-sizing:border-box}
-html,body{overflow-x:hidden}
-.heard{overflow-wrap:anywhere}
-body{font:17px/1.75 system-ui,-apple-system,"PingFang SC","Microsoft YaHei",sans-serif;max-width:40em;margin:0 auto;padding:1.2em 1em 4em}
-h1{font-size:1.5em;margin:.2em 0}
-h2{font-size:1.15em;margin:.1em 0 .4em}
-.note{background:#eef4ff;border-left:4px solid #3b6ef6;padding:.7em .9em;border-radius:6px}
-@media (prefers-color-scheme:dark){.note{background:#1b2436}}
-li{list-style:none;border:1px solid #c9ced8;border-radius:10px;padding:1em;margin:1em 0}
-ol{padding:0;margin:0}
-.why{margin:.2em 0 .8em}
-button.big{display:block;width:100%;padding:1em;font-size:1.1em;font-weight:600;border-radius:10px;border:0;background:#3b6ef6;color:#fff;cursor:pointer}
-button.big:disabled{background:#9aa6bd;cursor:default}
-button.rec{background:#c0392b}
-.rate{margin:.6em 0 0}
-.rate button{padding:.45em .9em;margin:.25em .4em .25em 0;border-radius:8px;border:1px solid #9aa6bd;background:transparent;color:inherit;cursor:pointer;font-size:.95em}
-.rate button[aria-pressed="true"]{background:#3b6ef6;color:#fff;border-color:#3b6ef6}
-.out{margin-top:.7em;padding:.6em .8em;border-radius:8px;background:#f1f3f7;white-space:pre-wrap;word-break:break-word;min-height:1.6em}
-@media (prefers-color-scheme:dark){.out{background:#20242d}}
-.heard{font-size:1.15em;font-weight:600}
-input[type=text]{width:100%;padding:.5em;font-size:1em;border-radius:8px;border:1px solid #9aa6bd;background:transparent;color:inherit}
-textarea{width:100%;height:9em;font:13px/1.5 ui-monospace,Menlo,Consolas,monospace;border-radius:8px;border:1px solid #9aa6bd;background:transparent;color:inherit;padding:.5em}
-audio{width:100%;margin-top:.6em}
-.small{font-size:.9em;opacity:.8}
-</style></head><body>
+
+/** 探针页的样式。收进后台"公共工具"以后，每条选择器前面都加了 `.probe`，不会串到后台别的模块（admin-page.ts 把它接在自己那段样式后面）。 */
+export const PROBE_CSS = `
+.probe *{box-sizing:border-box}
+.probe{overflow-x:hidden}
+.probe .heard{overflow-wrap:anywhere}
+.probe{font:17px/1.75 system-ui,-apple-system,"PingFang SC","Microsoft YaHei",sans-serif;max-width:40em;margin:0 auto;padding:1.2em 1em 4em}
+.probe h1{font-size:1.5em;margin:.2em 0}
+.probe h2{font-size:1.15em;margin:.1em 0 .4em}
+.probe .note{background:#eef4ff;border-left:4px solid #3b6ef6;padding:.7em .9em;border-radius:6px}
+@media (prefers-color-scheme:dark){.probe .note{background:#1b2436}}
+.probe li{list-style:none;border:1px solid #c9ced8;border-radius:10px;padding:1em;margin:1em 0}
+.probe ol{padding:0;margin:0}
+.probe .why{margin:.2em 0 .8em}
+.probe button.big{display:block;width:100%;padding:1em;font-size:1.1em;font-weight:600;border-radius:10px;border:0;background:#3b6ef6;color:#fff;cursor:pointer}
+.probe button.big:disabled{background:#9aa6bd;cursor:default}
+.probe button.rec{background:#c0392b}
+.probe .rate{margin:.6em 0 0}
+.probe .rate button{padding:.45em .9em;margin:.25em .4em .25em 0;border-radius:8px;border:1px solid #9aa6bd;background:transparent;color:inherit;cursor:pointer;font-size:.95em}
+.probe .rate button[aria-pressed="true"]{background:#3b6ef6;color:#fff;border-color:#3b6ef6}
+.probe .out{margin-top:.7em;padding:.6em .8em;border-radius:8px;background:#f1f3f7;white-space:pre-wrap;word-break:break-word;min-height:1.6em}
+@media (prefers-color-scheme:dark){.probe .out{background:#20242d}}
+.probe .heard{font-size:1.15em;font-weight:600}
+.probe input[type=text]{width:100%;padding:.5em;font-size:1em;border-radius:8px;border:1px solid #9aa6bd;background:transparent;color:inherit}
+.probe textarea{width:100%;height:9em;font:13px/1.5 ui-monospace,Menlo,Consolas,monospace;border-radius:8px;border:1px solid #9aa6bd;background:transparent;color:inherit;padding:.5em}
+.probe audio{width:100%;margin-top:.6em}
+.probe .small{font-size:.9em;opacity:.8}
+`;
+
+/**
+ * 探针页的正文（结构 + 脚本）。后台"公共工具 → 发音探针"和测试版那个受限入口都插这一段，**只写一遍**。
+ * 宿主页面先设 window.__probeBase：后台是 '/api/probe/'，受限入口是 ''（相对当前地址）。
+ */
+export const PROBE_BODY = `<div class="probe">
 <h1>Practical 发音实测</h1>
 <p class="note"><b>这一页只在测试版有，测完就下线。</b>你不用安装任何东西，也不用填任何密码。
 照着 1 → 2 → 3 → 4 的顺序各点一次（录音那两步要允许浏览器用麦克风），每一步下面选一下你的感受，
@@ -94,6 +96,9 @@ audio{width:100%;margin-top:.6em}
 <p class="small">这一页不显示、也不保存任何密码和账号信息；录音只在你的浏览器和这个测试版服务之间传，不会存下来。</p>
 
 <script>
+/* 整段包在一个函数里：收进后台以后和后台自己那段脚本共用一个全局作用域，\$ 这类名字不能重复声明 */
+(function(){
+var PB=(window.__probeBase===undefined?'':window.__probeBase);
 var $=function(i){return document.getElementById(i)};
 var results=[],rates={},spent=0,busy=false;
 var au=$('au');
@@ -118,7 +123,7 @@ async function playTts(which,btn,outId){
   if(busy)return;
   lock(btn,'生成中，请稍候…');
   try{
-    var r=await fetch('tts?m='+which+'&text='+encodeURIComponent($('sentence').value));
+    var r=await fetch(PB+'tts?m='+which+'&text='+encodeURIComponent($('sentence').value));
     if(!r.ok){fail(outId,(await r.text()).slice(0,300));return}
     var ms=Number(r.headers.get('x-ms')),by=Number(r.headers.get('x-bytes')),ne=Number(r.headers.get('x-neurons')),mo=r.headers.get('x-model')||which;
     var blob=await r.blob();
@@ -143,7 +148,7 @@ async function toggleRec(btn,mode,outId){
       btn.classList.remove('rec');lock(btn,'正在识别，请稍候…');btn.dataset.old=btn.dataset.start;
       try{
         var wav=await toWav(await new Blob(chunks).arrayBuffer());
-        var r=await fetch(mode==='chain'?'chain':'asr',{method:'POST',body:wav,headers:{'content-type':'audio/wav'}});
+        var r=await fetch(PB+(mode==='chain'?'chain':'asr'),{method:'POST',body:wav,headers:{'content-type':'audio/wav'}});
         var j=await r.json();
         if(!r.ok){fail(outId,JSON.stringify(j).slice(0,300));return}
         if(mode==='chain'){
@@ -200,4 +205,19 @@ $('copy').onclick=async function(){
   catch(e){$('json').select();$('copymsg').textContent='自动复制没成功：请手动选中下面方框里的全部文字复制。'}
 };
 dump();
-</script></body></html>`;
+})();
+</script>
+</div>`;
+
+export const PROBE_PAGE = `<!doctype html>
+<html lang="zh-Hans"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="robots" content="noindex">
+<title>Practical 发音实测（测试版）</title>
+<style>
+:root{color-scheme:light dark}
+body{margin:0}
+${PROBE_CSS}
+</style></head><body>
+${PROBE_BODY}
+</body></html>`;
