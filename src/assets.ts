@@ -22,6 +22,12 @@ export const IMG_MODEL = '@cf/black-forest-labs/flux-1-schnell';
 export const TTS_MODEL = '@cf/myshell-ai/melotts';
 /** 用量按这个项目名记一份，后台"按项目看用量"里看得见 */
 export const ASSETS_PROJECT = 'practical-assets';
+/**
+ * 用量再按**用途**记一份（usage_by_purpose，后台"用量和限额 → 分别用到了哪里"）：
+ * 图片和音频都算 practical-assets 这个项目，光看项目分不出哪一笔是出图、哪一笔是配音，所以这里拆成两个用途。
+ */
+export const PURPOSE_IMAGE = 'assets-image';
+export const PURPOSE_AUDIO = 'assets-audio';
 
 /**
  * 单价（Cloudflare 价格页，2026-11-02；agents《素材方案》第二节记过原文）：
@@ -205,6 +211,7 @@ export async function assetsApi(env: Env, req: Request, now: number, sub: string
     const text = str(b.text, audio ? MAX_TEXT : MAX_PROMPT);
     if (!text) return json({ 出错: audio ? '这个场景没有要读的句子' : '这个场景没有提示词（提示词由产品经理按《生产包》第二节补齐，不写在代码里）' }, 400);
 
+    const purpose = audio ? PURPOSE_AUDIO : PURPOSE_IMAGE;
     const est = audio ? audioNeurons(text) : imageNeurons(steps);
     const q = await quota(env, now, est);
     if (!q.ok) return json({ 出错: q.why, 今天已用: q.used, 今天上限: q.cap }, 429);
@@ -217,12 +224,12 @@ export async function assetsApi(env: Env, req: Request, now: number, sub: string
         : await toBytes(await ai(env).run(IMG_MODEL, { prompt: text, steps }), 'image');
     } catch (e) {
       // 失败的调用不一定计费，保守按估算记；台账也记一次，免得成功率算得比实际好看
-      await Promise.all([chargeNeurons(env, now, est, ASSETS_PROJECT, 0), bump(env, now, scene, slot, est)]);
+      await Promise.all([chargeNeurons(env, now, est, ASSETS_PROJECT, 0, purpose), bump(env, now, scene, slot, est)]);
       const detail = String((e as Error)?.message ?? e).replace(/\s+/g, ' ').slice(0, 300);
       console.log(JSON.stringify({ event: 'assets.error', scene, slot, detail }));
       return json({ 出错: detail }, 502);
     }
-    await Promise.all([chargeNeurons(env, now, est, ASSETS_PROJECT, 200), bump(env, now, scene, slot, est)]);
+    await Promise.all([chargeNeurons(env, now, est, ASSETS_PROJECT, 200, purpose), bump(env, now, scene, slot, est)]);
     const after = await quota(env, now, 0);
     return json({
       场景: scene,
