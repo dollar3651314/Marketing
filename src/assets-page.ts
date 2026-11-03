@@ -62,7 +62,7 @@ export const ASSETS_JS = `
 /* 整段包在一个函数里：和后台自己那段脚本共用一个全局作用域，名字不能重复声明；只往外露一个 window.assetsOpen */
 (function(){
 try{
-var AG={base:(window.__assetsBase||'/api/assets/'),data:null,files:{},stop:false,running:false,db:null};
+var AG={base:(window.__assetsBase||'/api/assets/'),data:null,files:{},stop:false,err:'',running:false,db:null};
 var agq=function(i){return document.getElementById(i)};
 var SLOTS=['audio','correct','d1-phoneme','d2-action','d3-function'];
 var SLOTNAME={audio:'音频','correct':'正确图','d1-phoneme':'干扰·音素','d2-action':'干扰·动作','d3-function':'干扰·虚词数字'};
@@ -150,11 +150,13 @@ function agRun(six){
   if(!jobs.length){agMsg('这一批都已经生成过了，不用再跑一遍。');return}
   var steps=Math.max(1,Math.min(8,Number(agq('ag-steps').value)||4));
   if(!confirm('这一批还要生成 '+jobs.length+' 个文件，大概要花掉今天的一部分 neurons（上面那行写着具体数）。确定开始吗？'))return;
-  AG.running=true;AG.stop=false;agq('ag-stop').hidden=false;agq('ag-six').disabled=true;agq('ag-all').disabled=true;
+  AG.running=true;AG.stop=false;AG.err='';agq('ag-stop').hidden=false;agq('ag-six').disabled=true;agq('ag-all').disabled=true;
   var done=0;
   var next=function(){
     if(AG.stop||!jobs.length){AG.running=false;agq('ag-stop').hidden=true;agq('ag-six').disabled=false;agq('ag-all').disabled=false;
-      agMsg(AG.stop?('停下了，已经生成 '+done+' 个；下次点同一个按钮会接着没生成的跑。'):('这一批 '+done+' 个生成完了。看一遍，不行的点"重做"；都行就"打包下载"。'));
+      // AG.err 是真正的报错，必须盖过"停下了"那句泛泛的话——否则出错原因闪一下就被覆盖，看到的永远是"停下了，已经生成 0 个"
+      if(AG.err)agMsg(AG.err+'（这一批已经生成 '+done+' 个；原因修掉以后，点同一个按钮会接着没生成的跑）',true);
+      else agMsg(AG.stop?('停下了，已经生成 '+done+' 个；下次点同一个按钮会接着没生成的跑。'):('这一批 '+done+' 个生成完了。看一遍，不行的点"重做"；都行就"打包下载"。'));
       agCost();agStat();return}
     var j=jobs.shift();
     agMsg('正在生成 '+j.scene+' · '+SLOTNAME[j.slot]+'（还剩 '+(jobs.length+1)+' 个）…');
@@ -163,7 +165,7 @@ function agRun(six){
       AG.files[rec.k]=rec;done++;agBar(done,done+jobs.length);agRender();
       return agPut(rec).catch(function(){agMsg('这台电脑存不下素材（浏览器拦了本地存储），生成的东西关掉页面就没了，请先打包下载。',true)});
     }).then(function(){setTimeout(next,120)})
-      .catch(function(e){AG.stop=true;agMsg('停在 '+j.scene+' · '+SLOTNAME[j.slot]+'：'+e.message,true);setTimeout(next,0)});
+      .catch(function(e){AG.stop=true;AG.err='停在 '+j.scene+' · '+SLOTNAME[j.slot]+'：'+e.message;agMsg(AG.err,true);setTimeout(next,0)});
   };
   next();
 }
