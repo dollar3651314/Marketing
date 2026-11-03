@@ -1,5 +1,6 @@
 import { ASSETS_CSS, ASSETS_JS, ASSETS_MOD } from './assets-page';
 import { TTS_CSS, TTS_JS, TTS_MOD } from './tts-page';
+import { VOICE_CSS, VOICE_JS, VOICE_MOD } from './voice-page';
 import { EXTENSION_VERSION } from './extension-download';
 import { MAX_PROJECT_PAGES, PLATFORM_CONFIG, PROJECT_PAGES_FALLBACK, PROJECT_SITE } from './projects';
 
@@ -272,8 +273,8 @@ th{font-size:12px;color:var(--muted);font-weight:600}td.n{text-align:right}
 .act-item .proj.forecast{background:var(--teal-soft);border-color:transparent}.act-item .proj.platform{color:var(--th);border-color:var(--th)}.act-item .proj.company{color:var(--muted)}
 .plat details.recent>summary{border-top:1px solid var(--line)}
 @media (max-width:600px){.act-item{grid-template-columns:minmax(0,1fr)}.act-item .go{flex-direction:row;flex-wrap:wrap;align-items:flex-start}}
-/* 收编进来的工具的样式：素材生成器（选择器都带 .ag）、语音生成（都带 .tv），不串到别的模块 */
-${ASSETS_CSS}${TTS_CSS}
+/* 收编进来的工具的样式：素材生成器（选择器都带 .ag）、语音生成（都带 .tv）、语音对话实测（都带 .vc），不串到别的模块 */
+${ASSETS_CSS}${TTS_CSS}${VOICE_CSS}
 </style></head><body>
 <div class="bars" id="bars"><header class="top" id="top"><span class="logo" aria-hidden="true"><i style="height:16px;background:#2DD4BF"></i><i style="height:10px;background:#FBBF24"></i></span><span class="brand">工作平台</span><b class="sr" id="title">工作台</b>
   <nav class="nav1" id="nav1" aria-label="一级菜单" hidden><a href="#/work" data-p="work">工作台<span class="cnt" id="c-work" hidden></span></a><span class="grp-l" id="nav1-grp" hidden>项目</span><a href="#/tools" data-p="tools" id="nav1-tools">公共工具</a></nav>
@@ -396,6 +397,7 @@ ${ASSETS_CSS}${TTS_CSS}
   </section>
   ${ASSETS_MOD}
   ${TTS_MOD}
+  ${VOICE_MOD}
   <section class="mod" id="t-ext"><h2 class="mh">插件下载</h2>
   <section id="v-ext">
     <div class="card"><div class="pad">
@@ -437,12 +439,12 @@ function showApp(){authed=true;$('subs').hidden=false;$('nav1').hidden=false;$('
 $('login').addEventListener('submit',async(e)=>{e.preventDefault();const b=$('go');b.disabled=true;b.textContent='正在登录…';$('lmsg').textContent='';
   try{await call('/api/login',{password:$('pw').value});$('pw').value='';$('login').hidden=true;await load();route();}catch(err){$('lmsg').textContent=err.message;}finally{b.disabled=false;b.textContent='登录';}});
 $('logout').addEventListener('click',async()=>{await call('/api/logout',{}).catch(()=>{});showLogin('已登出');});
-const TITLES={hook:'Webhook 开关',list:'跟帖评论清单',usage:'用量和限额',reply:'每天回帖上限',ext:'插件下载',assets:'素材生成器',tts:'语音生成',company:'公司',work:'工作台'};
+const TITLES={hook:'Webhook 开关',list:'跟帖评论清单',usage:'用量和限额',reply:'每天回帖上限',ext:'插件下载',assets:'素材生成器',tts:'语音生成',voice:'语音对话实测',company:'公司',work:'工作台'};
 // 外框路由（工作平台批 1）：#/<页>/<模块>；页 = work / <项目> / tools / company；模块 id = 页的前缀 + 模块名（#/work/todo → w-todo）
 // 2026-11-02：项目不再写死。地址里第一段是项目名时，内部页名一律是 'project'（一套 DOM #v-project 轮流显示），当前项目记在 proj 里。
 let page='', proj='';
 const FIXED={work:'w-',tools:'t-',company:''};
-const PFX={work:'w-',project:'f-',tools:'t-',company:''}, TOOLV={queue:'list',usage:'usage',ext:'ext',reply:'reply',byproj:'usage',hook:'hook',assets:'assets',tts:'tts'};
+const PFX={work:'w-',project:'f-',tools:'t-',company:''}, TOOLV={queue:'list',usage:'usage',ext:'ext',reply:'reply',byproj:'usage',hook:'hook',assets:'assets',tts:'tts',voice:'voice'};
 // 有项目页的项目：先用兜底名单（src/projects.ts PROJECT_PAGES_FALLBACK），读到 /api/company 后由第三段脚本调 setProjects() 换成真的
 const PCFG=${JSON.stringify({ PROJECT_PAGES_FALLBACK, MAX_PROJECT_PAGES, PROJECT_SITE })};
 let PROJS=PCFG.PROJECT_PAGES_FALLBACK.slice();
@@ -483,6 +485,7 @@ function route(){if(!authed)return;let h=hashOf();
   if(page==='tools'){if(prev!==''&&prev!=='tools')load();else if(prev==='tools'&&view==='list')load();if(view==='usage'||prev!=='tools'){uEditing=false;loadUsage(true);}if(view==='reply'||prev!=='tools')loadReply();if(view==='hook'||prev!=='tools')loadHook();}
   if(page==='tools'&&view==='assets'){try{window.assetsOpen();}catch(e){}}
   if(page==='tools'&&view==='tts'){try{window.ttsOpen();}catch(e){}}
+  if(page==='tools'&&view==='voice'){try{window.voiceOpen();}catch(e){}}
   if(page==='company'){try{companyOpen();}catch(e){$('co-at').textContent='这一页出错了：'+e.message;}}
   // 批 2：在公共工具、公司总览刷新时，一级菜单上的待办数量也马上读出来（以前要切到工作台才有）
   if(page==='work'||page==='project'){try{platformOpen(page,mod);}catch(e){}}else{try{platformStop();platformPeek();}catch(e){}}
@@ -1126,7 +1129,8 @@ var platformPeek=function(){PL.peek=true;if(!PL.timer)tickTimer();if(!PL.data&&!
 var platformReady=function(){return !!PL.data;};
 }catch(e){var platformReady=function(){return true;};var platformOpen=function(){['w-err','f-err'].forEach((id)=>{const x=document.getElementById(id);if(x){x.hidden=false;x.textContent='这一页出错了：'+e.message;}});};var platformStop=function(){};var platformPeek=function(){};}
 </script>
-<script>window.__assetsBase='/api/assets/';window.__ttsBase='/api/tts/';</script>
+<script>window.__assetsBase='/api/assets/';window.__ttsBase='/api/tts/';window.__voiceBase='/api/voice/';</script>
 <script>${ASSETS_JS}</script>
 <script>${TTS_JS}</script>
+<script>${VOICE_JS}</script>
 </body></html>`;

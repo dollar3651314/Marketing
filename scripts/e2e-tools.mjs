@@ -24,7 +24,9 @@
  *      R9 667×375 横屏两层固定菜单 ≤ 屏幕高度 25%；R10 停在公共工具页 30 秒后一级菜单数字会刷新，第一次读取失败后会重试。
  *   G.（批 2 新口径，Amos 2026-11-02："只有agents才是公司"）代码仓库的外部 PR 单独一条"外部提交，给你看一下"，只有标题和"在 GitHub 打开"，不当"要你决定"、不展开；
  *      自己在代码仓库开的 PR 也只显示标题和链接；代码仓库推上来的正文一个字都不显示。
- *   C. 按项目看用量（D-3）：#t-byproj 每个项目一行，Gemini 次数加起来 = 用量总额度里 Gemini 的请求数；写着以前没分项目、"测试 AI"那行是平台自己。
+ *   H.（2026-11-03 追加，Practical 新方向 N-4）语音对话实测台 #t-voice：不占二级菜单位子（T-4 上限 8 项）但从「语音生成」那一块点得到；
+ *      打开时 VOICE_JS 真的跑起来（场景按钮和一轮 10 分钟的算术表是现读 /api/voice/plan 填的）；操作手册印在页面上、页面上不出现命令行；没录音时「跑一轮」是灰的。375、1440 宽。
+*   C. 按项目看用量（D-3）：#t-byproj 每个项目一行，Gemini 次数加起来 = 用量总额度里 Gemini 的请求数；写着以前没分项目、"测试 AI"那行是平台自己。
  *
  * 页面约定（照原型 v2；研发要改名就同一个 PR 改这里并在 PR 描述写明）：
  *   一级菜单数量 #c-work、#c-forecast（批 1 已有）；二级菜单 #sub-tools a[data-s="t-reply" | "t-byproj"]，地址 #/tools/reply、#/tools/byproj
@@ -596,6 +598,75 @@ try {
     check('C 段没有脚本错误', errs2.length === 0, errs2);
   });
   if (srv2) srv2.stop();
+}
+
+// ======================================================================
+// H 段（2026-11-03 追加，Practical 新方向 N-4）：语音对话实测台 #t-voice
+// 这一段守三件事，都是"页面本身坏了就该红"的：
+//   ① 它**不占二级菜单位子**（T-4 上限 8 项），但从"语音生成"那一块点得到，点了能滚到；
+//   ② 打开页面时 VOICE_JS 真的跑起来了——价格表和场景按钮是现读 /api/voice/plan 填的，脚本一挂就全是空的；
+//   ③ 操作手册印在页面上（折叠的"怎么用"四步），页面上不出现命令行（Amos 不碰命令行，agents #92）。
+// 录音那一步要麦克风，这里不模拟（真实录音在实测时由 Amos 或研发自己跑）：只断言"没录就不能跑"。
+// ======================================================================
+{
+  let srv3 = null;
+  const errs3 = [];
+  await section('语音对话实测台', async () => {
+    try { srv3 = await startServer({ name: 'e2e-tools-voice' }); } catch (e) {
+      check('语音对话实测：起得来服务', false, String(e && e.message || e).slice(0, 300));
+      return;
+    }
+    for (const width of WIDTHS) {
+      const ctx = await browser.newContext({ viewport: { width, height: 900 } });
+      const page = await ctx.newPage();
+      curPage = page;
+      page.on('pageerror', (e) => errs3.push(e.message));
+      await page.goto(srv3.BASE + '/#/tools/tts');
+      await page.fill('#pw', PASS);
+      await page.click('#go');
+      await page.waitForSelector('#app:not([hidden])', { timeout: WAIT });
+
+      // ① 二级菜单还是 8 项、没有 t-voice；但"语音生成"那一块有去实测台的链接
+      const navN = await page.locator('#sub-tools a[data-s]').count();
+      const navHasVoice = await page.locator('#sub-tools a[data-s="t-voice"]').count();
+      check(`${width} 宽：H 公共工具二级菜单仍是 8 项、没有"语音对话实测"（T-4 上限）`, navN === 8 && navHasVoice === 0, { navN, navHasVoice });
+      const link = page.locator('#t-tts a[href="#/tools/voice"]');
+      check(`${width} 宽：H "语音生成"那一块里有去实测台的链接`, (await link.count()) === 1, await link.first().innerText().catch(() => null));
+      await link.first().click();
+      await page.waitForFunction(() => location.hash === '#/tools/voice', null, { timeout: WAIT }).catch(() => {});
+      check(`${width} 宽：H 点了链接地址变成 #/tools/voice，模块看得见`, (await page.evaluate(() => location.hash)) === '#/tools/voice' && (await page.locator('#t-voice').isVisible()), null);
+
+      // ② 脚本真的跑起来了：场景按钮和算术表是现读 /api/voice/plan 填的
+      const filled = await page.waitForFunction(
+        () => document.querySelectorAll('#vc-scenes input[name="vc-s"]').length >= 4 && document.querySelectorAll('#vc-combos tbody tr').length > 0,
+        null,
+        { timeout: WAIT },
+      ).then(() => true, () => false);
+      const scenes = await page.locator('#vc-scenes label').allInnerTexts().catch(() => []);
+      check(`${width} 宽：H 四个场景按钮现读出来了（需求撕逼 / 故障复盘 / 架构辩护 / VC Pitch）`, filled && scenes.length === 4 && scenes.join('|').includes('需求撕逼'), scenes);
+      const rows3 = await page.locator('#vc-combos tbody tr').count();
+      check(`${width} 宽：H 一轮 10 分钟的算术表填上了（${rows3} 行搭配）`, filled && rows3 >= 8, rows3);
+      const openTxt = (await txt(page, '#vc-open')) || '';
+      check(`${width} 宽：H 开场白读出来了（不是"读取中"）`, openTxt.length > 10 && !openTxt.includes('读取中'), openTxt.slice(0, 60));
+      const leftTxt = (await txt(page, '#vc-left')) || '';
+      check(`${width} 宽：H 额度和今天已跑轮数摆在页面上`, /今天已跑\s*\d+\s*\/\s*\d+\s*轮/.test(leftTxt) && leftTxt.includes('neurons'), leftTxt.slice(0, 120));
+
+      // ③ 操作手册在页面上，而且不出现命令行；没录音时"跑一轮"是灰的
+      // 默认收起，所以用 textContent 读全文；再点开一次，确认 Amos 真的看得到
+      const howTxt = await page.locator('#vc-how').evaluate((e) => e.textContent || '').catch(() => '');
+      check(`${width} 宽：H "怎么用"四步印在页面上（在哪点、什么算成功）`, howTxt.includes('开始录音') && howTxt.includes('跑一轮') && howTxt.includes('算成功'), howTxt.slice(0, 80));
+      await page.locator('#vc-how summary').click().catch(() => {});
+      check(`${width} 宽：H 点开"怎么用"看得到正文`, await page.locator('#vc-how ol').isVisible().catch(() => false), null);
+      const modTxt = await page.locator('#t-voice').evaluate((e) => e.textContent || '').catch(() => '');
+      check(`${width} 宽：H 页面上不出现命令行（Amos 不碰命令行）`, !/npm |curl |wrangler |node scripts\//.test(modTxt), (/npm |curl |wrangler |node scripts\//.exec(modTxt) || [''])[0]);
+      check(`${width} 宽：H 还没录音时"跑一轮"是灰的`, await page.locator('#vc-go').isDisabled(), null);
+      check(`${width} 宽：H 不横向滚动`, await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth), null);
+      if (SHOTS) { mkdirSync(SHOTS, { recursive: true }); await page.screenshot({ path: path.join(SHOTS, `tools-voice-${width}.png`), fullPage: true }); }
+      await ctx.close();
+    }
+    check('H 段没有脚本错误', errs3.length === 0, errs3);
+  });
+  if (srv3) srv3.stop();
 }
 
 await Promise.all(pendingShots);

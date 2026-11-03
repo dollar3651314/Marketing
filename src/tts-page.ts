@@ -39,6 +39,9 @@ export const TTS_MOD = `<section class="mod tv" id="t-tts"><h2 class="mh">语音
     <div class="row"><a class="btn" id="tv-dl" download hidden>下载这段 MP3</a></div>
     <p class="st" id="tv-spec"></p>
   </div>
+  <p class="st"><b>找"说一句英文、让 AI 回你"的那个实测台？</b>它在这一页再往下
+    （<a href="#/tools/voice">语音对话实测 →</a>）。没放进上面的二级菜单，是因为菜单上限 8 项已经满了
+    （agents 工作平台/工具台账.md 的 T-4：第 9 项会撑破手机菜单）。</p>
 </section>`;
 
 /** 语音生成的脚本（整段 try/catch，出错只影响这一块）。宿主页面先设 window.__ttsBase，例如 '/api/tts/' */

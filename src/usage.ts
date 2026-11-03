@@ -176,12 +176,13 @@ export const envName = (env: Env): string => (env.ENVIRONMENT === 'production' ?
 // ======================================================================
 
 /** 用途的全集（页面按这个顺序排）。新增用途要同时在这里和 PURPOSE_LABEL 里加一项。 */
-export const PURPOSES = ['assets-image', 'assets-audio', 'tts', 'draft', 'score', 'platform', 'other'] as const;
+export const PURPOSES = ['assets-image', 'assets-audio', 'tts', 'voice', 'draft', 'score', 'platform', 'other'] as const;
 export type Purpose = (typeof PURPOSES)[number];
 export const PURPOSE_LABEL: Record<Purpose, string> = {
   'assets-image': '素材生成器 · 图片',
   'assets-audio': '素材生成器 · 音频',
   tts: '语音生成',
+  voice: '语音对话实测',
   draft: '跟帖草稿',
   score: '跟帖评分',
   platform: '平台自己（"测试 AI"）',
