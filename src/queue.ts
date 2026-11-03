@@ -5,7 +5,8 @@
  *   GET /api/queue?status=pending|done|skip&product=&platform=&from=YYYY-MM-DD&to=YYYY-MM-DD（按存进来的台湾日期）&sort=time|score、POST /api/queue/<id> {status}、
  *   GET /api/company、POST /api/company/done（公司运营仪表盘，company.ts）、GET /api/active、POST /api/hook {on}（团队在做什么、Webhook 开关，hooks.ts）、
  *   GET /api/reply-cap、POST /api/reply-cap {caps:{项目: 1～50}}（每天回帖上限按项目，D-2，公司平台批 2）、
- *   POST /api/queue/delete {ids}（Amos 自己删；记录不自动删，D-4 选 B）、GET /api/usage、POST /api/usage {caps}（用量和限额，usage.ts）、POST /api/login、POST /api/logout。
+ *   POST /api/queue/delete {ids}（Amos 自己删；记录不自动删，D-4 选 B）、GET /api/usage、POST /api/usage {caps}（用量和限额，usage.ts）、POST /api/login、POST /api/logout、
+ *   /api/assets/*（素材生成器，assets.ts）、/api/probe/*（发音探针，probe.ts；只在测试版有）。
  * 登录：密钥 COPILOT_PASSWORD（≥ 16 个字符，没填时后台 404）；同一 IP 15 分钟错 5 次锁 15 分钟，全站 1 小时错 20 次锁 1 小时；
  * 失败一律回答同一句（不透露锁定规则，C128）；会话 12 小时，签名密钥由密码派生，改密码旧会话全部失效。
  */
@@ -16,6 +17,8 @@ import { usedToday } from './workers-ai';
 import { extensionZip } from './extension-download';
 import { companyApi } from './company';
 import { activeApi } from './hooks';
+import { assetsApi } from './assets';
+import { PROBE_PREFIX, probeApi } from './probe';
 import { PROJECT_PAGES } from './projects';
 
 export const SESSION_MS = 12 * 3600_000;
@@ -150,6 +153,13 @@ export async function adminApi(env: Env, req: Request, now: number): Promise<Res
   if (p === '/api/logout' && req.method === 'POST') return json({ ok: true }, 200, { 'set-cookie': `${COOKIE}=; Path=/; HttpOnly; Secure; SameSite=Strict; Max-Age=0` });
   if (!(await sessionOk(env, req, now))) return json({ error: '请重新登录' }, 401);
   if (p === '/api/extension.zip' && req.method === 'GET') return extensionZip();
+  // 素材生成器（公共工具 → 素材生成器，assets.ts）：登录以后只看 Amos 自己在"用量和限额"里设的那个上限，不另外加额度（open = false）
+  if (p.startsWith('/api/assets/')) return (await assetsApi(env, req, now, p.slice('/api/assets/'.length), false)) ?? new Response('Not found', { status: 404 });
+  // 发音探针（公共工具 → 发音探针，probe.ts）：只在测试版有，正式版这一块显示"只在测试版"
+  if (p.startsWith('/api/probe/')) {
+    const inner = new Request(new URL(PROBE_PREFIX + '/' + p.slice('/api/probe/'.length) + url.search, url.origin), req);
+    return (await probeApi(env, inner, now)) ?? new Response('Not found', { status: 404 });
+  }
   const company = await companyApi(env, req, now);
   if (company) return company;
   const live = await activeApi(env, req, now);

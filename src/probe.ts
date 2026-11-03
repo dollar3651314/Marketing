@@ -16,8 +16,15 @@
  * 3. **不显示任何密钥、账号 ID**（底线 1）：页面和返回的 JSON 里只有模型名、毫秒、字节、neurons 估算。
  * 4. 录音只在浏览器和这个 Worker 之间传，**不写库、不转发第三方**；D1 里只多了用量的数字。
  *
- * 用完怎么下线：PR 正文"用完怎么下线"一节（删这两个文件和 index.ts 里的两行，或者把 PROBE_SLUG 改掉）。
+ * 5. 这个前缀底下**还挂着素材生成器的受限入口** `/probe-<随机串>/assets/`（src/assets.ts、src/assets-page.ts）：
+ *    marketing-staging 没填 COPILOT_PASSWORD，后台登录不了，所以暂时留这一个口子；同样只在 staging、同样限流，
+ *    额度再多走一本它自己的小账（ASSETS_OPEN_DAILY_NEURONS）。填上密码以后走后台"公共工具 → 素材生成器"，这个口子就该关掉。
+ *
+ * 用完怎么下线（探针本身，agents 工作平台/工具台账.md 有登记）：删 probe.ts、probe-page.ts、test/probe.test.ts 和 index.ts 里那两行；
+ * 素材生成器要留下来的话，把 /api/assets 那条留在 queue.ts 里即可（它不依赖探针）。
  */
+import { assetsApi } from './assets';
+import { ASSETS_PAGE } from './assets-page';
 import type { Env } from './env';
 import { PROBE_PAGE } from './probe-page';
 import { WAI_KEY } from './usage';
@@ -186,12 +193,25 @@ export async function probeApi(env: Env, req: Request, now: number): Promise<Res
   if (!p.startsWith(PROBE_PREFIX + '/')) return notFound();
   const sub = p.slice(PROBE_PREFIX.length + 1);
 
-  if (sub === '' && req.method === 'GET') {
-    return new Response(PROBE_PAGE, {
+  const html = (body: string) =>
+    new Response(body, {
       headers: { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-store', 'x-robots-tag': 'noindex', 'referrer-policy': 'no-referrer' },
     });
-  }
+  if (sub === '' && req.method === 'GET') return html(PROBE_PAGE);
+  if (sub === 'assets' && req.method === 'GET') return Response.redirect(url.origin + PROBE_PREFIX + '/assets/', 301);
+  if (sub === 'assets/' && req.method === 'GET') return html(ASSETS_PAGE);
   if (!(await underLimit(env, now))) return json({ 出错: '点得太快了，等一分钟再点' }, 429);
+  // 素材生成器的受限入口（没有登录）：限流过了以后交给 assets.ts，额度多走一本自己的小账（open = true）
+  if (sub.startsWith('assets/')) {
+    try {
+      const r = await assetsApi(env, req, now, sub.slice('assets/'.length), true);
+      return r ?? notFound();
+    } catch (e) {
+      const detail = String((e as Error)?.message ?? e).replace(/\s+/g, ' ').slice(0, 300);
+      console.log(JSON.stringify({ event: 'assets.error', detail }));
+      return json({ 出错: detail }, 502);
+    }
+  }
 
   try {
     if (sub === 'tts' && req.method === 'GET') {
