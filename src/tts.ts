@@ -24,6 +24,7 @@
  * 6. **不显示任何密钥、账号 ID**（底线 1）：返回的 JSON 里只有模型名、毫秒、字节、neurons 估算。
  */
 import type { Env } from './env';
+import { accountLimitedMessage, isAccountLimited, noteAccountLimit } from './usage';
 import { chargeNeurons, dailyCap, usedToday, type AiLike } from './workers-ai';
 
 /** 默认模型：Amos 2026-11-03 实测判"地道"，而且便宜 */
@@ -180,6 +181,11 @@ export async function ttsApi(env: Env, req: Request, now: number, sub: string): 
       // 只带模型名和错误文字，不含任何密钥（底线 1）
       const detail = String((e as Error)?.message ?? e).replace(/\s+/g, ' ').slice(0, 300);
       console.log(JSON.stringify({ event: 'tts.error', model, detail }));
+      // 整个 Cloudflare 账号今天的免费额度用完了：记一条、报错换成中文（和素材生成器同一套，usage.ts）
+      if (isAccountLimited(detail)) {
+        await noteAccountLimit(env, now, detail);
+        return json({ 出错: accountLimitedMessage(detail, now), 今天已用: q.used, 今天上限: q.cap }, 429);
+      }
       return json({ 出错: detail }, 502);
     }
     await chargeNeurons(env, now, est, TTS_PROJECT, 200, TTS_PURPOSE);

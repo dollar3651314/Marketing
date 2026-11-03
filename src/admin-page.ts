@@ -91,6 +91,12 @@ input[aria-invalid="true"]{border-color:var(--err);background:var(--err-soft)}
 .login{max-width:360px;margin:12vh auto 0;background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:20px;display:grid;gap:10px}
 .login input{padding:10px 12px;background:var(--bg)}
 .msg{margin:0;font-size:14px;color:var(--err)}.msg:empty{display:none}.msg.ok{color:var(--ok)}
+/* 用量监控：Cloudflare 自己说"账号额度用完了"那条红字（置顶、到下一个 UTC 日自动不显示）和"这个数靠不靠得住"的说明 */
+.acct{margin:0 0 10px;padding:12px 14px;border-radius:10px;background:var(--err-soft);color:var(--err);border:1px solid var(--err);font-size:14px;font-weight:700;line-height:1.6}
+.acct .raw{display:block;margin-top:4px;font-weight:400;font-size:12px;opacity:.85;overflow-wrap:anywhere}
+.caveat{margin:0 0 8px;padding:10px 12px;border-radius:8px;background:var(--amber-soft);color:var(--amber);font-size:13px;line-height:1.7}
+.caveat b{display:block;margin-bottom:2px}
+td .flag{display:block;font-size:12px;font-weight:400;color:var(--amber)}
 .card{background:var(--surface);border:1px solid var(--line);border-radius:12px;overflow:hidden}
 .tablewrap{overflow-x:auto}
 table{border-collapse:collapse;width:100%;font-size:13px;font-variant-numeric:tabular-nums}
@@ -359,8 +365,13 @@ ${ASSETS_CSS}${TTS_CSS}
   <section id="v-usage">
     <!-- 用量监控（Amos 2026-11-03"可以看到剩余和分别用到了哪里"）第一块：还剩多少。数据来自 /api/usage 的 left（src/usage.ts usageLeft） -->
     <h3 class="mh">还剩多少</h3>
+    <!-- Cloudflare 自己说"账号额度用完了"：数据来自 /api/usage 的 accountLimit（表 account_limit，迁移 0011）。
+         这是唯一可靠的信号——下面表里的数只是本环境记下的下限。到下一个 UTC 日（台湾早上 8 点）自动不显示 -->
+    <p class="acct" id="u-acct" role="alert" hidden></p>
     <div class="card"><div class="tablewrap"><table><thead><tr><th>这本账</th><th>今天已用</th><th>每天上限</th><th>还剩</th><th>什么时候清零（台湾时间）</th></tr></thead><tbody id="u-left"><tr><td colspan="5">正在读取…</td></tr></tbody></table></div>
-      <div class="pad"><p class="hint">两本账<b>分开看、不要加在一起</b>（单位都不一样）：Workers AI 按 neurons 算，备用 AI、素材生成器、语音生成花的都是这一本；Gemini 按请求次数算。<b>"一天"按各家自己的重置时间</b>：Workers AI 是 UTC 0 点清零，也就是<b>台湾早上 8 点</b>；Gemini 是美国太平洋时间半夜清零，也就是<b>台湾下午 3 点或 4 点</b>（看美国当时有没有夏令时）。这里的"上限"是我们自己在下面那张表里设的数，<b>不是各家的真实剩余额度</b>——Google 不提供查询接口，Cloudflare 的免费额度是每天 10,000 neurons（C117）。</p></div></div>
+      <!-- 每一行的"这个数靠不靠得住"：Workers AI 那一行写明是本环境记的账、Cloudflare 按整个账号算（src/usage.ts waiCaveat） -->
+      <div class="pad" id="u-left-notes"></div>
+      <div class="pad"><p class="hint">两本账<b>分开看、不要加在一起</b>（单位都不一样）：Workers AI 按 neurons 算，备用 AI、素材生成器、语音生成花的都是这一本；Gemini 按请求次数算。<b>"一天"按各家自己的重置时间</b>：Workers AI 是 UTC 0 点清零，也就是<b>台湾早上 8 点</b>；Gemini 是美国太平洋时间半夜清零，也就是<b>台湾下午 3 点或 4 点</b>（看美国当时有没有夏令时）。这里的"上限"是我们自己在下面那张表里设的数，<b>不是各家的真实剩余额度</b>——Google 不提供查询接口；Cloudflare 的免费额度每天 10,000 neurons 是<b>按整个账号算的</b>，正式版和测试版共用一份、却各记各的账（两个不同的数据库），所以上面那个"还剩"只能当<b>最多还有这么多</b>看。<b>要知道真实剩余只有两条路</b>：一是 Cloudflare 自己报错（报了上面就出红字），二是去接 Cloudflare 的分析接口（要 Amos 的 API 令牌，这一版没做）。</p></div></div>
     <h3 class="mh">每个模型的用量和上限</h3>
     <div class="card"><div class="tablewrap"><table><thead><tr><th>模型</th><th>今天请求</th><th>今天 token（入 / 出）</th><th>每天上限</th><th>用量</th><th>状态</th><th>下次重置（台湾时间）</th></tr></thead><tbody id="u-rows"></tbody></table></div>
       <div class="pad"><p class="sum" style="margin:0"><span id="u-at">还没读取</span><span class="sp"></span><button class="btn small" id="u-refresh" type="button">立即刷新</button></p>
@@ -566,7 +577,7 @@ $('bulk-yes').addEventListener('click',async()=>{const y=$('bulk-yes');y.disable
 let uTimer=null, uEditing=false;
 function uStamp(){$('u-at').textContent='更新于 '+tw(Date.now()).slice(11)+'（停在这一页时每 30 秒自动刷新）';}
 async function loadUsage(manual){const b=$('u-refresh');if(manual){b.disabled=true;b.textContent='正在刷新…';}
-  try{const j=await call('/api/usage');const rows=j.rows;if(!uEditing||manual){usage=rows;renderUsage();}renderByProject(j.byProject||[]);renderLeft(j.left||[]);renderPurpose(j.byPurpose||[]);uStamp();if(manual)$('u-msg').textContent='';}
+  try{const j=await call('/api/usage');const rows=j.rows;if(!uEditing||manual){usage=rows;renderUsage();}renderByProject(j.byProject||[]);renderAcct(j.accountLimit);renderLeft(j.left||[]);renderPurpose(j.byPurpose||[]);uStamp();if(manual)$('u-msg').textContent='';}
   catch(e){$('u-at').textContent='刷新失败：'+e.message+'（30 秒后再试）';}
   finally{if(manual){b.disabled=false;b.textContent='立即刷新';}}}
 function usageTimer(on){clearInterval(uTimer);uTimer=on?setInterval(()=>{if(page==='tools'&&document.visibilityState==='visible')loadUsage(false);},30000):null;}
@@ -588,7 +599,7 @@ function renderByProject(list){const T=$('bp-rows');T.replaceChildren();
     cell(x.project==='_platform'?'平台自己（"测试 AI"）':(PROD[x.project]?x.project+'（'+PROD[x.project]+'）':x.project));cell(x.gemini.toLocaleString()+' 次','Gemini','n');cell(Math.round(x.workersAi).toLocaleString()+' neurons','Workers AI','n');T.append(tr);});}
 /** 用量监控 · 还剩多少（Amos 2026-11-03）：两本账各一行，单位不一样，不加在一起 */
 function tdc(tr,t,label,cls){const c=Object.assign(document.createElement('td'),{textContent:t});if(label)c.dataset.label=label;if(cls)c.className=cls;tr.append(c);return c;}
-function renderLeft(list){const T=$('u-left');T.replaceChildren();
+function renderLeft(list){const T=$('u-left'),N=$('u-left-notes');T.replaceChildren();N.replaceChildren();
   if(!list.length){const tr=document.createElement('tr');tr.append(Object.assign(document.createElement('td'),{colSpan:5,textContent:'读不到额度'}));T.append(tr);return;}
   list.forEach(x=>{const tr=document.createElement('tr');
     tdc(tr,x.label,'这本账');
@@ -597,8 +608,17 @@ function renderLeft(list){const T=$('u-left');T.replaceChildren();
     const pct=x.cap>0?Math.min(100,Math.round(x.used/x.cap*100)):0;
     const L=tdc(tr,'','还剩','n');L.innerHTML='<span class="meter"><i></i></span> ';L.querySelector('i').style.width=pct+'%';
     const b=document.createElement('b');b.textContent=x.left.toLocaleString()+' '+x.unit;L.append(b,'（已用 '+pct+'%）');
+    // 这个数靠不靠得住，就写在数字底下（服务端给的 caveatShort / caveat，src/usage.ts）：看得见数字就看得见这句话
+    if(x.caveatShort)L.append(Object.assign(document.createElement('span'),{className:'flag',textContent:x.caveatShort}));
     tdc(tr,tw(x.resetAt).slice(5,16)+' · '+x.resetText,'什么时候清零');
-    T.append(tr);});}
+    T.append(tr);
+    if(x.caveat){const p=document.createElement('p');p.className='caveat';p.append(Object.assign(document.createElement('b'),{textContent:x.label+'：这个数怎么看'}),x.caveat);N.append(p);}});}
+/** Cloudflare 自己说"账号额度用完了"：有就置顶一句红字，没有就整条不显示（服务端只给今天 UTC 日那一条，到点自动失效） */
+function renderAcct(a){const P=$('u-acct');P.replaceChildren();
+  if(!a||!a.text){P.hidden=true;return;}
+  P.append(document.createTextNode(a.text));
+  if(a.raw)P.append(Object.assign(document.createElement('span'),{className:'raw',textContent:'Cloudflare 原话：'+a.raw}));
+  P.hidden=false;}
 /** 用量监控 · 分别用到了哪里：没记下来的那一行次数写"没记录"，不补 0（底线 3） */
 function renderPurpose(list){const T=$('u-purpose');T.replaceChildren();
   if(!list.length){const tr=document.createElement('tr');tr.append(Object.assign(document.createElement('td'),{colSpan:4,textContent:'今天还没有按用途记下的用量'}));T.append(tr);return;}
@@ -640,7 +660,7 @@ $('u-save').addEventListener('click',async()=>{const b=$('u-save'),m=$('u-msg');
   usage.forEach((u,i)=>{const el=$('cap-'+i);const v=Number(el.value);const ok=Number.isInteger(v)&&v>=1&&v<=u.max;el.setAttribute('aria-invalid',String(!ok));if(!ok)bad.push(u.label+' 要在 1～'+u.max.toLocaleString()+' 之间');caps[u.model]=v;});
   if(bad.length){m.className='msg';m.textContent='没保存：'+bad.join('；');return;}
   b.disabled=true;b.textContent='正在保存…';m.textContent='';
-  try{const j=await call('/api/usage',{caps});usage=j.rows;uEditing=false;renderUsage();renderLeft(j.left||[]);uStamp();m.className='msg ok';m.textContent='✓ 已保存，下一次请求开始生效';}catch(e){m.className='msg';m.textContent=e.message;}finally{b.disabled=false;b.textContent='保存上限';}});
+  try{const j=await call('/api/usage',{caps});usage=j.rows;uEditing=false;renderUsage();renderAcct(j.accountLimit);renderLeft(j.left||[]);uStamp();m.className='msg ok';m.textContent='✓ 已保存，下一次请求开始生效';}catch(e){m.className='msg';m.textContent=e.message;}finally{b.disabled=false;b.textContent='保存上限';}});
 call(query()).then(j=>{state=j;showApp();render();route();}).catch(()=>{});
 </script>
 <script>
