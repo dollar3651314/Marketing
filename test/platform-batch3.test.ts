@@ -16,7 +16,7 @@
  *         不是 claude/ 开头 → Amos；C147：代码仓库不显示提交说明和 PR 正文；外部人的推送 / PR 标"外部"、不进"需要我的事"。
  *   时间：2 小时没动静变灰（idle）、24 小时进"最近结束"（end = timeout）、active_log 30 天前的写入时删。
  *   防护：> 512 KB 回 413（正好 512 KB 收）；每个仓库每分钟 120 次（第 121 次 429），别的仓库、下一分钟不受影响；
- *         20 个并发计数准确、125 个并发正好 120 个通过；乱序到达不倒退；合并时约 10 个事件几乎同时到（C139）都写对。
+ *         20 个并发计数准确、125 个并发限流器正好放过 120 个且计数不漏（详见该用例上方注释）；乱序到达不倒退；合并时约 10 个事件几乎同时到（C139）都写对。
  *   开关：hook:github 关着时验签通过回 200、一条都不写；签名不对照样 401。
  *   迁移 0008：只建新表（active_item、active_log、gh_delivery）；在已有 0001～0007 数据的库上跑，旧表结构和数据一行不变。
  *   不影响别的：/v1/* 不经过这里；推送接口每分钟 6 次照旧、和 Webhook 分开算。
@@ -691,11 +691,39 @@ describe('防护：限流、并发、乱序、合并时一串事件（C139）', 
     expect((await active(base + 2000)).items.length).toBe(20);
   });
 
-  it('125 个请求并发打进同一个仓库：正好 120 个收下、5 个 429', async () => {
+  /**
+   * 这条测试护的是什么：**限流器在并发下数得准**——125 个请求同时打进同一个仓库，
+   * 正好放过 120 个、挡下 5 个，计数不漏不重（underLimit 用的是一条 INSERT … ON CONFLICT … RETURNING n）。
+   *
+   * 2026-11-03 测试会话改写（原来是 `st.filter(s === 200).length 是 120`，本地 3 红 1 绿、CI 也红过，
+   * 研发撞到的是 `expected 95 to be 120`）：
+   *   查出来的原因不在限流器。vitest 里的 D1 是 getPlatformProxy 给的，每一次 D1 调用都是
+   *   Node 进程→ dev 期的 workerd 的一次 HTTP 往返。125 个请求同时在飞，每个还要做一次验签，
+   *   机器一慢、事件循环被堵住，这条长连接就被对端关掉（undici UND_ERR_SOCKET: other side closed），
+   *   D1 抛错 → 批写整批回滚 → 按设计回 503。实测：空载的 4 核机器 20/20 全绿；压满 CPU 后 6/6 全红，
+   *   状态分布是 {200: 68～76, 429: 5, 503: 44～52}——**429 那一格每次都是 5，限流器一次也没错**。
+   *   所以"正好 120 个是 200"量的是跑测试这台机器的快慢，不是代码，任何机器上都不该这么写。
+   *   改成下面四条（并发数还是 125，一个没降），每一条都和机器快慢无关，而且比原来管得宽：
+   *     ① 挡下的正好 5 个：边界挪一个就红（原来就有）
+   *     ② 放过的正好 120 个：多放 / 少放就红（原来是"200 有 120 个"，现在看"没被限流挡下"）
+   *     ③ company_rate 的 gh:* 行正好 125：并发下漏计 / 重计就红（**新加**，原来这条测试根本没查计数）
+   *     ④ 说了 ok 的就一定写进去了、正好一条；回 503 的一行都没写（**新加**，这正是审查 R2 要的
+   *       "整批回滚、投递编号不落库、GitHub 重送还能正常处理"，和 503 有几个无关）
+   *   "被放过的请求最后真的写进去"这个行为没丢：上面"20 个请求并发"那条（items.length 是 20）、
+   *   下面"合并时一串 10 个事件"那条、以及本文件几十条单请求用例都在盯。
+   */
+  it('125 个请求并发打进同一个仓库：限流器正好放过 120 个、挡下 5 个，计数一个不漏', async () => {
     const rs = await Promise.all(Array.from({ length: 125 }, (_, i) => hook({ event: 'push', body: push({ branch: `claude/dev-platform-c${i}` }), now: base + 1000 })));
     const st = rs.map((r) => r.status);
-    expect(st.filter((s) => s === 429).length).toBe(5);
-    expect(st.filter((s) => s === 200).length).toBe(120);
+    expect(st.filter((s) => s === 429).length, '被限流挡下的').toBe(5);
+    expect(st.filter((s) => s !== 429).length, '限流放过的').toBe(120);
+    expect(await ghRate(minute), 'company_rate 的 gh:* 计数').toBe(125);
+    // 放过的要么写成了（200），要么整批回滚、让 GitHub 重送（503）；别的状态码一出现就是真出事了
+    expect([...new Set(st)].sort((a, b) => a - b).filter((x) => x !== 200 && x !== 429 && x !== 503), '意料之外的状态码').toEqual([]);
+    const ok = st.filter((s) => s === 200).length;
+    expect(await count('active_item'), '说 ok 的每个分支正好一行').toBe(ok);
+    expect(await count('gh_delivery'), '说 ok 的每个投递编号正好一条').toBe(ok);
+    expect(await count('active_log'), '说 ok 的每个事件正好一条记录').toBe(ok);
   });
 
   it('同一分支两次推送乱序到达：先到的是新的，后到的旧事件不让"上一步"和时间倒退', async () => {
