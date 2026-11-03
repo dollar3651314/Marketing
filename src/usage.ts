@@ -60,6 +60,116 @@ export async function usedReq(env: Env, model: string, now: number): Promise<num
 export const PLATFORM_PROJECT = '_platform';
 
 // ======================================================================
+// Cloudflare 自己说"账号额度用完了"（2026-11-03，Amos 被后台那个数误导了两次之后加的）。
+//
+// 为什么非加不可：`wrangler.toml` 里 `marketing` 和 `marketing-staging` 是**两个不同的 D1**，各记各的账；
+// 而 Cloudflare 的免费额度 **10,000 neurons/天是按整个账号算的**，两个环境共用。
+// 所以后台写"今天已用 115、还剩 9,385"的时候，账号那边其实已经被测试版花光了——那个数只是**我们这个环境自己**记下的下限。
+// **唯一可靠的信号是 Cloudflare 自己报的那句话**：报了就记一行（表 account_limit，迁移 0011），后台"还剩多少"置顶一句红字。
+// 真实剩余要查只能走 Cloudflare 的 GraphQL 分析接口（要 Amos 的 API 令牌），**这一版没做**，所以不假装算得出（底线 3）。
+// ======================================================================
+
+/** Workers AI 的免费额度：整个账号每天 10,000 neurons，00:00 UTC 清零（Cloudflare 价格页，2026-11-03 查：证实） */
+export const CF_ACCOUNT_FREE_NEURONS = 10_000;
+
+/** 台湾时间（UTC+8，没有夏令时）的 `YYYY-MM-DD HH:MM`；时间点都从 nextReset / 时间戳算，不写死字符串 */
+export function twText(ms: number): string {
+  const s = new Date(ms + 8 * 3600_000).toISOString();
+  return `${s.slice(0, 10)} ${s.slice(11, 16)}`;
+}
+
+/**
+ * 这一次出错是不是"**整个 Cloudflare 账号**今天的免费额度用完了"。
+ * **按文案判，不只认错误码**：Amos 2026-11-03 看到的是 `4006: you have used up your daily free allocation of 10,000 neurons…`，
+ * 而官方错误表里登记的账号级那条是 **3036 Account limited**——码对不上、文案是同一条。只认码会漏，所以：
+ *   ① 先认文案（daily free allocation / account limited / 又说 neurons 又让 upgrade）；
+ *   ② 码只当补充，认 3036 和 429（官方表里的码会变，文案不会）。
+ * 我们自己设的上限（WorkersAiCap、/api/assets 和 /api/tts 的 429）走的是另一条路，不经过这里。
+ */
+export function isAccountLimited(e: unknown): boolean {
+  const s = String((e as Error)?.message ?? e ?? '').toLowerCase();
+  if (!s) return false;
+  if (s.includes('daily free allocation') || s.includes('account limited')) return true;
+  if (s.includes('neuron') && s.includes('upgrade')) return true;
+  return /(^|\D)(3036|429)(\D|$)/.test(s);
+}
+
+/**
+ * 把 Cloudflare 那句英文翻成人话（素材生成器、语音生成、备用 AI 的"出错"字段都用这一句）。说清三件事：
+ *   ① 是**整个 Cloudflare 账号**今天的免费额度用完了，不是这个工具坏了；
+ *   ② 台湾时间明早 8 点清零（从 nextReset 算，不写死），到点再点同一个按钮会接着没生成的跑；
+ *   ③ 想现在就继续得升级 Cloudflare 的 Workers Paid 付费计划，**那要花钱，由 Amos 自己决定**（C117 / 底线 8）。
+ * **不给升级链接、不建议他升级**；英文原话附在后面括号里，方便和 Cloudflare 的账单对账。
+ */
+export function accountLimitedMessage(raw: string, now: number): string {
+  const one = String(raw ?? '').replace(/\s+/g, ' ').trim().slice(0, 300);
+  return (
+    `整个 Cloudflare 账号今天的免费额度（每天 ${CF_ACCOUNT_FREE_NEURONS.toLocaleString('en-US')} neurons）用完了，不是这个工具坏了——` +
+    `测试版、正式版和这个账号上别的东西，花的都是同一份额度。` +
+    `台湾时间 ${twText(nextReset(WAI_KEY, now))} 清零，到点再点同一个按钮，没生成完的会接着跑。` +
+    `想现在就继续，只能升级 Cloudflare 的 Workers Paid 付费计划——那要花钱，得 Amos 自己决定。` +
+    (one ? `（Cloudflare 原话：${one}）` : '')
+  );
+}
+
+/** Cloudflare 说额度用完了：按 UTC 日期记一行（到下一个 UTC 日自然失效）。写失败只打日志，不影响调用方。 */
+export async function noteAccountLimit(env: Env, now: number, raw: string): Promise<void> {
+  try {
+    await env.DB.prepare(
+      'INSERT INTO account_limit (day, model, first_at, at, hits, last_error) VALUES (?1, ?2, ?3, ?3, 1, ?4) ' +
+        'ON CONFLICT (day, model) DO UPDATE SET at = ?3, hits = hits + 1, last_error = ?4',
+    )
+      .bind(utcDay(now), WAI_KEY, now, String(raw ?? '').replace(/\s+/g, ' ').trim().slice(0, 300))
+      .run();
+  } catch (e) {
+    console.log(JSON.stringify({ event: 'copilot.account_limit_write_failed', detail: String((e as Error)?.message ?? e).slice(0, 200) }));
+  }
+}
+
+export interface AccountLimit {
+  /** 最近一次被拒的毫秒时间戳 */
+  at: number;
+  firstAt: number;
+  hits: number;
+  /** 下一个 UTC 0 点（＝台湾早上 8 点），和 nextReset 同一个函数算的 */
+  resetAt: number;
+  /** 后台"还剩多少"置顶那句红字 */
+  text: string;
+  /** Cloudflare 的英文原话（对账用） */
+  raw: string;
+}
+
+/**
+ * 今天 Cloudflare 有没有说过"额度用完了"。
+ * **只查今天这一行**（day = 今天的 UTC 日期），所以到了下一个 UTC 日（台湾早上 8 点）这条提示自动不再显示，
+ * 不会一直挂着吓人，也不用定时任务去清（全账号只有 5 个定时任务，C120）。表还没建时返回 null，页面照常显示。
+ */
+export async function accountLimit(env: Env, now: number): Promise<AccountLimit | null> {
+  try {
+    const r = await env.DB.prepare('SELECT first_at, at, hits, last_error FROM account_limit WHERE day = ?1 AND model = ?2')
+      .bind(utcDay(now), WAI_KEY)
+      .first<{ first_at: number; at: number; hits: number; last_error: string }>();
+    if (!r) return null;
+    const resetAt = nextReset(WAI_KEY, now);
+    return {
+      at: r.at,
+      firstAt: r.first_at,
+      hits: r.hits,
+      resetAt,
+      raw: r.last_error ?? '',
+      text:
+        `Cloudflare 在台湾时间 ${twText(r.at)} 说账号今天的 ${CF_ACCOUNT_FREE_NEURONS.toLocaleString('en-US')} neurons 已经用完，` +
+        `台湾时间 ${twText(resetAt)} 清零。`,
+    };
+  } catch {
+    return null;
+  }
+}
+
+/** 文案里要指名道姓说是"哪个环境自己记的账"（正式版和测试版各记各的，这正是那个数会骗人的原因） */
+export const envName = (env: Env): string => (env.ENVIRONMENT === 'production' ? '正式版' : '测试版');
+
+// ======================================================================
 // 用量监控：按**用途**记一本（Amos 2026-11-03"可以看到剩余和分别用到了哪里"）。
 // 和"按项目记"（usage_by_project）的区别：素材生成器的图片和音频都算 practical-assets，
 // 按项目看分不出哪一笔是出图、哪一笔是配音；按用途就分得出。只记、不当限额。
@@ -189,10 +299,36 @@ export interface UsageLeft {
   resetText: string;
   /** Gemini 的上限是每个模型一个数，这里是几个模型加起来；Workers AI 只有一本，这个是 1 */
   models: number;
+  /** 这个数靠不靠得住，一句话版（显示在"还剩"那一格里，看数字的时候就看得见）；靠得住的那一本没有这一项 */
+  caveatShort?: string;
+  /** 同一件事的说清楚版（显示在表格下面）：这个数是怎么来的、漏了什么、为什么只能当下限看 */
+  caveat?: string;
 }
 
-/** 顶上那块"还剩多少"：直接从 usageReport 的行算，不另外查库 */
-export function usageLeft(rows: UsageRow[]): UsageLeft[] {
+/**
+ * Workers AI 那一行为什么不能当真实剩余看（2026-11-03 Amos 被这个数误导了两次）：
+ * 两个环境两个 D1、各记各的账，而 Cloudflare 的 10,000 neurons 是按整个账号算的。
+ * **不把两个环境的数硬加起来假装是真实值**——加起来还是漏了这一版上线以前的用量和账号上别的东西，
+ * 一样是假的；做不到就说做不到（底线 3）。
+ */
+export const waiCaveatShort = '不是 Cloudflare 的真实剩余';
+export function waiCaveat(where: string): string {
+  return (
+    `这个数是${where}自己记下来的账，不是 Cloudflare 的真实剩余。` +
+    `Cloudflare 的免费额度（每天 ${CF_ACCOUNT_FREE_NEURONS.toLocaleString('en-US')} neurons）是按「整个账号」算的，正式版和测试版共用一份；` +
+    `而正式版和测试版各有各的数据库、各记各的账。所以：测试版花掉的、这一版上线以前花掉的、这个账号上别的东西花掉的，` +
+    `都不在这个数里，但都在花同一份额度。` +
+    `也就是说「今天已用」只是个下限（真实只会更多），「还剩」是「最多还能有这么多」（真实只会更少，甚至可能已经是 0）。` +
+    `我们查不到真实剩余，也不会把两个环境的数加起来冒充真实值（加起来一样是假的）。` +
+    `唯一说得准的是 Cloudflare 自己的那句话：它说额度用完了，上面就会出现一条红字；没有红字也不代表一定还有。`
+  );
+}
+
+/**
+ * 顶上那块"还剩多少"：直接从 usageReport 的行算，不另外查库。
+ * `where` 是这个环境的名字（正式版 / 测试版），写进 Workers AI 那一行的说明里。
+ */
+export function usageLeft(rows: UsageRow[], where = '这个环境'): UsageLeft[] {
   const out: UsageLeft[] = [];
   const wai = rows.find((r) => r.model === WAI_KEY);
   if (wai) {
@@ -200,6 +336,7 @@ export function usageLeft(rows: UsageRow[]): UsageLeft[] {
       key: WAI_KEY, label: 'Workers AI（备用 AI + 素材生成器 + 语音生成）', unit: 'neurons',
       used: wai.used, cap: wai.cap, left: Math.max(0, wai.cap - wai.used), resetAt: wai.resetAt,
       resetText: 'UTC 0 点（台湾早上 8 点）', models: 1,
+      caveatShort: waiCaveatShort, caveat: waiCaveat(where),
     });
   }
   const gem = rows.filter((r) => r.model !== WAI_KEY);

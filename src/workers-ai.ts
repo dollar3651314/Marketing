@@ -7,7 +7,7 @@
  */
 import type { Env } from './env';
 import { parseLoose } from './gemini';
-import { getCap, recordUse, WAI_KEY } from './usage';
+import { accountLimitedMessage, getCap, isAccountLimited, noteAccountLimit, recordUse, WAI_KEY } from './usage';
 
 export const WAI_MODEL = '@cf/qwen/qwen3-30b-a3b-fp8';
 /** 每百万 token 的 neurons（Cloudflare 价格页，2026-10-30） */
@@ -135,7 +135,13 @@ export async function askWorkersAi(env: Env, system: string, user: string, now: 
     // 失败的调用不一定计费，但保守起见按一次最多可能用的量记账
     await addUsage(env, now, RESERVE);
     await recordUse(env, WAI_KEY, now, { status: 0, project, neurons: RESERVE, purpose });
-    throw new WorkersAiError(`Workers AI 出错：${String((e as Error)?.message ?? e).replace(/\s+/g, ' ').slice(0, 120)}`);
+    const raw = String((e as Error)?.message ?? e).replace(/\s+/g, ' ');
+    // 整个账号的免费额度用完了（不是我们自己设的上限）：记一条"Cloudflare 说额度用完了"，报错换成中文（usage.ts）
+    if (isAccountLimited(raw)) {
+      await noteAccountLimit(env, now, raw);
+      throw new WorkersAiError(accountLimitedMessage(raw, now));
+    }
+    throw new WorkersAiError(`Workers AI 出错：${raw.slice(0, 120)}`);
   }
   const { text, inTok, outTok } = readResult(r);
   // 没有 token 数时按字数估（中文 1 个字算 1 个 token，偏多）
