@@ -1,6 +1,6 @@
 import { ASSETS_CSS, ASSETS_JS, ASSETS_MOD } from './assets-page';
+import { TTS_CSS, TTS_JS, TTS_MOD } from './tts-page';
 import { EXTENSION_VERSION } from './extension-download';
-import { PROBE_BODY, PROBE_CSS } from './probe-page';
 import { PLATFORM_CONFIG } from './projects';
 
 /**
@@ -47,7 +47,7 @@ main{max-width:1120px;margin:0 auto;padding:16px max(16px,env(safe-area-inset-ri
 @media (max-width:640px){.brand{display:none}.nav1{gap:2px}.nav1 a{padding:4px 9px}.nav1 .grp-l{display:none}.top{padding:6px 12px;min-height:44px;gap:4px 6px}
   .top #nav,.top #extnav{display:none}.top button{padding:2px 8px}.sub a{padding:8px 10px 7px}
   /* 批 2 审查 R8：公共工具手机上折行，"插件下载"不用横滑就看得到。
-     批 4 收编了素材生成器、发音探针，变成 8 项——字号和内边距再收一点，仍然折成两行，
+     批 4 收编了两个工具变成 8 项，批 5 下线一项、新增一项，还是 8 项——字号和内边距再收一点，仍然折成两行，
      两层菜单加起来还在屏幕高度 25% 以内（e2e-tools E 段守着；工具再多就得分组了，见 agents 工作平台/工具台账.md 的"菜单项上限"） */
   #sub-tools .in{flex-wrap:wrap;overflow-x:visible;row-gap:0;gap:2px}#sub-tools a{padding:5px 5px 4px;font-size:12px;gap:4px}}
 /* 其他二级菜单能横滑时，右边缘渐隐提示"还有"（R8） */
@@ -254,8 +254,8 @@ th{font-size:12px;color:var(--muted);font-weight:600}td.n{text-align:right}
 .act-item .proj.forecast{background:var(--teal-soft);border-color:transparent}.act-item .proj.platform{color:var(--th);border-color:var(--th)}.act-item .proj.company{color:var(--muted)}
 .plat details.recent>summary{border-top:1px solid var(--line)}
 @media (max-width:600px){.act-item{grid-template-columns:minmax(0,1fr)}.act-item .go{flex-direction:row;flex-wrap:wrap;align-items:flex-start}}
-/* 收编进来的两个工具的样式：发音探针（选择器都带 .probe）和素材生成器（都带 .ag），不串到别的模块 */
-${PROBE_CSS}${ASSETS_CSS}
+/* 收编进来的工具的样式：素材生成器（选择器都带 .ag）、语音生成（都带 .tv），不串到别的模块 */
+${ASSETS_CSS}${TTS_CSS}
 </style></head><body>
 <div class="bars" id="bars"><header class="top" id="top"><span class="logo" aria-hidden="true"><i style="height:16px;background:#2DD4BF"></i><i style="height:10px;background:#FBBF24"></i></span><span class="brand">工作平台</span><b class="sr" id="title">工作台</b>
   <nav class="nav1" id="nav1" aria-label="一级菜单" hidden><a href="#/work" data-p="work">工作台<span class="cnt" id="c-work" hidden></span></a><span class="grp-l">项目</span><a href="#/forecast" data-p="forecast">forecast<span class="cnt" id="c-forecast" hidden></span></a><a href="#/tools" data-p="tools">公共工具</a></nav>
@@ -268,7 +268,7 @@ ${PROBE_CSS}${ASSETS_CSS}
   <a href="#/forecast/next" data-s="f-next">下一步做什么<span class="n red" id="s-fnext" hidden></span></a><a href="#/forecast/guide" data-s="f-guide">操作指引<span class="n" id="s-guide" hidden></span></a><a href="#/forecast/live" data-s="f-live">团队在做什么</a><a href="#/forecast/card" data-s="f-card">数字和决定</a><a href="#/forecast/pack" data-s="f-pack">本周帖子</a><a href="#/forecast/match" data-s="f-match">焦点战</a><a href="#/forecast/tools" data-s="f-tools">用到的工具</a><a href="#/forecast/handoff" data-s="f-handoff">交接记录</a>
 </div></nav>
 <nav class="sub" id="sub-tools" aria-label="公共工具模块" hidden><div class="in">
-  <a href="#/tools/queue" data-s="t-queue">跟帖评论清单</a><a href="#/tools/reply" data-s="t-reply">每天回帖上限</a><a href="#/tools/usage" data-s="t-usage">用量和限额</a><a href="#/tools/byproj" data-s="t-byproj">按项目看用量</a><a href="#/tools/ext" data-s="t-ext">插件下载</a><a href="#/tools/hook" data-s="t-hook">Webhook 开关</a><a href="#/tools/assets" data-s="t-assets">素材生成器</a><a href="#/tools/probe" data-s="t-probe">发音探针</a>
+  <a href="#/tools/queue" data-s="t-queue">跟帖评论清单</a><a href="#/tools/reply" data-s="t-reply">每天回帖上限</a><a href="#/tools/usage" data-s="t-usage">用量和限额</a><a href="#/tools/byproj" data-s="t-byproj">按项目看用量</a><a href="#/tools/ext" data-s="t-ext">插件下载</a><a href="#/tools/hook" data-s="t-hook">Webhook 开关</a><a href="#/tools/assets" data-s="t-assets">素材生成器</a><a href="#/tools/tts" data-s="t-tts">语音生成</a>
 </div></nav>
 </div></div>
 <form class="login" id="login" hidden>
@@ -362,12 +362,7 @@ ${PROBE_CSS}${ASSETS_CSS}
     </div></div>
   </section>
   ${ASSETS_MOD}
-  <!-- 发音探针（Practical 的发音实测，src/probe.ts）：原来是测试版上一个随机路径的游离页面，工作平台批 4 收编进公共工具。
-       接口 /api/probe/*，只在测试版有；这是一次性工具，测完下线（登记在 agents 工作平台/工具台账.md） -->
-  <section class="mod" id="t-probe"><h2 class="mh">发音探针<span class="sp"></span><span class="hint">一次性 · 只在测试版</span></h2>
-    <p class="lead">Practical 的发音实测。<b>只有测试版（marketing-staging）能点</b>，正式版点了会提示找不到。测完就下线，别忘了把它删掉。</p>
-    ${PROBE_BODY}
-  </section>
+  ${TTS_MOD}
   <section class="mod" id="t-ext"><h2 class="mh">插件下载</h2>
   <section id="v-ext">
     <div class="card"><div class="pad">
@@ -409,10 +404,10 @@ function showApp(){authed=true;$('subs').hidden=false;$('nav1').hidden=false;$('
 $('login').addEventListener('submit',async(e)=>{e.preventDefault();const b=$('go');b.disabled=true;b.textContent='正在登录…';$('lmsg').textContent='';
   try{await call('/api/login',{password:$('pw').value});$('pw').value='';$('login').hidden=true;await load();route();}catch(err){$('lmsg').textContent=err.message;}finally{b.disabled=false;b.textContent='登录';}});
 $('logout').addEventListener('click',async()=>{await call('/api/logout',{}).catch(()=>{});showLogin('已登出');});
-const TITLES={hook:'Webhook 开关',list:'跟帖评论清单',usage:'用量和限额',reply:'每天回帖上限',ext:'插件下载',assets:'素材生成器',probe:'发音探针',company:'公司',work:'工作台',forecast:'forecast'};
+const TITLES={hook:'Webhook 开关',list:'跟帖评论清单',usage:'用量和限额',reply:'每天回帖上限',ext:'插件下载',assets:'素材生成器',tts:'语音生成',company:'公司',work:'工作台',forecast:'forecast'};
 // 外框路由（工作平台批 1）：#/<页>/<模块>；页 = work / forecast / tools / company；模块 id = 页的前缀 + 模块名（#/work/todo → w-todo）
 let page='';
-const PFX={work:'w-',forecast:'f-',tools:'t-',company:''}, TOOLV={queue:'list',usage:'usage',ext:'ext',reply:'reply',byproj:'usage',hook:'hook',assets:'assets',probe:'probe'};
+const PFX={work:'w-',forecast:'f-',tools:'t-',company:''}, TOOLV={queue:'list',usage:'usage',ext:'ext',reply:'reply',byproj:'usage',hook:'hook',assets:'assets',tts:'tts'};
 function frameButtons(){const t=page==='tools'||page==='company';$('nav').hidden=!t;$('extnav').hidden=!t||view==='ext';$('conav').hidden=false;$('nav').textContent=view==='list'?'用量和限额 →':'← 跟帖评论清单';}
 function hashOf(){const m=/^#\\/([a-z]+)(?:\\/([a-z0-9-]+))?/.exec(location.hash);return m&&Object.hasOwn(PFX,m[1])?{p:m[1],m:m[2]||''}:null;}
 function route(){if(!authed)return;let h=hashOf();
@@ -428,6 +423,7 @@ function route(){if(!authed)return;let h=hashOf();
   usageTimer(page==='tools');
   if(page==='tools'){if(prev!==''&&prev!=='tools')load();else if(prev==='tools'&&view==='list')load();if(view==='usage'||prev!=='tools'){uEditing=false;loadUsage(true);}if(view==='reply'||prev!=='tools')loadReply();if(view==='hook'||prev!=='tools')loadHook();}
   if(page==='tools'&&view==='assets'){try{window.assetsOpen();}catch(e){}}
+  if(page==='tools'&&view==='tts'){try{window.ttsOpen();}catch(e){}}
   if(page==='company'){try{companyOpen();}catch(e){$('co-at').textContent='这一页出错了：'+e.message;}}
   // 批 2：在公共工具、公司总览刷新时，一级菜单上的待办数量也马上读出来（以前要切到工作台才有）
   if(page==='work'||page==='forecast'){try{platformOpen(page,mod);}catch(e){}}else{try{platformStop();platformPeek();}catch(e){}}
@@ -996,6 +992,7 @@ var platformPeek=function(){PL.peek=true;if(!PL.timer)tickTimer();if(!PL.data&&!
 var platformReady=function(){return !!PL.data;};
 }catch(e){var platformReady=function(){return true;};var platformOpen=function(){['w-err','f-err'].forEach((id)=>{const x=document.getElementById(id);if(x){x.hidden=false;x.textContent='这一页出错了：'+e.message;}});};var platformStop=function(){};var platformPeek=function(){};}
 </script>
-<script>window.__assetsBase='/api/assets/';window.__probeBase='/api/probe/';</script>
+<script>window.__assetsBase='/api/assets/';window.__ttsBase='/api/tts/';</script>
 <script>${ASSETS_JS}</script>
+<script>${TTS_JS}</script>
 </body></html>`;

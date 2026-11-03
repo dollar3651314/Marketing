@@ -1,6 +1,6 @@
 /**
  * 素材生成器的页面片段（后台"公共工具 → 素材生成器"；服务端在 src/assets.ts）。
- * 拆成样式 / 结构 / 脚本三段导出，`admin-page.ts` 和测试版那个受限入口（src/probe.ts）都插这三段，**只写一遍**。
+ * 拆成样式 / 结构 / 脚本三段导出，`admin-page.ts` 插这三段。
  * 写法上的约定（和 admin-page.ts 一样）：这是模板字符串，里面**不能出现没转义的反引号或 ${**。
  *
  * 素材放在哪：图片和音频只存在 Amos 这台电脑的浏览器里（IndexedDB），服务端一个字节都不存；
@@ -269,31 +269,3 @@ window.assetsOpen=function(){
 }catch(e){try{document.getElementById('ag-msg').textContent='素材生成器这一块出错了：'+e.message}catch(e2){}}
 })();
 `;
-
-/**
- * 受限入口（只在测试版 marketing-staging，`/probe-<随机串>/assets/`）单独一页。
- * 后台登录不了的时候用它跑《产品方案》M-3 的 6 个样片；样式和脚本和后台里那一块是同一份。
- * 这里的按钮样式是最小一套（后台那套 .btn 在这一页没有），只求能点。
- */
-export const ASSETS_PAGE = `<!doctype html>
-<html lang="zh-Hans"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
-<meta name="robots" content="noindex, nofollow"><title>素材生成器（测试版）</title>
-<style>
-:root{color-scheme:light dark;--line:#c9ced8;--surface:transparent;--bg:transparent;--ink:inherit;--muted:#6b7280;--teal:#14B8A6;--err:#B91C1C;--mono:ui-monospace,Menlo,Consolas,monospace}
-*{box-sizing:border-box}[hidden]{display:none!important}
-body{font:16px/1.7 system-ui,-apple-system,"PingFang SC","Microsoft YaHei",sans-serif;max-width:52em;margin:0 auto;padding:1em 1em 4em}
-h2{font-size:1.25em}.mh{display:flex;flex-wrap:wrap;gap:8px;align-items:baseline}.sp{flex:1}
-.hint,.lead,.st{color:var(--muted);font-size:.92em}
-.btn{padding:.5em 1em;border-radius:8px;border:1px solid var(--line);background:transparent;color:inherit;cursor:pointer;font-size:.95em}
-.btn.primary{background:#3b6ef6;color:#fff;border-color:#3b6ef6}.btn.danger{border-color:var(--err);color:var(--err)}
-.btn:disabled{opacity:.5;cursor:default}.btn.small{padding:.25em .6em;font-size:.85em}
-.msg{min-height:1.4em}.msg.ok{color:#15803d}
-${ASSETS_CSS}
-</style></head><body>
-<p class="hint"><b>这一页只在测试版有。</b>后台现在还没填密码（Cloudflare 控制台的 COPILOT_PASSWORD），登录不了，所以暂时保留这个入口：
-同一分钟点太快会被挡，而且这个入口自己每天只能用一小份额度，够跑 6 个样片；要跑完 30 个场景，请先把密码填上，再从后台"公共工具 → 素材生成器"进来。</p>
-${ASSETS_MOD}
-<script>window.__assetsBase='';</script>
-<script>${ASSETS_JS}</script>
-<script>window.assetsOpen();</script>
-</body></html>`;

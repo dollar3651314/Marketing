@@ -41,7 +41,7 @@ async function addUsage(env: Env, now: number, neurons: number) {
 }
 
 /**
- * 别的功能也走同一本账（探针 src/probe.ts）：记一次 Workers AI 的用量。
+ * 别的功能也走同一本账（素材生成器 src/assets.ts）：记一次 Workers AI 的用量。
  * 和 askWorkersAi 里的记法一模一样——写 ai_usage（当天 neurons，到上限就停，C117）＋ model_usage / usage_by_project（按项目看）。
  * 调用方自己先用 usedToday + dailyCap 判断够不够，再调模型；失败的调用也要记（按估算），宁可多记不要漏记。
  */

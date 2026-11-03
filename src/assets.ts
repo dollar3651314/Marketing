@@ -8,22 +8,19 @@
  * 四条硬约定（改这个文件前先看清楚）：
  * 1. **不替 Amos 设上限、也不改 Marketing 的每天上限**（Amos 2026-11-03"额度他自己管"）：
  *    这里只做两件事——生成前把"这次大概要花多少 neurons、今天还剩多少"显示出来让他自己决定；真的要超过后台设的上限时停下来报错（C117）。
- * 2. **两个入口**：
- *    ① 正路 `/api/assets/*`，跟后台登录走（密码会话，queue.ts 的 sessionOk）；
- *    ② `marketing-staging` 现在没填 COPILOT_PASSWORD（/health 的 admin 是 not_configured），后台登录不了，
- *       所以测试版额外保留一个受限入口 `/probe-<随机串>/assets/*`：**只在 staging**、同一分钟限流（和探针共用）、
- *       再加一份自己的小额度 ASSETS_OPEN_DAILY_NEURONS，够跑《产品方案》M-3 的 6 个样片；30 个场景全量要 Amos 在 Cloudflare 控制台填上
- *       COPILOT_PASSWORD（≥ 16 位）后走登录。这层取舍写在 PR 正文里交 Amos 定，不自己悄悄决定。
+ * 2. **只有一个入口**：`/api/assets/*`，跟后台登录走（密码会话，queue.ts 的 sessionOk）。
+ *    2026-11-03 Amos 填上 `COPILOT_PASSWORD` 之前，测试版上还临时挂过一个不用登录的受限入口（随机串地址）；
+ *    密码填好、后台能登录以后那个口子已经**整个删掉**，登记在 agents `工作平台/工具台账.md`，
+ *    `test/retired-routes.test.ts` 守着它现在一律 404。
  * 3. **不存字节**：D1 里只有 asset_gen 这张台账（哪一格生成过几次、留用没有、估算 neurons），图片和音频只在浏览器里，不落库、不转发第三方。
  * 4. **不显示任何密钥、账号 ID**（底线 1）：返回的 JSON 里只有模型名、毫秒、字节、neurons 估算。
  */
 import type { Env } from './env';
-import { WAI_KEY } from './usage';
 import { chargeNeurons, dailyCap, usedToday, type AiLike } from './workers-ai';
 
 export const IMG_MODEL = '@cf/black-forest-labs/flux-1-schnell';
 export const TTS_MODEL = '@cf/myshell-ai/melotts';
-/** 用量按这个项目名记一份，后台"按项目看用量"里看得见（和探针 practical-probe 分开） */
+/** 用量按这个项目名记一份，后台"按项目看用量"里看得见 */
 export const ASSETS_PROJECT = 'practical-assets';
 
 /**
@@ -34,7 +31,7 @@ export const ASSETS_PROJECT = 'practical-assets';
 const TILE = 4.8;
 const STEP = 9.6;
 const MELOTTS_PER_MIN = 18.63;
-/** melotts 按音频时长计费：约 15 个字符 ≈ 1 秒（和探针 probe.ts 同一套；Amos 11/3 实测单句 0.8 neurons，和这个公式对得上） */
+/** melotts 按音频时长计费：约 15 个字符 ≈ 1 秒（Amos 11/3 实测单句 0.8 neurons，和这个公式对得上） */
 const SEC_PER_CHAR = 1 / 15;
 const TILES_1024 = 4;
 export const DEFAULT_STEPS = 4;
@@ -50,13 +47,6 @@ const SCENE_ID = /^[A-Za-z0-9_-]{1,16}$/;
 export const imageNeurons = (steps: number) => TILES_1024 * TILE + steps * STEP;
 /** 一段音频的 neurons（估算，不是账单） */
 export const audioNeurons = (text: string) => (text.length * SEC_PER_CHAR * MELOTTS_PER_MIN) / 60;
-
-/**
- * 受限入口（没有登录时）自己那份每天额度。
- * 按《产品方案》M-3"先做 6 个样片"配：6 个场景 × 4 张图 × 57.6 + 6 段音频 ≈ 1,387 neurons，1,500 够跑一轮样片。
- * 30 个场景全量（约 7,000 neurons 起）要走登录——这是故意的，见文件开头第 2 条。
- */
-export const ASSETS_OPEN_DAILY_NEURONS = 1_500;
 
 export interface Plan {
   scenes: number;
@@ -87,32 +77,12 @@ const num = (v: string | null, dflt: number, lo: number, hi: number) => {
   return Number.isFinite(n) ? Math.max(lo, Math.min(hi, Math.round(n))) : dflt;
 };
 
-const utcDay = (now: number) => new Date(now).toISOString().slice(0, 10);
-
-/** 受限入口今天用掉的 neurons（从按项目记的那张表读，和记账同一本） */
-async function openUsedToday(env: Env, now: number): Promise<number> {
-  try {
-    const r = await env.DB.prepare('SELECT neurons FROM usage_by_project WHERE day = ?1 AND project = ?2 AND model = ?3')
-      .bind(utcDay(now), ASSETS_PROJECT, WAI_KEY)
-      .first<{ neurons: number }>();
-    return r?.neurons ?? 0;
-  } catch {
-    // 表还没建（老库）：当成已经用满，宁可不调模型
-    return ASSETS_OPEN_DAILY_NEURONS;
-  }
-}
-
 /**
- * 额度检查。账号那本（ai_usage，和备用 AI、探针共用，C117）一定要过；
- * `open` 为真时（受限入口）再加一本自己的小额度。**不替 Amos 设上限**：登录进来时只看他自己在"用量和限额"里设的那个数。
+ * 额度检查。只看账号那本（ai_usage，和备用 AI 共用，C117）——**不替 Amos 设上限**，
+ * 用的就是他自己在"用量和限额"里设的那个数。
  */
-async function quota(env: Env, now: number, reserve: number, open: boolean): Promise<{ ok: boolean; used: number; cap: number; why: string }> {
+async function quota(env: Env, now: number, reserve: number): Promise<{ ok: boolean; used: number; cap: number; why: string }> {
   const [used, cap] = await Promise.all([usedToday(env, now), dailyCap(env)]);
-  if (open) {
-    const mine = await openUsedToday(env, now);
-    if (mine + reserve > ASSETS_OPEN_DAILY_NEURONS)
-      return { ok: false, used: Math.round(mine), cap: ASSETS_OPEN_DAILY_NEURONS, why: `没登录的入口今天只能用 ${ASSETS_OPEN_DAILY_NEURONS} neurons（已用 ${Math.round(mine)}）；要跑完 30 个场景，请先在 Cloudflare 控制台给 marketing-staging 填上 COPILOT_PASSWORD，再从后台登录进来` };
-  }
   if (used + reserve > cap) return { ok: false, used: Math.round(used), cap, why: `今天的 Workers AI 额度到上限了（${Math.round(used)} / ${cap}），明天再跑，或者到"用量和限额"里改这个数` };
   return { ok: true, used: Math.round(used), cap, why: '' };
 }
@@ -127,7 +97,7 @@ const b64 = (buf: ArrayBuffer): string => {
 };
 const unb64 = (s: string): ArrayBuffer => Uint8Array.from(atob(s), (c) => c.charCodeAt(0)).buffer;
 
-/** melotts 回 {audio:base64}，也可能回二进制流：两种都认（和 probe.ts 一样） */
+/** melotts 回 {audio:base64}，也可能回二进制流：两种都认 */
 async function toBytes(r: unknown, field: 'audio' | 'image'): Promise<ArrayBuffer> {
   if (r instanceof ReadableStream) return await new Response(r).arrayBuffer();
   if (r instanceof ArrayBuffer) return r;
@@ -181,10 +151,10 @@ export async function progress(env: Env, now: number): Promise<Progress> {
 const str = (v: unknown, max: number) => (typeof v === 'string' ? v.trim().slice(0, max) : '');
 
 /**
- * 素材生成器的接口。`sub` 是去掉前缀以后的那一段（plan / gen / progress / kept），
- * `open` 为真表示这是测试版那个受限入口（没有登录）。不认识的 sub 返回 null，由调用方给 404。
+ * 素材生成器的接口。`sub` 是去掉前缀以后的那一段（plan / gen / progress / kept）。
+ * 不认识的 sub 返回 null，由调用方给 404。
  */
-export async function assetsApi(env: Env, req: Request, now: number, sub: string, open: boolean): Promise<Response | null> {
+export async function assetsApi(env: Env, req: Request, now: number, sub: string): Promise<Response | null> {
   const url = new URL(req.url);
 
   if (sub === 'progress' && req.method === 'GET') return json(await progress(env, now));
@@ -197,8 +167,7 @@ export async function assetsApi(env: Env, req: Request, now: number, sub: string
     const chars = num(url.searchParams.get('chars'), 30, 1, MAX_TEXT);
     const need = planNeurons(scenes, images, steps, tries, chars);
     const [used, cap] = await Promise.all([usedToday(env, now), dailyCap(env)]);
-    const mine = open ? await openUsedToday(env, now) : 0;
-    const left = open ? Math.max(0, ASSETS_OPEN_DAILY_NEURONS - mine) : Math.max(0, cap - used);
+    const left = Math.max(0, cap - used);
     const plan: Plan = {
       scenes,
       images,
@@ -207,8 +176,8 @@ export async function assetsApi(env: Env, req: Request, now: number, sub: string
       perImage: Math.round(imageNeurons(steps) * 10) / 10,
       perAudio: Math.round(audioNeurons('x'.repeat(chars)) * 100) / 100,
       需要neurons: Math.round(need),
-      今天已用: Math.round(open ? mine : used),
-      今天上限: open ? ASSETS_OPEN_DAILY_NEURONS : cap,
+      今天已用: Math.round(used),
+      今天上限: cap,
       今天还剩: Math.round(left),
       够不够: need <= left,
     };
@@ -237,7 +206,7 @@ export async function assetsApi(env: Env, req: Request, now: number, sub: string
     if (!text) return json({ 出错: audio ? '这个场景没有要读的句子' : '这个场景没有提示词（提示词由产品经理按《生产包》第二节补齐，不写在代码里）' }, 400);
 
     const est = audio ? audioNeurons(text) : imageNeurons(steps);
-    const q = await quota(env, now, est, open);
+    const q = await quota(env, now, est);
     if (!q.ok) return json({ 出错: q.why, 今天已用: q.used, 今天上限: q.cap }, 429);
 
     const t0 = Date.now();
@@ -254,7 +223,7 @@ export async function assetsApi(env: Env, req: Request, now: number, sub: string
       return json({ 出错: detail }, 502);
     }
     await Promise.all([chargeNeurons(env, now, est, ASSETS_PROJECT, 200), bump(env, now, scene, slot, est)]);
-    const after = await quota(env, now, 0, open);
+    const after = await quota(env, now, 0);
     return json({
       场景: scene,
       格子: slot,
