@@ -8,11 +8,13 @@
  *   node scripts/e2e-platform.mjs --shots <目录>   # 另外存工作台、forecast 页截图（375、1440 宽，深浅色）
  *
  * 页面约定（照原型 v2 的元素；研发要改名就同一个 PR 改这里并在 PR 描述写明）：
- *   一级菜单 nav.nav1 a[data-p="work" | "forecast" | "tools"]；二级菜单 #sub-work、#sub-forecast、#sub-tools 里的 a[data-s="<模块 id>"]，地址 #/work/todo 这类锚点
- *   页面 #v-work、#v-forecast、#v-tools；工作台模块 #w-now（#hero）、#w-todo（#w-todos li.todo、#w-donelist）、#w-live、#w-proj、#w-num、#w-meet
+ *   一级菜单 nav.nav1 a[data-p="work" | "project" | "tools"]（项目链接另带 data-proj="<项目名>"，有几个项目出几个）；
+ *   二级菜单 #sub-work、#sub-project、#sub-tools 里的 a[data-s="<模块 id>"]，地址 #/work/todo、#/<项目>/guide 这类锚点
+ *   页面 #v-work、#v-project（一套 DOM 轮流显示每个项目）、#v-tools；工作台模块 #w-now（#hero）、#w-todo（#w-todos li.todo、#w-donelist）、#w-live、#w-proj、#w-num、#w-meet
  *   待办 li.todo 带颜色类 over（红，超时）/ soon（橙，24 小时内）/ later / none（没定截止时间）；打勾按钮 .tick；撤销 [data-undo]
+ *   全部待办按项目分组（2026-11-02）：逾期的在 #w-todos .over-grp 里置顶常显，其余在 #w-todos details.tgrp[data-proj] 里、默认收起（#w-todo-all 全部展开）
  *   填数字：待办里的表单 .form，输入框用 <label> 包住（标签文字 X 关注、Threads 关注、名单人数），按钮"保存"
- *   forecast 模块 #f-next（#f-todos）、#f-guide（#g-steps .step、勾选框）、#f-live、#f-card、#f-pack、#f-match（#copy-match、#copy-msg）、#f-tools、#f-handoff
+ *   项目模块 #f-next（#f-todos）、#f-guide（#g-steps .step、勾选框）、#f-live、#f-card、#f-pack、#f-match（#copy-match、#copy-msg）、#f-tools、#f-handoff
  *   清单页的元素（#list、#f-prod…）照旧，在 #v-tools 里
  * 时间：页面时钟用 Playwright page.clock 固定在"现在"，拨时钟只拨浏览器（C106）；服务端的"现在"是真实时间，样例的截止时间都按真实时间算。
  * 每段单独 try：一段没做出来不影响别的段报结果；等待都有短超时，等不到就照实报"实际值"。任何一条不符就以非 0 退出。
@@ -41,6 +43,7 @@ const T = {
   none1: 'X、Threads 简介加官网链接',
   none2: '用真实邮箱走一遍报名',
   meet: '英语学习网站：挑一天开始开局沟通',
+  prac: 'Practical：审《阶段计划》并过关卡 A',
 };
 const AGENTS = [
   { kind: 'todo', key: 'forecast', source_at: now - H, payload: { product: 'forecast', items: [
@@ -52,7 +55,10 @@ const AGENTS = [
   { kind: 'todo', key: '经营会', source_at: now - H, payload: { product: '经营会', items: [{ id: 'M3·11/1', type: 'confirm', text: T.meet }] } },
   // 【只看】PR：截止 = 开 PR 时间 + 48 小时 → 还剩 1 小时（橙）
   { kind: 'prs', key: '', source_at: now, payload: { items: [{ number: 89, title: T.soonPr, url: 'https://github.com/dollar3651314/agents/pull/89', days: 1, tag: 'look', opened_at: now - 47 * H }] } },
-  { kind: 'projects', key: '', source_at: now - H, payload: { version: 'v1.4', items: [{ name: 'forecast', stage: '试水阶段' }, { name: '报价', stage: '未开始' }] } },
+  // 项目版图"产品"表 = 项目页的名单（2026-11-02 起不写死）：两个在跑的项目 + 一个没有状态卡的（报价）
+  { kind: 'projects', key: '', source_at: now - H, payload: { version: 'v1.5', items: [{ name: 'forecast', stage: '试水阶段' }, { name: 'Practical', stage: '开局沟通' }, { name: '报价', stage: '未开始' }] } },
+  { kind: 'todo', key: 'Practical', source_at: now - H, payload: { product: 'Practical', items: [{ id: 'P1', type: 'confirm', text: T.prac, due: now + 40 * H }] } },
+  { kind: 'status', key: 'Practical', source_at: now - H, payload: { product: 'Practical', state: '开局沟通', level: 'mute', week: '等 Amos 审《阶段计划》', metrics: [{ name: '月收入', now: '0', target: '5 万 / 月' }] } },
   { kind: 'status', key: 'forecast', source_at: now - H, payload: { product: 'forecast', state: 'B + C', level: 'warn', week: '第一周的 6 条帖子和 10 场焦点战已备好',
     metrics: [{ name: 'X + Threads 关注合计', now: '见工作平台', target: '50' }, { name: '等候名单确认订阅', now: '见工作平台', target: '100' }, { name: '第一笔真实抽成', now: '没有', target: '2026-12-31 前' }] } },
   { kind: 'status', key: '工作平台', source_at: now - H, payload: { product: '工作平台', state: 'E 上线运营', level: 'mute', week: '工作平台批 1', metrics: [{ name: '副驾驶插件版本', now: '0.3.5' }] } },
@@ -97,6 +103,14 @@ async function section(name, fn) {
 /** 待办列表：每条的文字和颜色类 */
 const todos = (page, sel = '#w-todos') => page.evaluate((s) => [...document.querySelectorAll(s + ' li.todo')].map((li) => ({ text: li.innerText, cls: ['over', 'soon', 'later', 'none'].find((c) => li.classList.contains(c)) || '' })), sel);
 const which = (list, t) => list.findIndex((x) => x.text.includes(t));
+/** 待办分组默认是收起的 <details>：点"全部展开"（用户也是这样点），之后才能点里面的按钮 */
+async function openGroups(page) {
+  if (!(await page.locator('#w-todos details.tgrp:not([open])').count())) return;
+  await page.click('#w-todo-all', { timeout: WAIT });
+  await page.waitForFunction(() => ![...document.querySelectorAll('#w-todos details.tgrp')].some((d) => !d.open), null, { timeout: WAIT });
+}
+/** 分组一览：每组的项目名和条数 */
+const groupsOf = (page) => page.evaluate(() => [...document.querySelectorAll('#w-todos details.tgrp')].map((d) => ({ proj: d.dataset.proj, n: d.querySelectorAll('li.todo').length, open: d.open })));
 /** "做完的"是折叠的 <details>：点开它（用户也是这样点） */
 async function openDone(page) { if (await page.locator('#w-done:not([open]) > summary').count()) await page.click('#w-done > summary'); }
 const noHScroll = (page) => page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth);
@@ -114,26 +128,34 @@ try {
     await login(page);
     const ok = await waitFor(page, '#v-work');
     check('登录后默认是工作台（#v-work 显示、地址是 #/work…）', ok && /^#\/work/.test(await page.evaluate(() => location.hash)), [ok, await page.evaluate(() => location.hash)]);
-    const nav1 = await page.locator('nav.nav1 a[data-p]').evaluateAll((a) => a.map((x) => x.dataset.p)).catch(() => []);
-    check('一级菜单：工作台 · forecast（每个在跑的项目一个）· 公共工具', JSON.stringify(nav1) === JSON.stringify(['work', 'forecast', 'tools']), nav1);
+    const nav1 = await page.locator('nav.nav1 a[data-p]').evaluateAll((a) => a.map((x) => x.dataset.proj || x.dataset.p)).catch(() => []);
+    // 2026-11-02：项目不写死，projects 块里有几个在跑的项目就出几个（样例是 forecast、Practical、报价）
+    check('一级菜单：工作台 · 每个在跑的项目一个 · 公共工具', JSON.stringify(nav1) === JSON.stringify(['work', 'forecast', 'Practical', '报价', 'tools']), nav1);
     check('一级菜单没有"Marketing""工作平台"当项目（改名：Amos 2026-11-02"公司平台四个字改为 工作平台"）', !(await page.locator('nav.nav1').innerText().catch(() => '')).match(/Marketing|工作平台|公司平台/), await txt(page, 'nav.nav1'));
     check('清单页、公司旧页不再是默认（#v-list 不显示）', !(await vis(page, '#v-list')), null);
   });
 
   // ---------- 2. 二级菜单跳转、刷新停在原模块、/queue ----------
   await section('二级菜单', async () => {
-    const SUB = { work: ['w-now', 'w-todo', 'w-live', 'w-proj', 'w-num', 'w-meet'], forecast: ['f-next', 'f-guide', 'f-live', 'f-card', 'f-pack', 'f-match', 'f-tools', 'f-handoff'], tools: ['t-queue'] };
-    for (const [p, mods] of Object.entries(SUB)) {
-      await page.click(`nav.nav1 a[data-p="${p}"]`, { timeout: WAIT });
-      check(`一级菜单 ${p}：二级菜单 #sub-${p} 出现、页面 #v-${p} 显示`, (await waitFor(page, `#sub-${p}`)) && (await vis(page, `#v-${p}`)), null);
-      const subs = await page.locator(`#sub-${p} a[data-s]`).evaluateAll((a) => a.map((x) => x.dataset.s));
-      check(`二级菜单 ${p}：模块齐全`, mods.every((m) => subs.includes(m)), subs);
+    // 页名（#sub-<页>、#v-<页>）和地址段分开：项目页的页名一律是 project，地址段是项目名
+    const SUB = [
+      { nav: 'work', page: 'work', seg: 'work', mods: ['w-now', 'w-todo', 'w-live', 'w-proj', 'w-num', 'w-meet'] },
+      { nav: 'forecast', page: 'project', seg: 'forecast', mods: ['f-next', 'f-guide', 'f-live', 'f-card', 'f-pack', 'f-match', 'f-tools', 'f-handoff'] },
+      { nav: 'Practical', page: 'project', seg: 'Practical', mods: ['f-next', 'f-card', 'f-handoff'] },
+      { nav: 'tools', page: 'tools', seg: 'tools', mods: ['t-queue'] },
+    ];
+    for (const { nav, page: pg, seg, mods } of SUB) {
+      await page.click(nav === pg ? `nav.nav1 a[data-p="${nav}"]` : `nav.nav1 a[data-proj="${nav}"]`, { timeout: WAIT });
+      check(`一级菜单 ${nav}：二级菜单 #sub-${pg} 出现、页面 #v-${pg} 显示`, (await waitFor(page, `#sub-${pg}`)) && (await vis(page, `#v-${pg}`)), null);
+      const subs = await page.locator(`#sub-${pg} a[data-s]`).evaluateAll((a) => a.map((x) => x.dataset.s));
+      check(`二级菜单 ${nav}：模块齐全`, mods.every((m) => subs.includes(m)), subs);
       for (const m of mods) {
-        await page.click(`#sub-${p} a[data-s="${m}"]`, { timeout: WAIT });
+        await page.click(`#sub-${pg} a[data-s="${m}"]`, { timeout: WAIT });
         await page.waitForTimeout(400);
         const st = await page.evaluate((id) => { const e = document.getElementById(id); if (!e) return null; const r = e.getBoundingClientRect(); return { top: r.top, h: innerHeight, hash: location.hash, shown: !!(e.offsetWidth || e.offsetHeight) }; }, m);
-        check(`二级菜单 ${p} → ${m}：模块在屏幕里、地址带上模块`, !!st && st.shown && st.top >= -2 && st.top < st.h && st.hash.startsWith(`#/${p}/`), st);
+        check(`二级菜单 ${nav} → ${m}：模块在屏幕里、地址带上模块`, !!st && st.shown && st.top >= -2 && st.top < st.h && decodeURIComponent(st.hash).startsWith(`#/${seg}/`), st);
       }
+      if (pg === 'project') check(`项目页 ${nav}：标题就是这个项目`, (await page.locator('#f-title').innerText()) === nav, await page.locator('#f-title').innerText());
     }
     // 研发补的一步（不改断言）：二级菜单只在本页显示（原型 v2），从公共工具回工作台要先点一级菜单
     await page.click('nav.nav1 a[data-p="work"]', { timeout: WAIT });
@@ -152,10 +174,21 @@ try {
   await section('待办', async () => {
     await page.goto(BASE + '/#/work/todo');
     await waitFor(page, '#w-todos li.todo');
+    // 分组（2026-11-02，Amos"31 个待办混在一起 我要疯掉了"）：逾期的置顶一块常显，其余每个项目一个收起的分组
+    const overTop = await page.evaluate(() => { const g = document.querySelector('#w-todos .over-grp'); const first = document.querySelector('#w-todos > *'); return g ? { head: g.querySelector('.tgrp-h').innerText, n: g.querySelectorAll('li.todo').length, first: g === first, shown: !!(g.offsetWidth || g.offsetHeight) } : null; });
+    check('逾期的单独置顶一块，在最上面、不用展开就看得到', !!overTop && overTop.first && overTop.shown && overTop.n === 1 && /逾期/.test(overTop.head), overTop);
+    const G0 = await groupsOf(page);
+    check('其余按项目分组、默认全部收起，每组标着条数', G0.length >= 2 && G0.every((g) => !g.open) && G0.every((g) => g.n > 0), G0);
+    check('分组里有 forecast 和"公司"（经营会、agents 的 PR 算公司），没有空分组（报价）', G0.some((g) => g.proj === 'forecast') && G0.some((g) => g.proj === '公司') && !G0.some((g) => g.proj === '报价'), G0.map((g) => g.proj));
+    const hiddenBefore = await page.locator('#w-todos details.tgrp li.todo').first().isVisible();
+    check('收起时里面的待办看不见（31 条不再糊成一片）', hiddenBefore === false, hiddenBefore);
+    await openGroups(page);
+    const G1 = await groupsOf(page);
+    check('点"全部展开"：每组都展开', G1.length === G0.length && G1.every((g) => g.open), G1);
     const L = await todos(page);
-    const idx = [T.over, T.soonPr, T.later, T.none1, T.none2, T.meet].map((t) => which(L, t));
-    check('全部待办：6 条都在（含【只看】PR、经营会）', idx.every((i) => i >= 0), L.map((x) => x.text.split('\n')[0]));
-    check('按截止时间排：超时 → 24 小时内 → 以后 → 没定截止时间的在最后', idx[0] < idx[1] && idx[1] < idx[2] && idx[2] < idx[3] && idx[2] < idx[4] && idx[2] < idx[5], idx);
+    const idx = [T.over, T.soonPr, T.later, T.none1, T.none2, T.meet, T.prac].map((t) => which(L, t));
+    check('全部待办：7 条都在（含【只看】PR、经营会、Practical）', idx.every((i) => i >= 0), L.map((x) => x.text.split('\n')[0]));
+    check('逾期的排最前面；每个分组里按截止时间排（forecast：30 小时那条在没定截止的前面）', idx[0] === 0 && idx[2] < idx[3] && idx[2] < idx[4], idx);
     check('颜色：超时的红（over）、【只看】PR 开了 47 小时 → 还剩 1 小时橙（soon）、30 小时后的不标色（later）、没定的 none', L[idx[0]]?.cls === 'over' && L[idx[1]]?.cls === 'soon' && L[idx[2]]?.cls === 'later' && L[idx[3]]?.cls === 'none', idx.map((i) => L[i]?.cls));
     check('超时那条写"已超时"，没定的写"没定截止时间"', /已超时/.test(L[idx[0]]?.text ?? '') && /没定截止时间/.test(L[idx[3]]?.text ?? ''), [L[idx[0]]?.text, L[idx[3]]?.text]);
     const hero = await txt(page, '#hero');
@@ -166,8 +199,11 @@ try {
     await page.clock.setSystemTime(now + 25 * H);
     await page.clock.fastForward(31_000);
     await page.waitForTimeout(300);
+    await openGroups(page);
     const L2 = await todos(page);
     check('拨时钟 +25 小时：原来"以后"的那条变橙，【只看】PR 变红', L2[which(L2, T.later)]?.cls === 'soon' && L2[which(L2, T.soonPr)]?.cls === 'over', L2.map((x) => [x.text.split('\n')[0].slice(0, 12), x.cls]));
+    const overNow = await page.evaluate(() => [...document.querySelectorAll('#w-todos .over-grp li.todo')].map((li) => li.querySelector('.ttl')?.textContent ?? ''));
+    check('变红的（【只看】PR）自己跑到置顶的"逾期"块里，不用翻分组', overNow.length === 2 && overNow.join(' ').includes('更正'), overNow);
     await page.clock.setSystemTime(now + 26 * H);
   });
 
@@ -176,6 +212,7 @@ try {
     const A = await open(), B = await open();
     await login(A, '/#/work/todo'); await login(B, '/#/work/todo');
     await waitFor(A, '#w-todos li.todo'); await waitFor(B, '#w-todos li.todo');
+    await openGroups(A); await openGroups(B);
     const liA = A.locator('#w-todos li.todo', { hasText: T.none1 });
     await liA.locator('.tick').click({ timeout: WAIT });
     const gone = await A.waitForFunction((t) => ![...document.querySelectorAll('#w-todos li.todo')].some((l) => l.innerText.includes(t)) && document.getElementById('w-donelist').textContent.includes(t), T.none1, { timeout: WAIT }).then(() => true, () => false);
@@ -188,6 +225,7 @@ try {
     await openDone(A);
     await A.locator('#w-donelist [data-undo]').first().click({ timeout: WAIT });
     await A.waitForFunction((t) => [...document.querySelectorAll('#w-todos li.todo')].some((l) => l.innerText.includes(t)), T.none1, { timeout: WAIT });
+    await openGroups(A);
     await A.locator('#w-todos li.todo', { hasText: T.none1 }).locator('.tick').click({ timeout: WAIT });
     await A.waitForFunction((t) => document.getElementById('w-donelist').textContent.includes(t), T.none1, { timeout: WAIT });
     await openDone(B);
@@ -204,6 +242,8 @@ try {
   await section('填数字', async () => {
     const p = await open();
     await login(p, '/#/work/todo');
+    await waitFor(p, '#w-todos li.todo');
+    await openGroups(p);
     const li = p.locator('#w-todos li.todo', { hasText: T.later });
     await li.locator('[data-act], .go .btn').first().click({ timeout: WAIT });
     const form = li.locator('.form');
@@ -237,7 +277,7 @@ try {
   await section('forecast 项目页：还没有周包', async () => {
     const p = await open();
     await login(p, '/#/forecast/guide');
-    await waitFor(p, '#v-forecast');
+    await waitFor(p, '#v-project');
     check('没有周包时：操作指引、本周帖子、焦点战写"本周还没有周包"', /本周还没有周包/.test((await txt(p, '#f-guide')) ?? '') && /本周还没有周包/.test((await txt(p, '#f-pack')) ?? '') && /本周还没有周包/.test((await txt(p, '#f-match')) ?? ''), [await txt(p, '#f-guide'), await txt(p, '#f-pack')]);
     await p.context().close();
   });
@@ -248,7 +288,7 @@ try {
   await section('forecast 项目页', async () => {
     const p = await open();
     await login(p, '/#/forecast/next');
-    await waitFor(p, '#v-forecast');
+    await waitFor(p, '#v-project');
     const L = await todos(p, '#f-todos');
     check('下一步做什么：只有 forecast 的待办（没有经营会那条）', L.length > 0 && which(L, T.meet) < 0 && which(L, T.over) >= 0, L.map((x) => x.text.split('\n')[0]));
     check('周包那件事（周二窗口）进待办，截止 = 第 1 条帖子的建议发出时间 → 还剩 3 小时（橙）', L.some((x) => x.cls === 'soon' && /还剩\s*(2|3) 小时/.test(x.text)), L.map((x) => [x.text.split('\n')[0].slice(0, 16), x.cls]));
@@ -297,7 +337,7 @@ try {
     await page.goto(BASE + '/#/work/proj');
     await waitFor(page, '#w-proj');
     const proj = (await txt(page, '#w-proj')) ?? '';
-    check('项目概况：只列有状态卡的项目（forecast），工作平台不当项目、没有状态卡的"报价"不列', proj.includes('forecast') && !proj.includes('工作平台') && !proj.includes('公司平台') && !proj.includes('报价'), proj.slice(0, 200));
+    check('项目概况：只列有状态卡的项目（forecast、Practical），工作平台不当项目、没有状态卡的"报价"不列', proj.includes('forecast') && proj.includes('Practical') && !proj.includes('工作平台') && !proj.includes('公司平台') && !proj.includes('报价'), proj.slice(0, 200));
     check('团队在做什么：批 1 先显示"还没接上"', /还没接上/.test((await txt(page, '#w-live')) ?? ''), await txt(page, '#w-live'));
     check('工作台顶部有跟帖评论清单入口（插件按钮落在工作台时少点一下，风险 R-2）', (await page.locator('#v-work a, #v-work button', { hasText: '跟帖评论清单' }).count()) >= 1, null);
   });
@@ -312,7 +352,7 @@ try {
         const shown = await p.locator('#w-todos li.todo').count();
         if (SHOTS) { mkdirSync(SHOTS, { recursive: true }); await p.screenshot({ path: path.join(SHOTS, `work-${width}-${colorScheme}.png`), fullPage: true }); }
         await p.goto(BASE + '/#/forecast'); await p.waitForTimeout(300);
-        const w2 = (await waitFor(p, '#v-forecast')) && (await noHScroll(p));
+        const w2 = (await waitFor(p, '#v-project')) && (await noHScroll(p));
         if (SHOTS) await p.screenshot({ path: path.join(SHOTS, `forecast-${width}-${colorScheme}.png`), fullPage: true });
         const bg = await p.evaluate(() => { const m = getComputedStyle(document.body).backgroundColor.match(/\d+/g).map(Number); return (0.299 * m[0] + 0.587 * m[1] + 0.114 * m[2]) / 255; });
         check(`${width} 宽 · ${colorScheme === 'dark' ? '深色' : '浅色'}：工作台、forecast 页都不横向滚动，待办有内容，底色对（深色暗、浅色亮）`, w1 && w2 && shown > 0 && (colorScheme === 'dark' ? bg < 0.3 : bg > 0.7), { w1, w2, shown, bg });
