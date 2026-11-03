@@ -12,7 +12,7 @@
  */
 import type { Env } from './env';
 import { modelList } from './gemini';
-import { saveCaps, unlabeledUsage, usageByProject, usageByPurpose, usageLeft, usageReport, WAI_KEY } from './usage';
+import { accountLimit, envName, saveCaps, unlabeledUsage, usageByProject, usageByPurpose, usageLeft, usageReport, WAI_KEY } from './usage';
 import { usedToday } from './workers-ai';
 import { extensionZip } from './extension-download';
 import { companyApi, projectPages } from './company';
@@ -218,11 +218,14 @@ export async function adminApi(env: Env, req: Request, now: number): Promise<Res
     // byProject：今天每个项目的 Gemini 次数、Workers AI neurons（D-3，只记、不当限额；11/2 以前的没分项目）
     // left / byPurpose：用量监控（Amos 2026-11-03"可以看到剩余和分别用到了哪里"）——还剩多少、分别用到了哪里。
     // 两本账分开（Workers AI 按 neurons、Gemini 按次数），**不加在一起**；没按用途记下来的单独一行，不摊进任何一项（底线 3）。
+    // accountLimit：Cloudflare 自己说"账号额度用完了"那一条（表 account_limit，迁移 0011）。
+    // left 里的数只是**本环境**记下的下限（两个环境两个 D1，Cloudflare 按整个账号算），所以每一行都带着说明；
+    // 真实剩余查不到，不编（底线 3）。
     const rows = await usageReport(env, now, modelList(env), await usedToday(env, now), !!env.AI);
-    const left = usageLeft(rows);
+    const left = usageLeft(rows, envName(env));
     const byPurpose = await usageByPurpose(env, now);
     const rest = unlabeledUsage(byPurpose, left);
-    return json({ rows, byProject: await usageByProject(env, now), left, byPurpose: rest ? [...byPurpose, rest] : byPurpose });
+    return json({ rows, byProject: await usageByProject(env, now), left, byPurpose: rest ? [...byPurpose, rest] : byPurpose, accountLimit: await accountLimit(env, now) });
   }
   if (p === '/api/reply-cap' && req.method === 'GET') return json({ rows: await replyCapRows(env, now) });
   if (p === '/api/reply-cap' && req.method === 'POST') {
@@ -241,7 +244,7 @@ export async function adminApi(env: Env, req: Request, now: number): Promise<Res
     if (bad.length) return json({ error: '没保存：' + bad.join('；') }, 400);
     // 改完上限，"还剩多少"那一块要跟着一起回新的（不然页面上还显示旧的上限）
     const saved = await usageReport(env, now, modelList(env), await usedToday(env, now), !!env.AI);
-    return json({ ok: true, rows: saved, left: usageLeft(saved) });
+    return json({ ok: true, rows: saved, left: usageLeft(saved, envName(env)), accountLimit: await accountLimit(env, now) });
   }
   const m = p.match(/^\/api\/queue\/(\d{1,10})$/);
   if (m && req.method === 'POST') {

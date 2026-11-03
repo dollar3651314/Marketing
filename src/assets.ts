@@ -16,6 +16,7 @@
  * 4. **不显示任何密钥、账号 ID**（底线 1）：返回的 JSON 里只有模型名、毫秒、字节、neurons 估算。
  */
 import type { Env } from './env';
+import { accountLimitedMessage, isAccountLimited, noteAccountLimit } from './usage';
 import { chargeNeurons, dailyCap, usedToday, type AiLike } from './workers-ai';
 
 export const IMG_MODEL = '@cf/black-forest-labs/flux-1-schnell';
@@ -227,6 +228,12 @@ export async function assetsApi(env: Env, req: Request, now: number, sub: string
       await Promise.all([chargeNeurons(env, now, est, ASSETS_PROJECT, 0, purpose), bump(env, now, scene, slot, est)]);
       const detail = String((e as Error)?.message ?? e).replace(/\s+/g, ' ').slice(0, 300);
       console.log(JSON.stringify({ event: 'assets.error', scene, slot, detail }));
+      // 整个 Cloudflare 账号今天的免费额度用完了（不是我们设的上限、也不是这个工具坏了）：
+      // 记一条"Cloudflare 说额度用完了"（后台"还剩多少"置顶红字），"出错"换成中文、英文原话附在后面（usage.ts）
+      if (isAccountLimited(detail)) {
+        await noteAccountLimit(env, now, detail);
+        return json({ 出错: accountLimitedMessage(detail, now), 今天已用: q.used, 今天上限: q.cap }, 429);
+      }
       return json({ 出错: detail }, 502);
     }
     await Promise.all([chargeNeurons(env, now, est, ASSETS_PROJECT, 200, purpose), bump(env, now, scene, slot, est)]);
