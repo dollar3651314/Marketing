@@ -17,7 +17,7 @@
  */
 import { checkDraft, isExcludedTopic, type Platform } from './checks';
 import type { Env } from './env';
-import { ask as askAi, diagnose } from './ai';
+import { ask as askAi, diagnose, DRAFT_PURPOSE, SCORE_PURPOSE } from './ai';
 import { GeminiBusy, GeminiError, type FetchLike } from './gemini';
 import { FORECAST_RULES } from '../rules/forecast';
 import { ADMIN_PAGE } from './admin-page';
@@ -112,6 +112,7 @@ async function score(env: Env, body: Record<string, unknown>, now: number, origi
       now,
       fetcher,
       product,
+      SCORE_PURPOSE,
     );
     engine = r.engine;
     const out = r.data as { items?: { id?: unknown; score?: unknown; reasons?: unknown }[] };
@@ -145,6 +146,7 @@ async function draft(env: Env, body: Record<string, unknown>, now: number, origi
     now,
     fetcher,
     product,
+    DRAFT_PURPOSE,
   );
   const out = r.data as { drafts?: { tone?: unknown; text?: unknown; source?: unknown }[] };
   const all = (out.drafts ?? []).slice(0, 3).map((d) => ({ tone: str(d.tone, 12) || '回复', text: str(d.text, 600), source: str(d.source, 120), engine: r.engine }));

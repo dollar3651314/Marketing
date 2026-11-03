@@ -42,13 +42,14 @@ async function addUsage(env: Env, now: number, neurons: number) {
 
 /**
  * 别的功能也走同一本账（素材生成器 src/assets.ts）：记一次 Workers AI 的用量。
- * 和 askWorkersAi 里的记法一模一样——写 ai_usage（当天 neurons，到上限就停，C117）＋ model_usage / usage_by_project（按项目看）。
+ * 和 askWorkersAi 里的记法一模一样——写 ai_usage（当天 neurons，到上限就停，C117）＋ model_usage / usage_by_project（按项目看）
+ * ＋ usage_by_purpose（按用途看，带 purpose 时才记；用量监控，Amos 2026-11-03）。
  * 调用方自己先用 usedToday + dailyCap 判断够不够，再调模型；失败的调用也要记（按估算），宁可多记不要漏记。
  */
-export async function chargeNeurons(env: Env, now: number, neurons: number, project: string, status = 200): Promise<void> {
+export async function chargeNeurons(env: Env, now: number, neurons: number, project: string, status = 200, purpose?: string): Promise<void> {
   const n = Math.max(0, neurons);
   await addUsage(env, now, n);
-  await recordUse(env, WAI_KEY, now, { status, project, neurons: n });
+  await recordUse(env, WAI_KEY, now, { status, project, neurons: n, purpose });
 }
 
 /** 从回答里取出文字和 token 数（新旧两种回答格式都认） */
@@ -115,7 +116,7 @@ export function repairBrackets(s: string): string {
   return out + stack.reverse().join('');
 }
 
-export async function askWorkersAi(env: Env, system: string, user: string, now: number, project?: string): Promise<unknown> {
+export async function askWorkersAi(env: Env, system: string, user: string, now: number, project?: string, purpose?: string): Promise<unknown> {
   const ai = env.AI as AiLike | undefined;
   if (!ai) throw new WorkersAiError('Workers AI 没有绑定');
   const cap = await dailyCap(env);
@@ -133,7 +134,7 @@ export async function askWorkersAi(env: Env, system: string, user: string, now: 
   } catch (e) {
     // 失败的调用不一定计费，但保守起见按一次最多可能用的量记账
     await addUsage(env, now, RESERVE);
-    await recordUse(env, WAI_KEY, now, { status: 0, project, neurons: RESERVE });
+    await recordUse(env, WAI_KEY, now, { status: 0, project, neurons: RESERVE, purpose });
     throw new WorkersAiError(`Workers AI 出错：${String((e as Error)?.message ?? e).replace(/\s+/g, ' ').slice(0, 120)}`);
   }
   const { text, inTok, outTok } = readResult(r);
@@ -142,6 +143,6 @@ export async function askWorkersAi(env: Env, system: string, user: string, now: 
   const outT = outTok ?? [...text].length;
   const neurons = (inT * IN_PER_M + outT * OUT_PER_M) / 1e6;
   await addUsage(env, now, neurons);
-  await recordUse(env, WAI_KEY, now, { status: 200, tokIn: inT, tokOut: outT, project, neurons });
+  await recordUse(env, WAI_KEY, now, { status: 200, tokIn: inT, tokOut: outT, project, neurons, purpose });
   return extractJson(text);
 }
