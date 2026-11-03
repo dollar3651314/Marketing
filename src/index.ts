@@ -9,7 +9,6 @@
  * - POST /v1/queue   {product, platform, post, score, reasons, draft, source}  存进跟帖评论清单（草稿再过一遍程序检查；同一条只存一次）
  * - POST /hooks/github       GitHub Webhook 实时进度（COMPANY_INGEST_TOKEN 当签名密钥，没填时 404；hooks.ts）
  * - POST /api/company/ingest  公司运营仪表盘：各仓库的自动检查推数据（COMPANY_INGEST_TOKEN，没填时 404；company.ts）
- * - GET  /probe-<随机串>/  Workers AI 探针页（**只在测试版**，probe.ts；正式版 404）：Practical 的发音实测，没有鉴权、有限流和每日额度
  * - GET  /           网页后台：跟帖评论清单、用量和限额、插件下载、公司（COPILOT_PASSWORD 没填时 404）；接口在 /api/*（queue.ts、usage.ts、company.ts）
  * 令牌：Authorization: Bearer <COPILOT_TOKEN>（≥ 24 个字符）。COPILOT_TOKEN 或 GEMINI_API_KEY 没填时 /v1/* 全部 404（默认关着，C102）。
  * Gemini 都用不了时换备用 AI（Workers AI，ai.ts）；草稿带 engine 标出是哪个 AI 写的。
@@ -25,7 +24,6 @@ import { ADMIN_PAGE } from './admin-page';
 import { adminApi, adminEnabled, DEFAULT_PROJECT, doneToday, replyCap, saveToQueue } from './queue';
 import { companyEnabled, companyIngest } from './company';
 import { githubHook } from './hooks';
-import { probeApi } from './probe';
 
 const RULES: Record<string, string> = { forecast: FORECAST_RULES };
 const PER_MINUTE = 60;
@@ -222,9 +220,6 @@ export async function handle(req: Request, env: Env, now: number, fetcher?: Fetc
   }
   // 公司仪表盘的推送接口只依赖 COMPANY_INGEST_TOKEN，在后台（密码）判断之前处理
   // GitHub Webhook 也只依赖 COMPANY_INGEST_TOKEN（同一个值当签名密钥），同样在后台判断之前处理（hooks.ts）
-  // 探针（只在测试版 marketing-staging，probe.ts 里自己判断环境；正式版任何 /probe… 都 404）
-  const probe = await probeApi(env, req, now);
-  if (probe) return probe;
   const gh = await githubHook(env, req, now);
   if (gh) return gh;
   const ingest = await companyIngest(env, req, now);
