@@ -213,11 +213,15 @@ const badges = (page) => page.evaluate(() => {
   const r = (id) => { const e = document.getElementById(id); return e && !e.hidden && e.offsetWidth > 0 && /^\d+$/.test(e.textContent.trim()) ? Number(e.textContent.trim()) : null; };
   return { work: r('c-work'), forecast: r('c-forecast') };
 });
-/** 工作台"全部待办"按项目分组后默认收起：点"全部展开"（2026-11-02） */
+/**
+ * 工作台"全部待办"里默认收起的组：点开每个收起的组的标题（用户也是这样点）。
+ * 改版批 A（2026-11-04）起按时间段分组，只有"没定截止时间"一组是收起的 details；和 e2e-platform.mjs 的 openGroups() 同一写法，
+ * 改版前按项目分组的 details.tgrp 也一样点得开。只是辅助函数，不改任何判定。
+ */
 async function openGroups(page) {
-  if (!(await page.locator('#w-todos details.tgrp:not([open])').count())) return;
-  await page.click('#w-todo-all', { timeout: WAIT });
-  await page.waitForFunction(() => ![...document.querySelectorAll('#w-todos details.tgrp')].some((d) => !d.open), null, { timeout: WAIT });
+  const closed = page.locator('#w-todos details:not([open]) > summary');
+  for (let i = await closed.count(); i > 0; i--) await closed.first().click({ timeout: WAIT });
+  await page.waitForFunction(() => ![...document.querySelectorAll('#w-todos details')].some((d) => !d.open), null, { timeout: WAIT });
 }
 const todayOf = (page) => page.evaluate(() => { const m = /今天已回\s*(\d+)\s*\/\s*(\d+)/.exec(document.body.innerText); return m ? [Number(m[1]), Number(m[2])] : null; });
 const item = (page, author) => page.locator('#list .item', { has: page.locator('.who a', { hasText: author }) });
@@ -451,12 +455,45 @@ try {
           // 每个菜单项的中心点上真的是它自己（没被别的东西盖住）
           const hit = (a) => { const b = a.getBoundingClientRect(); if (b.width === 0 || b.bottom <= 0 || b.top >= vh || b.left >= innerWidth || b.right <= 0) return false; const x = Math.min(Math.max(b.left + b.width / 2, 1), innerWidth - 1), y = b.top + b.height / 2; const e = document.elementFromPoint(x, y); return !!e && (e === a || a.contains(e)); };
           const l1 = [...document.querySelectorAll('nav.nav1 a[data-p]')], l2 = [...document.querySelectorAll(sub + ' a[data-s]')];
-          return { vh, scrollY: Math.round(scrollY), max: document.documentElement.scrollHeight - vh, n1: r(n1), s2: r(s2), hit1: l1.filter(hit).length, n1All: l1.length, hit2: l2.filter(hit).length, n2All: l2.length };
+          // 375 宽一级菜单（改版批 A）：只有一行；当前页那一项完整看得见；放不下时横滑、右边缘有渐隐提示；品牌名和"公司总览 / 登出"收进"···"
+          const cur = l1.find((a) => a.getAttribute('aria-current') === 'page');
+          const nb = n1 ? n1.getBoundingClientRect() : null, cb = cur ? cur.getBoundingClientRect() : null;
+          const scroller = [n1, ...(n1 ? n1.querySelectorAll('*') : [])].find((x) => x && x.scrollWidth > x.clientWidth + 1) || null;
+          const fade = (() => { // 渐隐提示：菜单本身或它的祖先（到 #top 为止）有 mask-image，或者菜单的 ::before / ::after 是渐变
+            for (let x = scroller || n1; x && x !== document.body; x = x.parentElement) {
+              const st = getComputedStyle(x); if ([st.maskImage, st.webkitMaskImage].some((v) => v && v !== 'none')) return 'mask';
+              for (const ps of ['::before', '::after']) { const q = getComputedStyle(x, ps); if (q.content !== 'none' && /gradient/.test(q.backgroundImage)) return ps; }
+              if (x.id === 'top') break;
+            }
+            return '';
+          })();
+          const top = document.getElementById('top');
+          const shownEl = (e) => !!e.getClientRects().length && getComputedStyle(e).visibility !== 'hidden';
+          const loose = top ? [...top.querySelectorAll('*')].filter((e) => /^(公司总览|公司|登出)$/.test(e.textContent.trim()) && ![...e.children].length && shownEl(e)).map((e) => e.textContent.trim()) : null;
+          const more = !top ? null : ([top.querySelector('#more-menu > summary')].filter((e) => e && shownEl(e))[0] || [...top.querySelectorAll('summary, button, a')].find((e) => (e.getAttribute('aria-label') === '更多' || /^(···|…|\.\.\.)$/.test(e.textContent.trim())) && shownEl(e)) || null);
+          const moreBox = more ? (more.closest('details') || more.parentElement) : null;
+          const brand = top ? top.querySelector('.brand') : null;
+          const m1 = {
+            rows: new Set(l1.filter((a) => a.getClientRects().length).map((a) => Math.round(a.getBoundingClientRect().top))).size,
+            cur: cur ? (cur.dataset.proj || cur.dataset.p) : null,
+            curIn: !!cb && !!nb && cb.left >= Math.max(0, nb.left) - 1 && cb.right <= Math.min(innerWidth, nb.right) + 1 && hit(cur),
+            overflow: !!scroller, fade,
+            brandHidden: !brand || !shownEl(brand),
+            loose, more: !!more, moreHas: !!moreBox && /公司/.test(moreBox.textContent) && /登出/.test(moreBox.textContent),
+          };
+          return { vh, scrollY: Math.round(scrollY), max: document.documentElement.scrollHeight - vh, n1: r(n1), s2: r(s2), hit1: l1.filter(hit).length, n1All: l1.length, hit2: l2.filter(hit).length, n2All: l2.length, m1 };
         }, P.sub);
         check(`${tag}：已经滚到页面最底部（先确认到了要检查的状态）`, st.scrollY > 50 && st.scrollY >= st.max - 2, { scrollY: st.scrollY, max: st.max });
         check(`${tag}：滚到底后一级菜单还在屏幕顶部`, !!st.n1 && st.n1.top >= 0 && st.n1.top < 80 && st.n1.bottom <= st.vh, st.n1);
         check(`${tag}：滚到底后二级菜单还在屏幕顶部（紧挨一级菜单下面）`, !!st.s2 && st.s2.top >= 0 && st.s2.top < 160 && st.s2.bottom <= st.vh, st.s2);
-        check(`${tag}：一级菜单每一项都看得到、没被挡住（能点）`, st.n1All >= 3 && st.hit1 === st.n1All, { hit: st.hit1, all: st.n1All });
+        if (width === 375) {
+          // 按新口径改（改版批 A，2026-11-04；已批准原型"手机上一级菜单一行横滑"，属 Amos"改吧"同意的口径变化）。
+          // 改前："一级菜单每一项都看得到、没被挡住（能点）"（375 宽也要求全部项目同时在屏幕里）
+          const m1 = st.m1;
+          check(`${tag}：375 宽一级菜单只有一行，当前页那一项（${m1.cur}）完整看得见、没被挡住`, st.n1All >= 3 && m1.rows === 1 && !!m1.cur && m1.curIn, m1);
+          check(`${tag}：375 宽一级菜单放不下时可以横滑、右边缘有渐隐提示；放得下时每一项都看得到（能点）`, m1.overflow ? !!m1.fade : st.hit1 === st.n1All, { overflow: m1.overflow, fade: m1.fade, hit: st.hit1, all: st.n1All });
+          check(`${tag}：375 宽品牌名和"公司总览 / 登出"收进"···"（顶栏上不单独占位置，"···"里有这两项）`, m1.brandHidden && Array.isArray(m1.loose) && m1.loose.length === 0 && m1.more && m1.moreHas, m1);
+        } else check(`${tag}：一级菜单每一项都看得到、没被挡住（能点）`, st.n1All >= 3 && st.hit1 === st.n1All, { hit: st.hit1, all: st.n1All });
         check(`${tag}：二级菜单至少有一项看得到、没被挡住（手机上可以横向滑）`, st.n2All > 0 && st.hit2 > 0, { hit: st.hit2, all: st.n2All });
         if (width === 375) check(`${tag}：手机上两层菜单加起来不超过屏幕高度的 25%（滚到底时两层都在屏幕里）`, !!st.s2 && !!st.n1 && st.n1.top >= 0 && st.s2.top >= 0 && st.s2.bottom > 0 && st.s2.bottom <= st.vh * 0.25, { menusBottom: st.s2?.bottom, limit: st.vh * 0.25 });
         // 在底部点二级菜单：不先滚回去，就在当前屏幕上它的位置点（手机上二级菜单可以横向滑，只横向滑它自己）；跳到模块，模块顶端不被固定的菜单挡住
@@ -472,7 +509,11 @@ try {
         // 再滚到底，点一级菜单：跳到另一页
         await page.evaluate(() => window.scrollTo(0, document.documentElement.scrollHeight));
         await page.waitForTimeout(200);
-        const b1 = await page.locator(P.p1.nav === P.p1.page ? `nav.nav1 a[data-p="${P.p1.nav}"]` : `nav.nav1 a[data-proj="${P.p1.nav}"]`).boundingBox();
+        const l1 = page.locator(P.p1.nav === P.p1.page ? `nav.nav1 a[data-p="${P.p1.nav}"]` : `nav.nav1 a[data-proj="${P.p1.nav}"]`);
+        // 手机上一级菜单可以横滑（改版批 A）：点之前先把这一项横滑进可见范围（模拟用户横滑，只动菜单自己的 scrollLeft），点了以后的判定不变
+        await l1.evaluate((a) => { for (let x = a.parentElement; x && x.id !== 'top'; x = x.parentElement) if (x.scrollWidth > x.clientWidth + 1) { const xb = x.getBoundingClientRect(), ab = a.getBoundingClientRect(); x.scrollLeft += ab.left - xb.left - 8; } }).catch(() => {});
+        await page.waitForTimeout(100);
+        const b1 = await l1.boundingBox();
         const in1 = !!b1 && b1.y >= 0 && b1.y + b1.height <= height;
         if (in1) await page.mouse.click(b1.x + b1.width / 2, b1.y + b1.height / 2);
         const ok = in1 && (await waitFor(page, `#v-${P.p1.page}`));
