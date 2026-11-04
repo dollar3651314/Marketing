@@ -22,6 +22,10 @@
  *   填数字：待办里的表单 .form，输入框用 <label> 包住（标签文字 X 关注、Threads 关注、名单人数），按钮"保存"
  *   项目模块 #f-next（#f-todos）、#f-guide（#g-steps .step、勾选框）、#f-live、#f-card、#f-pack、#f-match（#copy-match、#copy-msg）、#f-tools、#f-handoff
  *   清单页的元素（#list、#f-prod…）照旧，在 #v-tools 里
+ *   改版批 B（2026-11-04，第 11 段；测试会话先写，研发不改断言）项目页 #v-project 的 8 个模块：每个是 .card.mod，看得见的子元素依次是 .mh（h2）→ .lead（.dot.red/.amber/.ok/.gray，结论由数据算）
+ *     → 主内容 → （有说明的）details.more 默认收起；f-next 的说明必须进 details.more；折叠外没有 >60 字的 p / .hint；
+ *     #f-todos 每条：有链接 / 要填数字的正好一个主按钮（.btn.primary，地址 = 链接），没有链接的不给主按钮、给正好一个次动作（.btn，不是打勾 .tick）；
+ *     第一次就读取失败：#f-next 和它的 .lead 写"暂时读不到"，整页不出现"没事要做"；#f-pack / #f-match 并排时等高且底部空白 ≤48px，否则上下排。量法在 scripts/e2e-look.mjs。
  * 时间：页面时钟用 Playwright page.clock 固定在"现在"，拨时钟只拨浏览器（C106）；服务端的"现在"是真实时间，样例的截止时间都按真实时间算。
  * 每段单独 try：一段没做出来不影响别的段报结果；等待都有短超时，等不到就照实报"实际值"。任何一条不符就以非 0 退出。
  */
@@ -29,6 +33,7 @@ import { mkdirSync } from 'node:fs';
 import path from 'node:path';
 import { chromium } from 'playwright';
 import { startServer, PASS, checker } from './e2e-server.mjs';
+import * as LOOK from './e2e-look.mjs';
 
 const shotsAt = process.argv.indexOf('--shots');
 const SHOTS = shotsAt > 0 ? path.resolve(process.argv[shotsAt + 1]) : '';
@@ -38,8 +43,9 @@ const WAIT = 4000;
 /**
  * 改版批 B（公共工具页）开关：批 A 时是 false——"公共工具子菜单顺序 == 页面顺序"照跑、照实打印，但不计失败（输出里标"批 B 修"）；
  * 批 B 的 PR 里改成 true（同一个 PR 写明），从此不符就红。只管这一条，别的断言不看它。
+ * 2026-11-04 批 B 测试会话（分支 claude/qa-platform-redesign-b）改成 true：公共工具顺序那条从此计失败。
  */
-const REDESIGN_B = false;
+const REDESIGN_B = true;
 
 const srv = await startServer({ name: 'e2e-platform' });
 const BASE = srv.BASE;
@@ -916,6 +922,119 @@ try {
       await p.context().close();
     });
   }
+
+  // ---------- 11. 改版批 B：项目页（2026-11-04，测试会话先写，研发不改这里的断言） ----------
+  // 依据：批 A 工作台的写法（项目页没有单独原型，按同一套模块固定结构：标题行 → 一句话结论 → 主内容 → 底部折叠说明）；主会话给的批 B 口径：
+  //   每个模块一句话结论（由数据算），说明默认折叠；每条待办一个主按钮（Amos 的界面原则 3）——有链接就给主按钮，没有链接就给一个明确的次动作；
+  //   第一次就读取失败时项目页不能写"现在没事要做"，要写"暂时读不到"（和工作台一致）；并排的"本周帖子 / 焦点战"要么等高（不留白），要么改成上下排。
+  //   外加：字号阶梯、不横向滚动、底部空白 ≤ 160px、深色对比度 ≥ 4.5。公共工具页的批 B 断言在 scripts/e2e-tools.mjs 的 J 段。
+  // 批 A 走查发现"审《阶段计划》并过关卡 A"没有主按钮：查下来是样例数据（上面的 T.prac）没有 link、没有正文，而 todoLi() 对"没有 link / form / 正文"的待办不出任何按钮。
+  //   真实数据由 agents 工具/company-report.mjs parseTodo() 生成，每条都带 link（"在哪里"有网址就是"打开"，否则是待办文件本身"看待办"+ 正文），
+  //   所以线上那条应当有主按钮；渲染层仍要兜底——这里重推一条"没有链接"的和一条"有链接"的。
+  const PB = [
+    { id: 'PB1', type: 'confirm', text: T.prac, due: now + 40 * H },
+    { id: 'PB2', type: 'confirm', text: 'Practical 批B：带链接的那件', link: GH + '项目/Practical/阶段计划.md', link_text: '看阶段计划' },
+  ];
+  {
+    const r = await srv.ingest('agents', [{ kind: 'todo', key: 'Practical', source_at: Date.now(), payload: { product: 'Practical', items: PB } }]);
+    check('批 B：重推 Practical 的 2 条待办（一条没链接、一条有链接）收得下', r.status === 200, r);
+  }
+  const F8 = ['f-next', 'f-guide', 'f-live', 'f-card', 'f-pack', 'f-match', 'f-tools', 'f-handoff'];
+  /** 每条待办的按钮：主按钮（.btn.primary 或底色 = --teal）几个、次动作（.go 里不是主按钮的 a.btn / button.btn，不算打勾）几个、主按钮的地址 */
+  const todoBtns = (p, sel) => p.evaluate((s) => {
+    const probe = document.createElement('div'); probe.style.background = 'var(--teal)'; document.body.appendChild(probe);
+    const teal = getComputedStyle(probe).backgroundColor; probe.remove();
+    return [...document.querySelectorAll(s + ' li.todo')].map((li) => {
+      const ctl = [...li.querySelectorAll('a, button')].filter((e) => e.getClientRects().length && !e.matches('.tick') && !e.closest('.detail, .form'));
+      const prim = ctl.filter((e) => e.matches('.btn.primary') || getComputedStyle(e).backgroundColor === teal);
+      const sec = ctl.filter((e) => !prim.includes(e) && e.matches('.btn') && !e.disabled && e.getAttribute('aria-disabled') !== 'true' && e.textContent.trim().length >= 2);
+      return { t: (li.querySelector('.ttl')?.textContent ?? li.innerText).trim().slice(0, 24), prim: prim.length, href: prim[0]?.getAttribute('href') ?? null, sec: sec.map((e) => e.textContent.trim()) };
+    });
+  }, sel);
+  for (const [width, height] of [[1280, 900], [375, 740]]) {
+    for (const colorScheme of ['light', 'dark']) {
+      const tag = `批B 项目页 ${width} 宽 · ${colorScheme === 'dark' ? '深色' : '浅色'}`;
+      await section(tag, async () => {
+        const p = await open({ width, height, colorScheme });
+        await login(p, '/#/forecast');
+        await waitFor(p, '#f-todos li.todo');
+        await p.waitForTimeout(500);
+        // ① 模块固定结构 + 说明默认折叠
+        const S = await LOOK.modShape(p, F8);
+        for (const m of S) {
+          if (m.why) { check(`${tag}：${m.id} 模块在`, false, m.why); continue; }
+          check(`${tag}：${m.id} 是卡片（.card.mod），第一块是标题行 .mh（有 h2），第二块是一句话结论 .lead（前面一个红/橙/绿/灰圆点），后面至少一块主内容`, m.card && m.headOk && m.leadOk && !!m.dotCls && m.mains >= 1, { card: m.card, headOk: m.headOk, leadOk: m.leadOk, dot: m.dotCls, mains: m.mains, lead: m.lead.slice(0, 40) });
+          check(`${tag}：${m.id} 的一句话结论是结论（带数字或"没有 / 还没"之类、不是"正在读取"、6～80 字）`, m.leadOk && LOOK.isConclusion(m.lead), m.lead.slice(0, 90));
+          if (m.id === 'f-next') check(`${tag}：f-next 的说明（颜色、按钮、打勾是什么意思）收进最后一块 details.more`, m.lastIsMore, m);
+          else check(`${tag}：${m.id} 如果有 details.more，它在最后一块`, m.mores === 0 || m.lastIsMore, m);
+          check(`${tag}：${m.id} 的说明默认收起（details.more 没有 open）`, m.moreOpen === 0, m.moreOpen);
+          check(`${tag}：${m.id} 折叠外面没有超过 60 字的说明文字（p / .hint；长说明进 details.more）`, m.long.length === 0, m.long);
+        }
+        // ② 结论由数据算
+        const lead = (id) => p.evaluate((i) => document.querySelector(`#${i} .lead`)?.innerText.replace(/\s+/g, ' ').trim() ?? '', id);
+        const L = await todos(p, '#f-todos');
+        const nOver = L.filter((x) => x.cls === 'over').length;
+        const ln = await lead('f-next');
+        check(`${tag}：下一步做什么的结论按待办算：${nOver} 件已超时 → 写出 ${nOver}、圆点是红的`, nOver > 0 && new RegExp(`(^|\\D)${nOver}\\s*件`).test(ln) && (await p.locator('#f-next .lead .dot.red').count()) === 1, { nOver, lead: ln });
+        const lg = await lead('f-guide');
+        check(`${tag}：操作指引的结论按进度算（5 步都勾了 → "都做完"或"5 / 5"）`, /都做完|5\s*\/\s*5/.test(lg), lg);
+        const lp = await lead('f-pack'), lm = await lead('f-match');
+        check(`${tag}：本周帖子的结论写 ${PACK.posts.length} 条、焦点战的结论写 ${PACK.matches.length} 场`, new RegExp(`(^|\\D)${PACK.posts.length}\\s*条`).test(lp) && new RegExp(`(^|\\D)${PACK.matches.length}\\s*场`).test(lm), [lp, lm]);
+        // ③ 每条待办一个主按钮：有链接 / 要填数字的正好一个主按钮（要填数字的那条第 5 段已经填过、不在了，由通用那条管）；没有链接的不给主按钮、给一个明确的次动作
+        const B = await todoBtns(p, '#f-todos');
+        check(`${tag}：forecast 每条待办最多一个主按钮；没有主按钮的正好一个次动作（不算打勾）`, B.length > 0 && B.every((b) => b.prim === 1 || (b.prim === 0 && b.sec.length === 1)), B);
+        const withLink = B.find((b) => b.t.startsWith(T.none2.slice(0, 8)));
+        check(`${tag}：有链接的那条（${T.none2}）主按钮就是它的链接`, !!withLink && withLink.prim === 1 && withLink.href === 'https://www.quickcome.online', withLink);
+        const noLink = B.find((b) => b.t.startsWith(T.over.slice(0, 8)));
+        check(`${tag}：没有链接的那条（${T.over}）：不给主按钮，给正好一个明确的次动作`, !!noLink && noLink.prim === 0 && noLink.sec.length === 1, noLink);
+        // ④ 并排的"本周帖子 / 焦点战"：要么上下排，要么等高且两块底部都不留大块空白（≤ 48px）
+        const pm = await p.evaluate(() => {
+          const g = (id) => { const e = document.getElementById(id); const r = e.getBoundingClientRect(); const kids = [...e.children].filter((c) => c.getClientRects().length);
+            const inner = kids.length ? Math.max(...kids.map((c) => c.getBoundingClientRect().bottom)) : r.top; return { top: Math.round(r.top + scrollY), bottom: Math.round(r.bottom + scrollY), h: Math.round(r.height), gap: Math.round(r.bottom - inner) }; };
+          return { pack: g('f-pack'), match: g('f-match') };
+        });
+        const side = Math.abs(pm.pack.top - pm.match.top) <= 4;
+        const okPM = side ? Math.abs(pm.pack.h - pm.match.h) <= 4 && pm.pack.gap <= 48 && pm.match.gap <= 48 : pm.match.top >= pm.pack.bottom;
+        check(`${tag}："本周帖子 / 焦点战"${side ? '并排：两块等高（差 ≤ 4px）、底部空白都 ≤ 48px' : '上下排：焦点战在本周帖子下面'}`, okPM, { side, ...pm });
+        // ⑤ 字号、横向滚动、底部空白、深色对比度
+        const fo = await LOOK.fontOutliers(p, ['#v-project']);
+        check(`${tag}：项目页看得见的文字字号只在 {${FS.join(',')}}±0.5 里（控件可以 ${FS_CTL}）`, fo.length === 0, fo);
+        check(`${tag}：页面没有横向滚动`, await noHScroll(p), await p.evaluate(() => [document.documentElement.scrollWidth, innerWidth]));
+        const t = await LOOK.tailOf(p, '#v-project');
+        check(`${tag}：最后一个模块底边到页面底 ${t.tail}px ≤ ${TAIL_MAX}px`, t.tail <= TAIL_MAX, t);
+        if (colorScheme === 'dark') {
+          const lc = await LOOK.lowContrast(p, ['#v-project']);
+          check(`${tag}：深色模式文字对比度：正文 ≥ ${LOOK.CONTRAST_MIN}:1（大字 ≥ 3:1，禁用的不算）`, lc.bad.length === 0, lc);
+        }
+        if (SHOTS) { mkdirSync(SHOTS, { recursive: true }); await p.screenshot({ path: path.join(SHOTS, `forecast-B-${width}-${colorScheme}.png`), fullPage: true }); }
+        // ⑥ Practical 项目页：没链接的"审《阶段计划》并过关卡 A"给一个明确的次动作；有链接的那条主按钮就是链接
+        await p.goto(BASE + '/#/Practical');
+        await waitFor(p, '#f-todos li.todo');
+        await p.waitForTimeout(300);
+        const PBb = await todoBtns(p, '#f-todos');
+        const prac = PBb.find((b) => b.t.startsWith(T.prac.slice(0, 10)));
+        check(`${tag}：Practical "${T.prac}"（没有链接）：不给主按钮，给正好一个明确的次动作`, !!prac && prac.prim === 0 && prac.sec.length === 1, prac ?? PBb);
+        const pb2 = PBb.find((b) => b.t.startsWith('Practical 批B'));
+        check(`${tag}：Practical 带链接的那条：正好一个主按钮，地址就是它的链接`, !!pb2 && pb2.prim === 1 && pb2.href === PB[1].link, pb2 ?? PBb);
+        await p.context().close();
+      });
+    }
+  }
+  // ⑦ 第一次就读取失败：项目页写"暂时读不到"、不写"现在没事要做"（工作台已经这样，一起守）
+  await section('批B 第一次就读取失败', async () => {
+    for (const [at, pageSel, mod] of [['/#/forecast', '#v-project', '#f-next'], ['/#/work', '#v-work', '#w-todo']]) {
+      const p = await open();
+      await p.route('**/api/company', (rt) => rt.fulfill({ status: 500, contentType: 'application/json', body: '{"error":"样例：服务暂时出错"}' }));
+      await login(p, at);
+      const shown = await waitFor(p, pageSel);
+      await p.waitForTimeout(1200);
+      const all = (await txt(p, pageSel)) ?? '';
+      const m = (await txt(p, mod)) ?? '';
+      const ld = await p.evaluate((s) => document.querySelector(s + ' .lead')?.innerText.trim() ?? '', mod);
+      check(`批B 第一次就读取失败 ${at}：页面显示，${mod} 和它的结论写"暂时读不到"，整页没有"没事要做"`, shown && /暂时读不到/.test(m) && /暂时读不到/.test(ld) && !/没事要做/.test(all), { shown, lead: ld, mod: m.slice(0, 120), hit: (all.match(/.{0,12}没事要做.{0,8}/) || [''])[0] });
+      await p.context().close();
+    }
+  });
 
   check('全程没有脚本错误', errors.length === 0, errors.slice(0, 5));
 } catch (e) {
