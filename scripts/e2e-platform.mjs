@@ -581,19 +581,29 @@ try {
       check(`${width} 宽：剪贴板里是 C-1 一整条原文（${want.length} 字）`, clip === want, { clipLen: clip.length, wantLen: want.length, head: clip.slice(0, 20) });
       await p.waitForTimeout(2000);
       check(`${width} 宽：2 秒后按钮变回"复制"`, (await btns.first().innerText()).trim() === '复制', await btns.first().innerText());
-      // ④ 不横向滚动、菜单不超出屏幕
+      // ④ 不横向滚动；子菜单一行、可以横滑，选中项完整看得见
+      // 口径变化（改版批 A，2026-11-04）：原来是"子菜单自己不横滑、7 项全在屏幕里（不用横滑）"；已批准的原型要求手机上子菜单一行横滑，
+      // 390 宽 7 项一行放不下（原型实测 scrollWidth 624px），主会话按 Amos"改吧"同意的口径改成：一行、可以横滑、当前选中项完整在可见范围里
+      // 且不在右侧渐隐区（原型 .sub .in 的 mask 是右边 12% 渐隐；已横滑到最右时没有渐隐）。.en-pre 不横滑、两层菜单 ≤25% 照旧。
+      await p.waitForTimeout(400); // 等子菜单把选中项平滑横滚进来
       const fit = await p.evaluate(() => {
         const nav = document.querySelector('#sub-work .in');
-        const as = [...nav.querySelectorAll('a')];
+        const as = [...nav.querySelectorAll('a')].filter((a) => a.getClientRects().length);
         const bars = document.getElementById('bars').getBoundingClientRect().height;
+        const sel = nav.querySelector('a[data-s][aria-current="true"]');
+        const b = nav.getBoundingClientRect(), r = sel ? sel.getBoundingClientRect() : null;
+        const atEnd = nav.scrollLeft + nav.clientWidth >= nav.scrollWidth - 2;
+        const fadeAt = atEnd ? b.left + nav.clientWidth : b.left + nav.clientWidth * 0.88; // 渐隐区从这里开始
         return {
-          nav: nav.scrollWidth <= nav.clientWidth + 1,                                    // 菜单自己不横滑
-          allIn: as.every((a) => a.getBoundingClientRect().right <= innerWidth + 0.5),     // 7 项都在屏幕里，不用滑才看得到
+          rows: new Set(as.map((a) => Math.round(a.getBoundingClientRect().top))).size,     // 子菜单只有一行
+          sel: sel ? sel.dataset.s : null,
+          selIn: !!r && r.left >= b.left - 1 && r.right <= fadeAt + 1,                       // 选中项完整看得见、不在右侧渐隐区
+          selBox: r && { left: Math.round(r.left), right: Math.round(r.right), boxLeft: Math.round(b.left), fadeAt: Math.round(fadeAt), atEnd },
           pre: [...document.querySelectorAll('#w-english .en-pre')].every((e) => e.scrollWidth <= e.clientWidth + 1),
           barsPct: +(bars / innerHeight * 100).toFixed(1),                                 // 两层菜单 ≤ 屏幕高度 25%（批 2 审查 R9）
         };
       });
-      check(`${width} 宽：不横向滚动；7 项全在屏幕里（不用横滑）；两层菜单 ${fit.barsPct}% ≤ 25%（T-4 / R9 同一个口径）`, (await noHScroll(p)) && fit.nav && fit.allIn && fit.pre && fit.barsPct <= 25, { h: await noHScroll(p), ...fit });
+      check(`${width} 宽：不横向滚动；子菜单一行（可以横滑）、选中的 w-english 完整看得见且不在右侧渐隐区；两层菜单 ${fit.barsPct}% ≤ 25%（T-4 / R9 同一个口径）`, (await noHScroll(p)) && fit.rows === 1 && fit.sel === 'w-english' && fit.selIn && fit.pre && fit.barsPct <= 25, { h: await noHScroll(p), ...fit });
       // 截图（--shots 时才存）
       if (SHOTS) { mkdirSync(SHOTS, { recursive: true }); await p.locator('#w-english details.en-fold').first().evaluate((d) => { d.open = true; }); await p.waitForTimeout(200); await p.screenshot({ path: path.join(SHOTS, `work-english-${width}.png`), fullPage: true }); }
       await p.context().close();
@@ -702,8 +712,11 @@ try {
   // 放宽：按钮、输入框、菜单链接（nav 里的 a）、chip、summary 这类"能点、能填"的控件可以是 14——原型里 .btn、.nav1 a、.sub a 都是 14px，
   // 控件文字比正文小一号是原型的既定写法；其余（正文、说明、标签、数字）一律只能落在 FS 里
   const FS_CTL = 14;
+  // 只限特定元素的例外（主会话 2026-11-04 定，属原型口径内的细化，汇报 Amos 时写明、他可推翻）：品牌名 .brand 16px（是标志，不是正文层级）；
+  // "最该做的事"大标题 #hero h2 28px（手机 22，已在阶梯里）。原型里其余不合阶梯的（"还没报" 20px、.proj .wk / .prompt .t / .hero .when / .checks li / .donelist li 的 14px）不放宽，研发按阶梯改
+  const FS_ONLY = [['.brand', 16], ['#hero h2', 28]];
   /** 页面上看得见的文字的字号：返回不在阶梯里的元素（选择器、字号、文字开头），最多 20 个 */
-  const fontOutliers = (page, roots) => page.evaluate(({ roots, FS, FS_CTL }) => {
+  const fontOutliers = (page, roots) => page.evaluate(({ roots, FS, FS_CTL, FS_ONLY }) => {
     const out = [];
     for (const root of roots.map((s) => document.querySelector(s)).filter(Boolean)) {
       for (const e of [root, ...root.querySelectorAll('*')]) {
@@ -715,12 +728,13 @@ try {
         const fs = parseFloat(st.fontSize);
         if (FS.some((v) => Math.abs(v - fs) <= 0.5)) continue;
         if (Math.abs(fs - FS_CTL) <= 0.5 && e.closest('button, input, select, textarea, .btn, .chip, nav a, summary')) continue;
+        if (FS_ONLY.some(([sel, v]) => Math.abs(fs - v) <= 0.5 && e.closest(sel))) continue;
         const cls = typeof e.className === 'string' && e.className.trim() ? '.' + e.className.trim().split(/\s+/).join('.') : '';
         out.push(`${fs}px ${e.tagName.toLowerCase()}${e.id ? '#' + e.id : ''}${cls}「${own.slice(0, 12)}」`);
       }
     }
     return [...new Set(out)].slice(0, 20);
-  }, { roots, FS, FS_CTL });
+  }, { roots, FS, FS_CTL, FS_ONLY });
   /** WCAG 相对亮度对比度（两种颜色，rgb()/rgba() 字符串；透明的按 body 底色算） */
   const contrastOf = (a, b) => {
     const lum = (c) => { const m = c.match(/[\d.]+/g).map(Number); const f = (v) => { v /= 255; return v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4; }; return 0.2126 * f(m[0]) + 0.7152 * f(m[1]) + 0.0722 * f(m[2]); };
@@ -791,7 +805,7 @@ try {
         check(`${tag}："做完的"默认收起（#w-done 没有 open）`, more.done === false, more.done);
         // ③ 字号只用阶梯里的几级（控件放宽到 14）
         const fo = await fontOutliers(p, ['#bars', '#v-work']);
-        check(`${tag}：顶栏、菜单、工作台里看得见的文字字号只在 {${FS.join(',')}}±0.5 里（按钮、输入框、菜单链接、chip、summary 可以是 ${FS_CTL}）`, fo.length === 0, fo);
+        check(`${tag}：顶栏、菜单、工作台里看得见的文字字号只在 {${FS.join(',')}}±0.5 里（按钮、输入框、菜单链接、chip、summary 可以是 ${FS_CTL}；只有 .brand 可以 16、#hero h2 可以 28）`, fo.length === 0, fo);
         // ④ 不横向滚动
         check(`${tag}：页面没有横向滚动`, await noHScroll(p), await p.evaluate(() => [document.documentElement.scrollWidth, innerWidth]));
         // ⑤ 最该做的事：和页面底色明显不同；深色模式另要一圈看得见的描边
