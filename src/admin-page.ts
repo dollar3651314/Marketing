@@ -11,11 +11,13 @@ import { MAX_PROJECT_PAGES, PLATFORM_CONFIG, PROJECT_PAGES_FALLBACK, PROJECT_SIT
  * 项目名单 2026-11-02 起**不写死**（Amos"项目也只有 forecast 一个，新项目哪儿去了"）：读 GET /api/company 的 projects 块算出来（规则和服务端同一份，
  * src/projects.ts projectPagesFrom），块还没推上来就用 CFG.PROJECT_PAGES_FALLBACK 兜底。项目页只有一套 DOM（#v-project、模块 id 还是 f-*），切项目时换数据不换结构；
  * 登录后默认工作台（P-9），/queue 打开直接进清单。没登录显示密码框；手机、电脑都能用。
- * 三段脚本：① 外框 + 清单、用量和限额、插件下载（这三块的脚本和接口没改，只换外框）；② "公司总览"（原运营仪表盘"公司"页，整段 try/catch）；
+ * 三段脚本：① 外框 + 清单、用量和限额、插件下载（接口没改；批 B 只加了一句话结论、筛选折叠这些渲染）；② "公司总览"（原运营仪表盘"公司"页，整段 try/catch）；
  * ③ 工作台、项目页（整段 try/catch，出错只影响这两页）。每个按钮都有处理中 / 成功 / 失败的反馈（C135）；删除先在页面上确认（删了不能恢复）。
  * 工作台"全部待办"：2026-11-02 起按项目分组（Amos"31 个待办混在一起 我要疯掉了"）；2026-11-04 界面改版·批 A 起改成按时间段分组
  * （已超时 / 24 小时内到期 / 之后到期 / 没定截止时间，最后一组默认收起）+ 上面按项目筛选（原型 prototype-work.html，Amos 同意换口径）。
  * 只改渲染，todo 块的数据结构（src/company.ts SCHEMA）没动。批 A 同时换了全站设计变量（:root）、外框菜单、工作台 7 个模块的结构。
+ * 界面改版·批 B（2026-11-04，原型 prototype-tools.html）：项目页 8 个模块、公共工具 8 块也改成同样的卡片模块（标题行 → 一句话结论 → 主内容 → 默认收起的折叠说明）；
+ * 公共工具子菜单顺序 = 页面顺序，"语音对话实测"并进"语音生成"的折叠；清单、用量、插件下载的接口和元素 id 都没改，只换排版。
  * 注意：整页是一个模板字符串，页面脚本里不能用反引号和 ${（只有插件版本号和 src/projects.ts 的对照表是在这里插进去的）。
  */
 export const ADMIN_PAGE = `<!doctype html>
@@ -332,6 +334,7 @@ th{font-size:12px;color:var(--muted);font-weight:600}td.n{text-align:right}
 }
 /* ===== 界面改版·批 B（2026-11-04，原型 prototype-tools.html；Amos"好很多了，改吧"）：项目页、公共工具也用批 A 的卡片模块
    （标题行 header.mh → .lead → 主内容 → 最后一块 details.more，样式就是上面 :is(#v-work,#v-project,#v-tools) 那几条） ===== */
+#v-project details.grp{display:block;padding:0;background:none;border-bottom:0;font-size:inherit;font-weight:400;color:inherit}
 #v-project .todos>.todo:first-child,#t-queue #list>.item:first-child{border-top:0}
 #v-project .mbody.flush,#v-tools .mbody.flush{padding:var(--s3) 0 0}
 #v-project .live-warn{padding:var(--s3) var(--s5) 0;border:0}
@@ -367,6 +370,7 @@ th{font-size:12px;color:var(--muted);font-weight:600}td.n{text-align:right}
 #t-queue .draft{background:var(--surface-2);border:1px solid var(--line);border-left:3px solid var(--teal)}
 #t-queue .draft .k{display:block;font-size:var(--fs-aux);font-weight:700;color:var(--teal-ink);white-space:normal}
 #t-queue .why{background:var(--surface-2)}
+#t-queue .tag.prod{background:var(--gray-soft);color:var(--ink-2);border-color:transparent}
 #t-queue .acts .btn.text{min-height:32px;font-size:13px}#t-queue .acts .btn.text.danger{color:var(--err)}
 #t-queue .acts .confirm{flex-direction:column;align-items:stretch;padding:var(--s2)}
 #v-tools .tablewrap.boxed{border:1px solid var(--line);border-radius:12px}
@@ -390,7 +394,7 @@ th{font-size:12px;color:var(--muted);font-weight:600}td.n{text-align:right}
   #v-project .live-warn{padding:var(--s3) var(--s4) 0}#v-project #f-live-body .act-item,#v-project .hand li{padding-left:var(--s4);padding-right:var(--s4)}
   #v-project .donelist{padding:0 var(--s4) var(--s3)}#v-project .progress,#v-project .bar-row{padding-left:var(--s4);padding-right:var(--s4)}#v-project .step{padding:var(--s3) var(--s4)}
   #v-tools .toolbar{padding:var(--s3) var(--s4) 0}#v-tools .sum{padding:var(--s3) var(--s4) 0}#v-tools #t-queue .confirm#bulk-confirm,#v-tools #t-queue .toast#toast{margin:var(--s3) var(--s4) 0}
-  #t-queue .item{padding:var(--s4)}#t-queue .acts .btn.primary{flex-basis:100%}
+  #t-queue .item{padding:var(--s4)}#t-queue .acts .btn.primary{flex-basis:100%}#t-queue .acts .btn.text{flex:0 0 auto;padding:0 10px}
   #v-tools .mh .capline{width:100%}
   #v-tools .ext{grid-template-columns:minmax(0,1fr)}#v-tools .ext .btn{width:100%}
   #v-tools .row2{grid-template-columns:minmax(0,1fr)}
@@ -655,7 +659,7 @@ ${ASSETS_CSS}${TTS_CSS}${VOICE_CSS}${ENGLISH_CSS}
     <div class="tablewrap boxed"><table><thead><tr><th>这本账</th><th>今天已用</th><th>每天上限</th><th>还剩</th><th>什么时候清零（台湾时间）</th></tr></thead><tbody id="u-left"><tr><td colspan="5">正在读取…</td></tr></tbody></table></div>
     <!-- 每一行的"这个数靠不靠得住"：Workers AI 那一行写明是本环境记的账、Cloudflare 按整个账号算（src/usage.ts waiCaveat） -->
     <div id="u-left-notes" style="margin-top:var(--s3)"></div>
-    <div class="save-row" style="margin-top:var(--s2)"><button class="btn small" id="u-refresh" type="button">立即刷新</button><span class="hint">停在这一页时每 30 秒自动刷新</span></div>
+    <div class="save-row" style="margin-top:var(--s2)"><button class="btn small" id="u-refresh" type="button">立即刷新</button></div>
     <details class="grp box" id="u-caps"><summary>每个模型的用量和上限（要改上限点这里）</summary><div class="in">
       <div class="tablewrap boxed"><table><thead><tr><th>模型</th><th>今天请求</th><th>今天 token（入 / 出）</th><th>每天上限</th><th>用量</th><th>状态</th><th>下次重置（台湾时间）</th></tr></thead><tbody id="u-rows"></tbody></table></div>
       <div class="save-row"><button class="btn primary" id="u-save" type="button">保存上限</button><p class="msg" id="u-msg" role="status"></p></div>
@@ -1406,7 +1410,7 @@ function renderLive(now){const f=liveFeed(now);const A=PL.active||{items:[],ende
   setLead('w-live-lead',...liveLead(f,A,now));
   document.querySelectorAll('#w-live-grp [data-grp]').forEach((b)=>b.setAttribute('aria-pressed',String(b.dataset.grp===GRP)));
   const B=$('w-live-body');B.replaceChildren();$('w-live-grp').hidden=!A.items.length;
-  if(f.none)B.append(pe('p','empty',NOT_YET));else if(!A.items.length)B.append(pe('p','empty','团队现在没有在做的事。派完活后，岗位一开工这里就会出现。'));
+  if(!PL.active)B.append(pe('p','empty','暂时读不到团队进度。'));else if(f.none)B.append(pe('p','empty',NOT_YET));else if(!A.items.length)B.append(pe('p','empty','团队现在没有在做的事。派完活后，岗位一开工这里就会出现。'));
   else groups(A.items).forEach(([k,arr])=>{const g=pe('div','grp',k+' ');g.append(pe('span','pill p-mute',String(arr.length)));B.append(g);arr.forEach((x)=>B.append(actItem(x,now,false)));});
   $('recent-n').textContent=String(A.ended.length);const R=$('recent-body');R.replaceChildren(...A.ended.map((x)=>actItem(x,now,true)));if(!A.ended.length)R.append(pe('p','empty','7 天内没有结束的。'));
   const reds=A.items.filter((x)=>x.ci==='failure'&&!x.external);$('ci-alert').hidden=!reds.length;
@@ -1415,7 +1419,7 @@ function renderLive(now){const f=liveFeed(now);const A=PL.active||{items:[],ende
   const cp=curProj();$('f-live-stamp').textContent=cp?'只看 '+cp+' 的':'';
   fill('f-live-warn',f.warns);$('f-live-dot').className='live-dot '+f.cls;const fl=A.items.filter((x)=>x.project===cp),fe=A.ended.filter((x)=>x.project===cp);$('f-live-n').textContent=String(fl.filter((x)=>!x.external).length);
   { const L=liveLead(f,{items:fl,ended:fe},now);if(!f.none&&f.cls!=='off'&&PL.active&&!fl.filter((x)=>!x.external).length)L[1]=cp+' 现在没有在做的事。';setLead('f-live-lead',...L); }
-  const F=$('f-live-body');F.replaceChildren();if(f.none)F.append(pe('p','empty',NOT_YET));else if(!fl.length)F.append(pe('p','empty',cp+' 现在没有在做的事。'));
+  const F=$('f-live-body');F.replaceChildren();if(!PL.active)F.append(pe('p','empty','暂时读不到团队进度。'));else if(f.none)F.append(pe('p','empty',NOT_YET));else if(!fl.length)F.append(pe('p','empty',cp+' 现在没有在做的事。'));
   fl.slice().sort((a,b)=>b.at-a.at).forEach((x)=>F.append(actItem(x,now,false)));
   if(fe.length){const d=pe('details','grp recent');const sm=pe('summary',null,'最近结束 ');sm.append(pe('span','pill p-mute',String(fe.length)));d.append(sm);fe.forEach((x)=>d.append(actItem(x,now,true)));F.append(d);}}
 /** 团队在做什么：例如"3 件在做，其中 1 件 3 小时没动静。不用你处理，看看就好。" */
