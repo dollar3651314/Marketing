@@ -13,28 +13,33 @@
  *   ③ 今天还能跑几轮（实测台一天最多 3 轮，免得一次把额度烧光）。
  */
 export const VOICE_CSS = `
-.vc .box{border:1px solid var(--line);border-radius:10px;background:var(--surface);padding:12px;margin:10px 0}
-.vc .row{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin:8px 0}
-.vc label.pick{display:inline-flex;gap:6px;align-items:center;border:1px solid var(--line);border-radius:8px;padding:6px 10px;cursor:pointer}
+.vc .box{border:1px solid var(--line);border-radius:12px;background:var(--surface);padding:var(--s4);margin:var(--s3) 0}
+.vc .row{display:flex;flex-wrap:wrap;gap:var(--s2);align-items:center;margin:var(--s2) 0}
+.vc label.pick{display:inline-flex;gap:6px;align-items:center;border:1px solid var(--line);border-radius:var(--r-btn);padding:6px 12px;cursor:pointer;font-size:14px}
+.vc label.pick:has(input:checked){border-color:var(--teal);background:var(--teal-soft)}
 .vc label.pick input{margin:0}
-.vc .st{font-size:12px;color:var(--muted)}
+.vc .st{font-size:var(--fs-aux);color:var(--muted)}
 .vc .warn{color:var(--err);font-weight:700}
-.vc .cost{font-weight:700;margin:6px 0}
-.vc audio{width:100%;height:36px;margin-top:8px}
-.vc table{width:100%;border-collapse:collapse;margin:8px 0;font-size:13px}
-.vc th,.vc td{border:1px solid var(--line);padding:6px 8px;text-align:left;vertical-align:top}
-.vc th{background:var(--surface)}
-.vc .big{font-size:22px;font-weight:700}
-.vc .rec{background:#C0392B;color:#fff;border-color:#C0392B}
-.vc details{border:1px solid var(--line);border-radius:10px;padding:10px;margin:10px 0;background:var(--surface)}
-.vc details summary{cursor:pointer;font-weight:700}
+.vc .cost{font-weight:600;margin:var(--s2) 0}
+.vc audio{width:100%;height:36px;margin-top:var(--s2)}
+.vc table{width:100%;border-collapse:collapse;margin:var(--s2) 0;font-size:var(--fs-aux)}
+.vc th,.vc td{border:1px solid var(--line);padding:6px 8px;text-align:left;vertical-align:top;white-space:normal}
+.vc th{background:var(--surface-2)}
+.vc .big{font-size:var(--fs-num);font-weight:700;line-height:1.2;margin:0 0 var(--s2)}
+.vc .rec{background:var(--err-strong);color:#fff;border-color:var(--err-strong)}
+.vc details{border:1px solid var(--line);border-radius:12px;padding:var(--s3) var(--s4);margin:var(--s3) 0;background:var(--surface)}
+.vc details summary{cursor:pointer;font-weight:700;font-size:14px;color:var(--ink)}
 .vc ol{padding-left:20px}
-.vc .said{background:var(--surface);border-left:3px solid var(--line);padding:8px;margin:6px 0;border-radius:6px}
+.vc .said{background:var(--surface-2);border-left:3px solid var(--teal);padding:var(--s2) var(--s3);margin:var(--s2) 0;border-radius:6px;color:var(--ink)}
 `;
 
-/** 公共工具里的"语音对话实测"模块（id 和二级菜单 #/tools/voice 对应：t-voice） */
-export const VOICE_MOD = `<section class="mod vc" id="t-voice"><h2 class="mh">语音对话实测<span class="sp"></span><span class="hint">说一句 · 转文字 · AI 回 + 改写 · 读出来</span></h2>
-  <p class="lead">核一件事：<b>Practical 新方向那条实时语音对话链路，能不能跑在 Cloudflare Workers AI 的免费额度里，延迟能不能接受。</b>
+/**
+ * 公共工具里的"语音对话实测"（id 和地址 #/tools/voice 对应：t-voice）。
+ * 界面改版·批 B（2026-11-04）起不再单独一块：嵌在"语音生成"（src/tts-page.ts TTS_MOD）最下面的折叠 #tts-more 里，不占二级菜单；
+ * 里面不能再套 <section>（测试按"t-voice 到下一个 </section>"截这一段）。
+ */
+export const VOICE_MOD = `<section class="vc" id="t-voice"><h3>语音对话实测 <span class="st" style="font-weight:400">说一句 · 转文字 · AI 回 + 改写 · 读出来</span></h3>
+  <p>核一件事：<b>Practical 新方向那条实时语音对话链路，能不能跑在 Cloudflare Workers AI 的免费额度里，延迟能不能接受。</b>
   下面每跑一轮，都会把<b>每一步花了多少毫秒、多少 neurons</b> 摆出来。</p>
 
   <details id="vc-how"><summary>怎么用（点开看，4 步，不用输任何东西）</summary>

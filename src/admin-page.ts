@@ -1,6 +1,6 @@
 import { ASSETS_CSS, ASSETS_JS, ASSETS_MOD } from './assets-page';
 import { TTS_CSS, TTS_JS, TTS_MOD } from './tts-page';
-import { VOICE_CSS, VOICE_JS, VOICE_MOD } from './voice-page';
+import { VOICE_CSS, VOICE_JS } from './voice-page';
 import { ENGLISH_CSS, ENGLISH_JS, ENGLISH_MOD } from './english-page';
 import { EXTENSION_VERSION } from './extension-download';
 import { MAX_PROJECT_PAGES, PLATFORM_CONFIG, PROJECT_PAGES_FALLBACK, PROJECT_SITE } from './projects';
@@ -180,7 +180,6 @@ th{font-size:12px;color:var(--muted);font-weight:600}td.n{text-align:right}
 .plat .card{background:var(--surface);border:1px solid var(--line);border-radius:var(--r-card);box-shadow:var(--shadow);min-width:0;overflow:hidden}
 .plat .card>h2{font-size:var(--fs-mod);margin:0;padding:12px 16px;border-bottom:1px solid var(--line);display:flex;align-items:center;gap:8px;flex-wrap:wrap}
 .plat .card>h2 .sp{flex:1}.plat .stamp{font-size:var(--fs-aux);color:var(--muted);font-weight:400}
-#v-project .lead{margin:0;padding:10px 16px;font-size:var(--fs-aux);color:var(--muted);border-bottom:1px solid var(--line);background:var(--surface-2)}
 .plat .pd{padding:12px 16px}.plat .hint{font-size:12px}
 .plat .foot-note{padding:8px 16px;border-top:1px solid var(--line)}
 .plat .pill{display:inline-block;font-size:12px;border-radius:99px;padding:1px 8px;white-space:nowrap;line-height:1.6}
@@ -209,40 +208,40 @@ th{font-size:12px;color:var(--muted);font-weight:600}td.n{text-align:right}
 /* 项目标签一律中性灰（颜色只表示状态） */
 .plat .ptag{font-size:12px;border-radius:6px;padding:1px 8px;background:var(--gray-soft);color:var(--ink-2);white-space:nowrap}
 /* ===== 工作台（批 A）：每个模块固定结构 = 标题行（标题 + 数量角标 + 右侧辅助）→ 一句话结论 .lead → 主内容 → 底部折叠"说明和更多" ===== */
-#v-work{gap:var(--s6)}
-#v-work .mh{display:flex;align-items:center;gap:var(--s2) var(--s3);flex-wrap:wrap;padding:var(--s5) var(--s5) 0;margin:0;font-size:inherit}
-#v-work .mh h2{font-size:var(--fs-mod);line-height:1.35;margin:0;display:flex;align-items:center;gap:var(--s2)}
-#v-work .mh .sp{flex:1}#v-work .mh .aux{font-size:var(--fs-aux);color:var(--muted)}
-#v-work .cbadge{font-size:12px;font-weight:700;min-width:22px;height:22px;padding:0 7px;border-radius:99px;display:inline-grid;place-items:center;background:var(--gray-soft);color:var(--ink-2)}
-#v-work .cbadge.red{background:var(--err-soft);color:var(--err)}
-#v-work .lead{margin:var(--s2) var(--s5) 0;font-size:var(--fs-body);font-weight:600;color:var(--ink);line-height:1.6;overflow-wrap:anywhere}
-#v-work .lead .soft{font-weight:400;color:var(--muted);margin-left:6px}
-#v-work .dot{display:inline-block;width:8px;height:8px;border-radius:50%;vertical-align:middle;margin:-2px 8px 0 0;background:var(--stale)}
-#v-work .dot.red{background:var(--err)}#v-work .dot.amber{background:var(--amber)}#v-work .dot.ok{background:var(--ok)}#v-work .dot.gray{background:var(--stale)}
-#v-work .mbody{padding:var(--s4) var(--s5) var(--s5)}#v-work .mbody.flush{padding:var(--s4) 0 0}
-#v-work details.more{border-top:1px solid var(--line);background:var(--surface-2)}
-#v-work details.more>summary,#v-work details.grp>summary{cursor:pointer;list-style:none;display:flex;align-items:center;gap:var(--s2);padding:var(--s3) var(--s5);font-size:var(--fs-aux);color:var(--muted)}
-#v-work details.grp>summary{font-weight:700}
-#v-work details.more>summary::-webkit-details-marker,#v-work details.grp>summary::-webkit-details-marker{display:none}
-#v-work details.more>summary::before,#v-work details.grp>summary::before{content:"";width:6px;height:6px;border-right:1.5px solid currentColor;border-bottom:1.5px solid currentColor;transform:rotate(-45deg);transition:transform .15s;flex:0 0 auto}
-#v-work details.more[open]>summary::before,#v-work details.grp[open]>summary::before{transform:rotate(45deg)}
-#v-work details.more>.in{padding:0 var(--s5) var(--s4);font-size:var(--fs-aux);color:var(--ink-2);line-height:1.75}
-#v-work details.more>.in p{margin:0 0 var(--s2)}
-#v-work details.grp{border-top:1px solid var(--line)}
-#v-work .btn{display:inline-flex;align-items:center;justify-content:center;gap:6px;min-height:38px;padding:0 16px;font-size:14px;line-height:1.3;border-radius:var(--r-btn);white-space:nowrap}
-#v-work .btn.small{min-height:32px;padding:0 12px;font-size:13px}#v-work .btn.big{min-height:50px;padding:0 26px;font-size:17px;border-radius:12px}
-#v-work .btn.text{border:none;background:none;padding:0 4px;color:var(--muted);font-weight:600}#v-work .btn.text:hover{color:var(--ink)}
-#v-work .btn[aria-busy="true"]{opacity:.65;pointer-events:none}
-#v-work .btn.primary:hover{filter:brightness(1.05)}#v-work .btn:not(.primary):not(.text):hover{border-color:var(--muted)}
-#v-work .empty{padding:var(--s6) var(--s5);text-align:center;display:grid;gap:var(--s1);justify-items:center;margin:0}
-#v-work .empty b{font-size:var(--fs-body)}#v-work .empty span{font-size:var(--fs-aux);color:var(--muted)}
+#v-work,#v-project,#v-tools{gap:var(--s6)}
+:is(#v-work,#v-project,#v-tools) .mh{display:flex;align-items:center;gap:var(--s2) var(--s3);flex-wrap:wrap;padding:var(--s5) var(--s5) 0;margin:0;font-size:inherit}
+:is(#v-work,#v-project,#v-tools) .mh h2{font-size:var(--fs-mod);line-height:1.35;margin:0;display:flex;align-items:center;gap:var(--s2)}
+:is(#v-work,#v-project,#v-tools) .mh .sp{flex:1}:is(#v-work,#v-project,#v-tools) .mh .aux{font-size:var(--fs-aux);color:var(--muted)}
+:is(#v-work,#v-project,#v-tools) .cbadge{font-size:12px;font-weight:700;min-width:22px;height:22px;padding:0 7px;border-radius:99px;display:inline-grid;place-items:center;background:var(--gray-soft);color:var(--ink-2)}
+:is(#v-work,#v-project,#v-tools) .cbadge.red{background:var(--err-soft);color:var(--err)}
+:is(#v-work,#v-project,#v-tools) .lead{margin:var(--s2) var(--s5) 0;font-size:var(--fs-body);font-weight:600;color:var(--ink);line-height:1.6;overflow-wrap:anywhere}
+:is(#v-work,#v-project,#v-tools) .lead .soft{font-weight:400;color:var(--muted);margin-left:6px}
+:is(#v-work,#v-project,#v-tools) .dot{display:inline-block;width:8px;height:8px;border-radius:50%;vertical-align:middle;margin:-2px 8px 0 0;background:var(--stale)}
+:is(#v-work,#v-project,#v-tools) .dot.red{background:var(--err)}:is(#v-work,#v-project,#v-tools) .dot.amber{background:var(--amber)}:is(#v-work,#v-project,#v-tools) .dot.ok{background:var(--ok)}:is(#v-work,#v-project,#v-tools) .dot.gray{background:var(--stale)}
+:is(#v-work,#v-project,#v-tools) .mbody{padding:var(--s4) var(--s5) var(--s5)}:is(#v-work,#v-project,#v-tools) .mbody.flush{padding:var(--s4) 0 0}
+:is(#v-work,#v-project,#v-tools) details.more{border-top:1px solid var(--line);background:var(--surface-2)}
+:is(#v-work,#v-project,#v-tools) details.more>summary,:is(#v-work,#v-project,#v-tools) details.grp>summary{cursor:pointer;list-style:none;display:flex;align-items:center;gap:var(--s2);padding:var(--s3) var(--s5);font-size:var(--fs-aux);color:var(--muted)}
+:is(#v-work,#v-project,#v-tools) details.grp>summary{font-weight:700}
+:is(#v-work,#v-project,#v-tools) details.more>summary::-webkit-details-marker,:is(#v-work,#v-project,#v-tools) details.grp>summary::-webkit-details-marker{display:none}
+:is(#v-work,#v-project,#v-tools) details.more>summary::before,:is(#v-work,#v-project,#v-tools) details.grp>summary::before{content:"";width:6px;height:6px;border-right:1.5px solid currentColor;border-bottom:1.5px solid currentColor;transform:rotate(-45deg);transition:transform .15s;flex:0 0 auto}
+:is(#v-work,#v-project,#v-tools) details.more[open]>summary::before,:is(#v-work,#v-project,#v-tools) details.grp[open]>summary::before{transform:rotate(45deg)}
+:is(#v-work,#v-project,#v-tools) details.more>.in{padding:0 var(--s5) var(--s4);font-size:var(--fs-aux);color:var(--ink-2);line-height:1.75}
+:is(#v-work,#v-project,#v-tools) details.more>.in p{margin:0 0 var(--s2)}
+:is(#v-work,#v-project,#v-tools) details.grp{border-top:1px solid var(--line)}
+:is(#v-work,#v-project,#v-tools) .btn{display:inline-flex;align-items:center;justify-content:center;gap:6px;min-height:38px;padding:0 16px;font-size:14px;line-height:1.3;border-radius:var(--r-btn);white-space:nowrap}
+:is(#v-work,#v-project,#v-tools) .btn.small{min-height:32px;padding:0 12px;font-size:13px}:is(#v-work,#v-project,#v-tools) .btn.big{min-height:50px;padding:0 26px;font-size:17px;border-radius:12px}
+:is(#v-work,#v-project,#v-tools) .btn.text{border:none;background:none;padding:0 4px;color:var(--muted);font-weight:600}:is(#v-work,#v-project,#v-tools) .btn.text:hover{color:var(--ink)}
+:is(#v-work,#v-project,#v-tools) .btn[aria-busy="true"]{opacity:.65;pointer-events:none}
+:is(#v-work,#v-project,#v-tools) .btn.primary:hover{filter:brightness(1.05)}:is(#v-work,#v-project,#v-tools) .btn:not(.primary):not(.text):hover{border-color:var(--muted)}
+:is(#v-work,#v-project,#v-tools) .empty{padding:var(--s6) var(--s5);text-align:center;display:grid;gap:var(--s1);justify-items:center;margin:0}
+:is(#v-work,#v-project,#v-tools) .empty b{font-size:var(--fs-body)}:is(#v-work,#v-project,#v-tools) .empty span{font-size:var(--fs-aux);color:var(--muted)}
 /* 读取中：占位骨架；读取失败：保留上次内容，上面一条红色提示 + "再读一次" */
-#v-work .skel,.boot .skel{display:block;height:14px;border-radius:6px;background:linear-gradient(90deg,var(--gray-soft),var(--surface-2),var(--gray-soft));background-size:200% 100%;animation:sk 1.2s infinite linear}
-#v-work .skels,.boot .skels{display:grid;gap:14px;padding:20px 24px}
+:is(#v-work,#v-project,#v-tools) .skel,.boot .skel{display:block;height:14px;border-radius:6px;background:linear-gradient(90deg,var(--gray-soft),var(--surface-2),var(--gray-soft));background-size:200% 100%;animation:sk 1.2s infinite linear}
+:is(#v-work,#v-project,#v-tools) .skels,.boot .skels{display:grid;gap:14px;padding:20px 24px}
 @keyframes sk{to{background-position:-200% 0}}
-@media (prefers-reduced-motion:reduce){#v-work .skel,.boot .skel{animation:none}}
-#v-work .errbar{display:flex;gap:var(--s3);align-items:center;flex-wrap:wrap;padding:var(--s3) var(--s4);border-radius:12px;background:var(--err-soft);color:var(--err);font-size:var(--fs-body);font-weight:600;margin:0 0 var(--s3)}
-#v-work .errbar .sp{flex:1}
+@media (prefers-reduced-motion:reduce){:is(#v-work,#v-project,#v-tools) .skel,.boot .skel{animation:none}}
+:is(#v-work,#v-project,#v-tools) .errbar{display:flex;gap:var(--s3);align-items:center;flex-wrap:wrap;padding:var(--s3) var(--s4);border-radius:12px;background:var(--err-soft);color:var(--err);font-size:var(--fs-body);font-weight:600;margin:0 0 var(--s3)}
+:is(#v-work,#v-project,#v-tools) .errbar .sp{flex:1}
 /* ① 最该做的事：全页唯一的深色块（深色模式用 --hero-bg 加描边） */
 .plat .hero{background:var(--hero-bg);border:1px solid var(--hero-line);color:#fff;border-radius:18px;padding:var(--s6);display:grid;grid-template-columns:minmax(0,1fr) auto;gap:var(--s5) var(--s6);align-items:center;min-width:0}
 .plat .hero .k{margin:0;font-size:var(--fs-aux);color:#9FB0CC;letter-spacing:.02em}
@@ -277,10 +276,10 @@ th{font-size:12px;color:var(--muted);font-weight:600}td.n{text-align:right}
 #v-work .donelist li{display:flex;gap:var(--s3);align-items:center;padding:6px 0;font-size:var(--fs-body);color:var(--muted);flex-wrap:wrap}#v-work .donelist li s{flex:1;min-width:0;overflow-wrap:anywhere}
 #v-work .donelist .done-at{font-size:var(--fs-aux)}
 /* ③ 团队在做什么 */
-#v-work .seg{display:inline-flex;background:var(--gray-soft);border-radius:10px;padding:3px;gap:2px;flex-wrap:wrap}
-#v-work .seg button{font:inherit;font-size:13px;border:0;background:none;color:var(--muted);padding:4px 12px;border-radius:8px;cursor:pointer;white-space:nowrap}
-#v-work .seg button[aria-pressed="true"]{background:var(--surface);color:var(--ink);font-weight:700;box-shadow:0 1px 2px rgba(0,0,0,.08)}
-#v-work .seg button:focus-visible{outline:2px solid var(--amber);outline-offset:1px}
+:is(#v-work,#v-project,#v-tools) .seg{display:inline-flex;background:var(--gray-soft);border-radius:10px;padding:3px;gap:2px;flex-wrap:wrap}
+:is(#v-work,#v-project,#v-tools) .seg button{font:inherit;font-size:13px;border:0;background:none;color:var(--muted);padding:4px 12px;border-radius:8px;cursor:pointer;white-space:nowrap}
+:is(#v-work,#v-project,#v-tools) .seg button[aria-pressed="true"]{background:var(--surface);color:var(--ink);font-weight:700;box-shadow:0 1px 2px rgba(0,0,0,.08)}
+:is(#v-work,#v-project,#v-tools) .seg button:focus-visible{outline:2px solid var(--amber);outline-offset:1px}
 #v-work .live-warn{padding:var(--s3) var(--s5) 0;border:0}
 #v-work #w-live .grp{padding:var(--s2) var(--s5);background:none;border:0;border-top:1px solid var(--line);font-size:var(--fs-aux)}
 #v-work #w-live .act-item{padding:var(--s3) var(--s5);border-bottom:0;border-top:1px solid var(--line)}
@@ -319,9 +318,9 @@ th{font-size:12px;color:var(--muted);font-weight:600}td.n{text-align:right}
 #v-work .meet .links{display:flex;gap:var(--s2);flex-wrap:wrap;margin-top:var(--s3)}
 @media (max-width:900px){.plat .hero{grid-template-columns:minmax(0,1fr)}.plat .hero .act{justify-items:stretch}.plat .hero .act .btn.big{width:100%}}
 @media (max-width:640px){
-  #v-work{gap:var(--s5)}
-  #v-work .mh{padding:var(--s4) var(--s4) 0}#v-work .lead{margin:var(--s2) var(--s4) 0}#v-work .mbody{padding:var(--s3) var(--s4) var(--s4)}
-  #v-work details.more>summary,#v-work details.grp>summary{padding:var(--s3) var(--s4)}#v-work details.more>.in{padding:0 var(--s4) var(--s4)}
+  #v-work,#v-project,#v-tools{gap:var(--s5)}
+  :is(#v-work,#v-project,#v-tools) .mh{padding:var(--s4) var(--s4) 0}:is(#v-work,#v-project,#v-tools) .lead{margin:var(--s2) var(--s4) 0}:is(#v-work,#v-project,#v-tools) .mbody{padding:var(--s3) var(--s4) var(--s4)}
+  :is(#v-work,#v-project,#v-tools) details.more>summary,:is(#v-work,#v-project,#v-tools) details.grp>summary{padding:var(--s3) var(--s4)}:is(#v-work,#v-project,#v-tools) details.more>.in{padding:0 var(--s4) var(--s4)}
   .plat .hero{padding:var(--s5) var(--s4);border-radius:16px}.plat .hero .one{font-size:22px}
   .plat .glance{gap:var(--s2)}.plat .gl{padding:var(--s3)}.plat .gl .n{font-size:24px}.plat .gl .l{font-size:12px;line-height:1.4}
   #v-work .filterbar{padding:var(--s3) var(--s4) 0}#v-work .bucket-h{padding-left:var(--s4);padding-right:var(--s4)}
@@ -330,6 +329,72 @@ th{font-size:12px;color:var(--muted);font-weight:600}td.n{text-align:right}
   #v-work .tiles{grid-template-columns:1fr 1fr}#v-work .tiles .tile:last-child:nth-child(odd){grid-column:1/-1}
   #v-work .meet{grid-template-columns:minmax(0,1fr)}#v-work .date{width:auto;display:flex;align-items:center;gap:12px;padding:8px 12px;text-align:left}#v-work .date .mo{border-radius:6px;padding:2px 8px}#v-work .date .d{font-size:22px}#v-work .date .w{padding:0}
   #v-work .donelist{padding:0 var(--s4) var(--s3)}
+}
+/* ===== 界面改版·批 B（2026-11-04，原型 prototype-tools.html；Amos"好很多了，改吧"）：项目页、公共工具也用批 A 的卡片模块
+   （标题行 header.mh → .lead → 主内容 → 最后一块 details.more，样式就是上面 :is(#v-work,#v-project,#v-tools) 那几条） ===== */
+#v-project .todos>.todo:first-child,#t-queue #list>.item:first-child{border-top:0}
+#v-project .mbody.flush,#v-tools .mbody.flush{padding:var(--s3) 0 0}
+#v-project .live-warn{padding:var(--s3) var(--s5) 0;border:0}
+#v-project #f-live-body .act-item{padding:var(--s3) var(--s5);border-bottom:0;border-top:1px solid var(--line)}#v-project #f-live-body>.act-item:first-child{border-top:0}
+#v-project .hand li{padding:var(--s3) var(--s5);border-bottom:0;border-top:1px solid var(--line)}#v-project .hand li:first-child{border-top:0}
+#v-project .donelist{padding:0 var(--s5) var(--s3)}#v-project .donelist li{padding:6px 0}
+#v-project .progress,#v-project .bar-row{padding-left:var(--s5);padding-right:var(--s5)}#v-project .step{padding:var(--s4) var(--s5)}
+#v-project .todo .go .btn:not(.primary){font-weight:600}
+/* 本周帖子 / 焦点战：并排的两张卡等高（grid 默认拉伸），卡里竖排，底部折叠说明用 margin-top:auto 压到底，两张的底边和折叠对齐；手机上自动上下排 */
+#v-project .two{gap:var(--s5)}#v-project .two>.card{display:flex;flex-direction:column}#v-project .two>.card>details.more{margin-top:auto}
+#v-project .two>.card>.mbody{flex:0 0 auto}
+#v-project .toolcard h3{font-size:var(--fs-body)}
+/* 公共工具 */
+#v-tools .card{background:var(--surface);border:1px solid var(--line);border-radius:var(--r-card);box-shadow:var(--shadow);min-width:0;overflow:hidden}
+#v-tools .card .card{box-shadow:none}
+#v-tools .capline{display:grid;gap:6px;min-width:200px}#v-tools .capline .r{display:flex;justify-content:space-between;gap:var(--s3);font-size:var(--fs-aux);color:var(--muted)}
+#v-tools .meter{display:block;width:auto;height:6px;border-radius:99px;background:var(--gray-soft);position:relative;overflow:hidden}#v-tools .meter i{position:absolute;inset:0 auto 0 0;border-radius:99px;background:var(--teal)}
+#v-tools .meter.warn i{background:var(--amber)}#v-tools .meter.bad i{background:var(--err)}
+#v-tools td .meter{display:inline-block;width:70px;vertical-align:middle}
+#v-tools .toolbar{display:flex;gap:var(--s3);flex-wrap:wrap;align-items:center;padding:var(--s4) var(--s5) 0}
+#v-tools .toolbar .sp{flex:1}
+#v-tools details.qf{flex:1 1 100%}
+#v-tools details.qf>summary{display:inline-flex;align-items:center;gap:var(--s2);list-style:none;cursor:pointer;font-size:14px;font-weight:600;color:var(--ink-2);border:1px solid var(--line);border-radius:var(--r-btn);padding:5px 12px;background:var(--surface);max-width:100%;overflow-wrap:anywhere}
+#v-tools details.qf>summary::-webkit-details-marker{display:none}
+#v-tools details.qf>summary::after{content:"";width:6px;height:6px;border-right:1.5px solid currentColor;border-bottom:1.5px solid currentColor;transform:rotate(45deg);margin:-3px 0 0 2px;transition:transform .15s;flex:0 0 auto}
+#v-tools details.qf[open]>summary::after{transform:rotate(-135deg);margin-top:3px}
+#v-tools details.qf>summary:focus-visible{outline:2px solid var(--amber);outline-offset:2px}
+#v-tools details.qf .filters{margin:var(--s3) 0 0}
+#v-tools .sum{padding:var(--s3) var(--s5) 0;margin:0}
+#v-tools #t-queue .confirm#bulk-confirm,#v-tools #t-queue .toast#toast{margin:var(--s3) var(--s5) 0}
+#t-queue #list{margin-top:var(--s3)}
+#t-queue .item{border:0;border-top:1px solid var(--line);border-radius:0;margin:0;padding:var(--s4) var(--s5);background:none}
+#t-queue .draft{background:var(--surface-2);border:1px solid var(--line);border-left:3px solid var(--teal)}
+#t-queue .draft .k{display:block;font-size:var(--fs-aux);font-weight:700;color:var(--teal-ink);white-space:normal}
+#t-queue .why{background:var(--surface-2)}
+#t-queue .acts .btn.text{min-height:32px;font-size:13px}#t-queue .acts .btn.text.danger{color:var(--err)}
+#t-queue .acts .confirm{flex-direction:column;align-items:stretch;padding:var(--s2)}
+#v-tools .tablewrap.boxed{border:1px solid var(--line);border-radius:12px}
+#v-tools .tablewrap th{background:var(--surface-2)}
+#v-tools .save-row{display:flex;gap:var(--s3);align-items:center;flex-wrap:wrap;margin-top:var(--s4)}
+#v-tools .save-row .msg{margin:0}
+#v-tools details.grp.box{margin-top:var(--s4);border:1px solid var(--line);border-radius:12px}#v-tools details.grp.box>.in{padding:0 var(--s4) var(--s4)}
+#v-tools .ext{display:grid;grid-template-columns:auto minmax(0,1fr) auto;gap:var(--s4) var(--s5);align-items:center}
+#v-tools .ext .ver{font-size:var(--fs-num);font-weight:700;line-height:1.1;font-variant-numeric:tabular-nums}
+#v-tools .row2{display:grid;grid-template-columns:1fr 1fr;gap:var(--s5);margin-top:var(--s5)}
+#v-tools .row2 .steps{margin:var(--s2) 0 0}
+#v-tools .switch{display:inline-flex;align-items:center;gap:var(--s2);font:inherit;font-size:14px;font-weight:700;cursor:pointer;border:0;background:none;color:var(--ink);padding:4px 0}
+#v-tools .switch i{width:40px;height:24px;border-radius:99px;background:var(--teal);position:relative;display:block;flex:0 0 auto;transition:background .15s}
+#v-tools .switch i::after{content:"";position:absolute;top:3px;right:3px;width:18px;height:18px;border-radius:50%;background:#fff;box-shadow:0 1px 2px rgba(0,0,0,.2)}
+#v-tools .switch[aria-pressed="false"] i{background:var(--line)}#v-tools .switch[aria-pressed="false"] i::after{right:auto;left:3px}
+#v-tools .switch:disabled{opacity:.6;cursor:default}#v-tools .switch:focus-visible{outline:2px solid var(--amber);outline-offset:3px;border-radius:99px}
+#v-tools .hint{font-size:var(--fs-aux)}
+#t-voice{scroll-margin-top:calc(var(--bars-h,98px) + var(--s4));margin-top:var(--s4);padding-top:var(--s4);border-top:1px solid var(--line)}
+#t-voice h3{margin:0 0 var(--s2);font-size:var(--fs-body)}
+@media (max-width:640px){
+  #v-project .live-warn{padding:var(--s3) var(--s4) 0}#v-project #f-live-body .act-item,#v-project .hand li{padding-left:var(--s4);padding-right:var(--s4)}
+  #v-project .donelist{padding:0 var(--s4) var(--s3)}#v-project .progress,#v-project .bar-row{padding-left:var(--s4);padding-right:var(--s4)}#v-project .step{padding:var(--s3) var(--s4)}
+  #v-tools .toolbar{padding:var(--s3) var(--s4) 0}#v-tools .sum{padding:var(--s3) var(--s4) 0}#v-tools #t-queue .confirm#bulk-confirm,#v-tools #t-queue .toast#toast{margin:var(--s3) var(--s4) 0}
+  #t-queue .item{padding:var(--s4)}#t-queue .acts .btn.primary{flex-basis:100%}
+  #v-tools .mh .capline{width:100%}
+  #v-tools .ext{grid-template-columns:minmax(0,1fr)}#v-tools .ext .btn{width:100%}
+  #v-tools .row2{grid-template-columns:minmax(0,1fr)}
+  #v-tools .capline{min-width:0}
 }
 .plat details.fold>summary{cursor:pointer;padding:10px 16px;font-size:14px;font-weight:700;list-style:none;display:flex;gap:8px;align-items:center;border-top:1px solid var(--line);color:var(--muted)}
 .plat details.fold>summary::-webkit-details-marker{display:none}.plat details.fold>summary::before{content:"▸"}.plat details.fold[open]>summary::before{content:"▾"}
@@ -415,8 +480,9 @@ ${ASSETS_CSS}${TTS_CSS}${VOICE_CSS}${ENGLISH_CSS}
 <nav class="sub" id="sub-project" aria-label="项目模块" hidden><div class="in">
   <a href="#/forecast/next" data-s="f-next" data-m="next">下一步做什么<span class="n red" id="s-fnext" hidden></span></a><a href="#/forecast/guide" data-s="f-guide" data-m="guide">操作指引<span class="n" id="s-guide" hidden></span></a><a href="#/forecast/live" data-s="f-live" data-m="live">团队在做什么</a><a href="#/forecast/card" data-s="f-card" data-m="card">数字和决定</a><a href="#/forecast/pack" data-s="f-pack" data-m="pack">本周帖子</a><a href="#/forecast/match" data-s="f-match" data-m="match">焦点战</a><a href="#/forecast/tools" data-s="f-tools" data-m="tools">用到的工具</a><a href="#/forecast/handoff" data-s="f-handoff" data-m="handoff">交接记录</a>
 </div></nav>
+<!-- 批 B：子菜单顺序 = 页面上模块的顺序（Webhook 开关挪到最后，和页面一致） -->
 <nav class="sub" id="sub-tools" aria-label="公共工具模块" hidden><div class="in">
-  <a href="#/tools/queue" data-s="t-queue">跟帖评论清单</a><a href="#/tools/reply" data-s="t-reply">每天回帖上限</a><a href="#/tools/usage" data-s="t-usage">用量和限额</a><a href="#/tools/byproj" data-s="t-byproj">按项目看用量</a><a href="#/tools/ext" data-s="t-ext">插件下载</a><a href="#/tools/hook" data-s="t-hook">Webhook 开关</a><a href="#/tools/assets" data-s="t-assets">素材生成器</a><a href="#/tools/tts" data-s="t-tts">语音生成</a>
+  <a href="#/tools/queue" data-s="t-queue">跟帖评论清单</a><a href="#/tools/reply" data-s="t-reply">每天回帖上限</a><a href="#/tools/usage" data-s="t-usage">用量和限额</a><a href="#/tools/byproj" data-s="t-byproj">按项目看用量</a><a href="#/tools/ext" data-s="t-ext">插件下载</a><a href="#/tools/assets" data-s="t-assets">素材生成器</a><a href="#/tools/tts" data-s="t-tts">语音生成</a><a href="#/tools/hook" data-s="t-hook">Webhook 开关</a>
 </div></nav>
 </div></div>
 <form class="login" id="login" hidden>
@@ -483,99 +549,163 @@ ${ASSETS_CSS}${TTS_CSS}${VOICE_CSS}${ENGLISH_CSS}
   <section class="page plat" id="v-project" hidden>
     <div class="crumb"><h1 id="f-title">项目</h1><span class="hint" id="f-site"></span></div>
     <p class="warnbar" id="f-err" role="status" hidden></p>
+    <!-- 批 B：读取失败时（照工作台 #w-stale）：上面一条红色提示 + "再读一次"；还没读到过就各模块写"暂时读不到"，不冒充"没事要做" -->
+    <div class="errbar" id="f-stale" role="alert" hidden><span id="f-stale-t"></span><span class="sp"></span><button class="btn small" type="button" id="f-retry">再读一次</button></div>
+    <!-- 批 B：每个模块 = 标题行 → 一句话结论 .lead（数据算）→ 主内容 → 最后一块折叠说明 details.more（默认收起） -->
     <section class="card mod" id="f-next">
-      <h2>下一步做什么 <span class="pill p-err" id="f-next-n">0</span><span class="sp"></span><span class="stamp">最急的在最上面</span></h2>
-      <p class="lead">从第一条开始做就行。红色＝已经超时，橙色＝24 小时内到期。每条只有一个按钮，点了直接带你去要操作的地方；做完点左边圆圈打勾。</p>
-      <ul class="todos" id="f-todos"></ul>
-      <details class="fold" id="f-done"><summary>做完的 <span class="pill p-mute" id="f-done-n">0</span></summary><ul class="donelist" id="f-donelist"></ul></details>
+      <header class="mh"><h2>下一步做什么 <span class="cbadge" id="f-next-n">0</span></h2><span class="sp"></span><span class="aux">最急的在最上面</span></header>
+      <p class="lead" id="f-next-lead"><span class="skel" style="width:50%"></span></p>
+      <div class="mbody flush"><ul class="todos" id="f-todos"></ul></div>
+      <details class="grp" id="f-done"><summary>做完的 <span class="n" id="f-done-n">（0）</span></summary><ul class="donelist" id="f-donelist"></ul></details>
+      <details class="more"><summary>颜色、按钮和打勾是什么意思</summary><div class="in">
+        <p>从第一条开始做就行。红色 = 已经超时；橙色 = 24 小时内到期。</p>
+        <p>每条最多一个青色主按钮，点了直接带你去要操作的地方；没有链接的事（在 Claude 窗口里做、或者线下做的），右边是"做完了，打勾"。做完点左边圆圈打勾，收进"做完的"，在那里点"撤销"能放回来。</p></div></details>
     </section>
-    <section class="card mod" id="f-guide"><h2 id="f-guide-h">操作指引</h2><div id="f-guide-body"></div></section>
-    <section class="card mod" id="f-live"><h2><span class="live-dot" id="f-live-dot" aria-hidden="true"></span>团队在做什么 <span class="pill p-teal" id="f-live-n">0</span><span class="sp"></span><span class="stamp" id="f-live-stamp"></span></h2><div class="live-warn" id="f-live-warn"></div><div id="f-live-body"></div></section>
-    <section class="card mod" id="f-card"><h2>数字和决定 <span class="sp"></span><span class="stamp" id="f-card-at"></span></h2><div id="f-card-body"></div></section>
+    <section class="card mod" id="f-guide">
+      <header class="mh"><h2 id="f-guide-h">操作指引</h2><span class="sp"></span><span class="aux" id="f-guide-aux"></span></header>
+      <p class="lead" id="f-guide-lead"><span class="skel" style="width:50%"></span></p>
+      <div class="mbody flush" id="f-guide-body"></div>
+      <details class="more"><summary>每步怎么打勾、和待办是什么关系</summary><div class="in"><p>市场经理交了周包以后，这里一步步列出要你做的事。每步做完勾"这步做完了"；都勾了，待办里"照操作指引做完这周的几步"那件会自动打勾。手机、电脑勾的是同一份。</p></div></details>
+    </section>
+    <section class="card mod" id="f-live">
+      <header class="mh"><h2><span class="live-dot" id="f-live-dot" aria-hidden="true"></span>团队在做什么 <span class="cbadge" id="f-live-n">0</span></h2><span class="sp"></span><span class="aux" id="f-live-stamp"></span></header>
+      <p class="lead" id="f-live-lead"><span class="skel" style="width:50%"></span></p>
+      <div class="live-warn" id="f-live-warn"></div>
+      <div class="mbody flush" id="f-live-body"></div>
+      <details class="more"><summary>灰色是什么意思</summary><div class="in"><p>每条是一个岗位正在做的一件事（一个分支），只列这个项目的。两小时没动静会变灰；一天没动静、合并了或分支删了，收进"最近结束"（只显示 7 天内的）。</p></div></details>
+    </section>
+    <section class="card mod" id="f-card">
+      <header class="mh"><h2>数字和决定</h2><span class="sp"></span><span class="aux" id="f-card-at"></span></header>
+      <p class="lead" id="f-card-lead"><span class="skel" style="width:50%"></span></p>
+      <div class="mbody flush" id="f-card-body"></div>
+      <details class="more"><summary>这些数从哪来</summary><div class="in"><p>来自这个项目的状态卡；状态卡写"见工作平台"的那一格，换成你在待办里填的最新值，"从哪来"一栏写"你 11/4 填的"。</p></div></details>
+    </section>
     <div class="two">
-      <section class="card mod" id="f-pack"><h2 id="f-pack-h">本周帖子</h2><div id="f-pack-body"></div></section>
-      <section class="card mod" id="f-match"><h2 id="f-match-h">焦点战</h2><div id="f-match-body"></div></section>
+      <section class="card mod" id="f-pack">
+        <header class="mh"><h2 id="f-pack-h">本周帖子</h2><span class="sp"></span><span class="aux" id="f-pack-aux"></span></header>
+        <p class="lead" id="f-pack-lead"><span class="skel" style="width:50%"></span></p>
+        <div class="mbody flush" id="f-pack-body"></div>
+        <details class="more"><summary>这张表怎么看</summary><div class="in"><p>周包里这周要发的帖子，按第几条排。"几点发"是建议的发出时间，"最晚"之前发出去都算数；文案在操作指引每一步的"打开文案"里。</p></div></details>
+      </section>
+      <section class="card mod" id="f-match">
+        <header class="mh"><h2 id="f-match-h">焦点战</h2><span class="sp"></span><span class="aux" id="f-match-aux"></span></header>
+        <p class="lead" id="f-match-lead"><span class="skel" style="width:50%"></span></p>
+        <div class="mbody flush" id="f-match-body"></div>
+        <details class="more"><summary>怎么导入官网名单页</summary><div class="in"><p>在操作指引上面点"复制 N 场焦点战"，到官网名单页的"导入"里粘贴就行；浏览器不让复制时，会把整段文字摆出来让你手动复制。</p></div></details>
+      </section>
     </div>
-    <section class="card mod" id="f-tools"><h2>本项目用到的工具 <span class="sp"></span><span class="stamp" id="f-tools-stamp"></span></h2><div class="pd two" id="f-tools-body"></div></section>
-    <section class="card mod" id="f-handoff"><h2>交接记录 <span class="sp"></span><span class="stamp">新的在上 · 换人接手时看</span></h2><div id="f-handoff-body"></div></section>
+    <section class="card mod" id="f-tools">
+      <header class="mh"><h2>本项目用到的工具</h2><span class="sp"></span><span class="aux" id="f-tools-stamp"></span></header>
+      <p class="lead" id="f-tools-lead"><span class="skel" style="width:50%"></span></p>
+      <div class="mbody"><div class="two" id="f-tools-body"></div></div>
+    </section>
+    <section class="card mod" id="f-handoff">
+      <header class="mh"><h2>交接记录</h2><span class="sp"></span><span class="aux">新的在上 · 换人接手时看</span></header>
+      <p class="lead" id="f-handoff-lead"><span class="skel" style="width:50%"></span></p>
+      <div class="mbody flush" id="f-handoff-body"></div>
+    </section>
   </section>
-  <!-- 公共工具：清单、用量和限额、插件下载三块的脚本和接口不动，只换外框 -->
+  <!-- 公共工具（界面改版·批 B，原型 prototype-tools.html）：每块一张卡片，"标题行 → 一句话结论 → 主内容 → 底部折叠说明"；
+       页面顺序 = 二级菜单顺序（天天用 → 偶尔用 → 出事才用）。清单、用量、插件下载的脚本逻辑和接口不变，只换排版；元素 id 和 data-* 照旧 -->
   <section class="page" id="v-tools" hidden>
     <div class="crumb"><h1>公共工具</h1><span class="hint">各项目一起用的工具；上限只在这一页改</span></div>
-    <section class="mod" id="t-queue"><h2 class="mh">跟帖评论清单<span class="sp"></span><span id="count"></span></h2>
+    <section class="card mod" id="t-queue">
+      <header class="mh"><h2>跟帖评论清单 <span class="cbadge" id="q-n">0</span></h2><span class="sp"></span>
+        <div class="capline"><div class="r"><span id="count"></span></div><div class="meter" aria-hidden="true"><i id="q-bar" style="width:0"></i></div></div></header>
+      <p class="lead" id="q-lead"><span class="skel" style="width:50%"></span></p>
   <section id="v-list">
-    <div class="filters" role="group" aria-label="状态"><button class="chip" data-f="pending" aria-pressed="true">待回</button><button class="chip" data-f="done" aria-pressed="false">已回</button><button class="chip" data-f="skip" aria-pressed="false">跳过</button>
-      <label for="f-prod">项目</label><select id="f-prod"><option value="">全部</option></select>
-      <label for="f-plat">平台</label><select id="f-plat"><option value="">全部</option><option value="x">X</option><option value="threads">Threads</option></select>
-      <label for="f-sort">排序</label><select id="f-sort"><option value="time">最新的在前</option><option value="score">评分从高到低</option></select></div>
-    <div class="filters" role="group" aria-label="时间"><label>存进来的时间（台湾）</label><button class="chip" data-rg="today" aria-pressed="false">今天</button><button class="chip" data-rg="7" aria-pressed="false">近 7 天</button><button class="chip" data-rg="all" aria-pressed="true">全部</button>
-      <label for="f-from">从</label><input type="date" id="f-from"><label for="f-to">到</label><input type="date" id="f-to"></div>
-    <p class="sum"><span id="total"></span><span class="sp"></span><button class="btn small danger" id="bulk" type="button" hidden>删除筛选出的这些</button></p>
+    <div class="toolbar">
+      <div class="seg" role="group" aria-label="状态"><button type="button" class="chip" data-f="pending" aria-pressed="true">待回</button><button type="button" class="chip" data-f="done" aria-pressed="false">已回</button><button type="button" class="chip" data-f="skip" aria-pressed="false">跳过</button></div>
+      <span class="sp"></span><button class="btn small text danger" id="bulk" type="button" hidden>删除筛选出的这些</button>
+      <!-- 筛选默认收起（批 B）：项目、平台、排序、存进来的时间 -->
+      <details class="qf" id="q-filters"><summary id="q-filters-s">筛选</summary>
+        <div class="filters" role="group" aria-label="筛选"><label for="f-prod">项目</label><select id="f-prod"><option value="">全部</option></select>
+          <label for="f-plat">平台</label><select id="f-plat"><option value="">全部</option><option value="x">X</option><option value="threads">Threads</option></select>
+          <label for="f-sort">排序</label><select id="f-sort"><option value="time">最新的在前</option><option value="score">评分从高到低</option></select></div>
+        <div class="filters" role="group" aria-label="时间"><label>存进来的时间（台湾）</label><button class="chip" type="button" data-rg="today" aria-pressed="false">今天</button><button class="chip" type="button" data-rg="7" aria-pressed="false">近 7 天</button><button class="chip" type="button" data-rg="all" aria-pressed="true">全部</button>
+          <label for="f-from">从</label><input type="date" id="f-from"><label for="f-to">到</label><input type="date" id="f-to"></div>
+      </details>
+    </div>
+    <p class="sum"><span id="total"></span></p>
     <div class="confirm" id="bulk-confirm" role="alert" hidden><span id="bulk-text"></span><button class="btn small danger" id="bulk-yes" type="button">确认删除</button><button class="btn small" id="bulk-no" type="button">取消</button></div>
     <p class="toast" id="toast" role="status" hidden></p>
     <div id="list"></div>
-  </section></section>
-  <!-- 每天回帖上限按项目（工作平台批 2，D-2）：GET / POST /api/reply-cap -->
-  <section class="mod" id="t-reply"><h2 class="mh">每天回帖上限<span class="sp"></span><span class="hint">每个项目一个数</span></h2>
-    <div class="card"><div class="tablewrap"><table><thead><tr><th>项目</th><th>每天上限</th><th>今天已回</th></tr></thead><tbody id="rc-rows"><tr><td colspan="3">正在读取…</td></tr></tbody></table></div>
-      <div class="pad"><button class="btn primary" id="rc-save" type="button">保存上限</button><p class="msg" id="rc-msg" role="status"></p>
-        <p class="hint">插件里"同意"和清单里"我回了"合起来算，按台湾日期每天重新数。某个项目到上限后，只有这个项目的"一键回复"变灰，别的项目照常。每个项目 1～50 条；没单独设过的项目用默认值。</p></div></div>
   </section>
-  <section class="mod" id="t-usage"><h2 class="mh">用量和限额<span class="sp"></span><span class="hint">还剩多少 · 分别用到了哪里</span></h2>
-  <section id="v-usage">
+      <details class="more"><summary>打分是怎么来的 · 按钮怎么用</summary><div class="in">
+        <p>分数是 AI 按"和产品话题相关、互动多、发帖时间新"打的，分够的才会写草稿、存进来；"打分依据"列出了这一条为什么值得回。草稿可以在 X / Threads 的回复框里改完再发，发送一定是你本人按。</p>
+        <p>每条只有一个主按钮"一键回复"（打开官方回复窗口、草稿已填好）；发完回来点"我回了"。"跳过"能在"跳过"里放回来；"删除"要再确认一次，删了不能恢复。"删除筛选出的这些"按现在的筛选一次删完，也要先确认。</p></div></details>
+    </section>
+    <!-- 每天回帖上限按项目（工作平台批 2，D-2）：GET / POST /api/reply-cap -->
+    <section class="card mod" id="t-reply">
+      <header class="mh"><h2>每天回帖上限</h2><span class="sp"></span><span class="aux">每个项目一个数 · 1～50 条</span></header>
+      <p class="lead" id="rc-lead"><span class="skel" style="width:50%"></span></p>
+      <div class="mbody"><div class="tablewrap boxed"><table><thead><tr><th>项目</th><th>每天上限</th><th>今天已回</th></tr></thead><tbody id="rc-rows"><tr><td colspan="3">正在读取…</td></tr></tbody></table></div>
+        <div class="save-row"><button class="btn primary" id="rc-save" type="button">保存上限</button><p class="msg" id="rc-msg" role="status"></p></div></div>
+      <details class="more"><summary>怎么算的</summary><div class="in"><p>插件里"同意"和清单里"我回了"合起来算，按台湾日期每天重新数。某个项目到上限后，只有这个项目的"一键回复"变灰，别的项目照常。每个项目 1～50 条；没单独设过的项目用默认值。</p></div></details>
+    </section>
+    <section class="card mod" id="t-usage">
+      <header class="mh"><h2>用量和限额</h2><span class="sp"></span><span class="aux" id="u-at">还没读取</span></header>
+      <p class="lead" id="u-lead"><span class="skel" style="width:50%"></span></p>
+  <section id="v-usage" class="mbody">
     <!-- 用量监控（Amos 2026-11-03"可以看到剩余和分别用到了哪里"）第一块：还剩多少。数据来自 /api/usage 的 left（src/usage.ts usageLeft） -->
-    <h3 class="mh">还剩多少</h3>
+    <h3 class="sr">还剩多少</h3>
     <!-- Cloudflare 自己说"账号额度用完了"：数据来自 /api/usage 的 accountLimit（表 account_limit，迁移 0011）。
          这是唯一可靠的信号——下面表里的数只是本环境记下的下限。到下一个 UTC 日（台湾早上 8 点）自动不显示 -->
     <p class="acct" id="u-acct" role="alert" hidden></p>
-    <div class="card"><div class="tablewrap"><table><thead><tr><th>这本账</th><th>今天已用</th><th>每天上限</th><th>还剩</th><th>什么时候清零（台湾时间）</th></tr></thead><tbody id="u-left"><tr><td colspan="5">正在读取…</td></tr></tbody></table></div>
-      <!-- 每一行的"这个数靠不靠得住"：Workers AI 那一行写明是本环境记的账、Cloudflare 按整个账号算（src/usage.ts waiCaveat） -->
-      <div class="pad" id="u-left-notes"></div>
-      <div class="pad"><p class="hint">两本账<b>分开看、不要加在一起</b>（单位都不一样）：Workers AI 按 neurons 算，备用 AI、素材生成器、语音生成花的都是这一本；Gemini 按请求次数算。<b>"一天"按各家自己的重置时间</b>：Workers AI 是 UTC 0 点清零，也就是<b>台湾早上 8 点</b>；Gemini 是美国太平洋时间半夜清零，也就是<b>台湾下午 3 点或 4 点</b>（看美国当时有没有夏令时）。这里的"上限"是我们自己在下面那张表里设的数，<b>不是各家的真实剩余额度</b>——Google 不提供查询接口；Cloudflare 的免费额度每天 10,000 neurons 是<b>按整个账号算的</b>，正式版和测试版共用一份、却各记各的账（两个不同的数据库），所以上面那个"还剩"只能当<b>最多还有这么多</b>看。<b>要知道真实剩余只有两条路</b>：一是 Cloudflare 自己报错（报了上面就出红字），二是去接 Cloudflare 的分析接口（要 Amos 的 API 令牌，这一版没做）。</p></div></div>
-    <h3 class="mh">每个模型的用量和上限</h3>
-    <div class="card"><div class="tablewrap"><table><thead><tr><th>模型</th><th>今天请求</th><th>今天 token（入 / 出）</th><th>每天上限</th><th>用量</th><th>状态</th><th>下次重置（台湾时间）</th></tr></thead><tbody id="u-rows"></tbody></table></div>
-      <div class="pad"><p class="sum" style="margin:0"><span id="u-at">还没读取</span><span class="sp"></span><button class="btn small" id="u-refresh" type="button">立即刷新</button></p>
-        <button class="btn primary" id="u-save" type="button">保存上限</button><p class="msg" id="u-msg" role="status"></p>
-        <p class="hint">Gemini 的真实免费额度 Google 不提供查询，这里是我们自己数的次数和 token；Google 说用完（429）时状态会标出来。到了我们设的上限，这个模型今天先跳过，换下一个。Gemini 按次数（1～10,000），Workers AI 按 neurons（1～9,500；免费额度 10,000，超过不让保存）。"今天"按各家的重置时间算。</p></div></div>
+    <div class="tablewrap boxed"><table><thead><tr><th>这本账</th><th>今天已用</th><th>每天上限</th><th>还剩</th><th>什么时候清零（台湾时间）</th></tr></thead><tbody id="u-left"><tr><td colspan="5">正在读取…</td></tr></tbody></table></div>
+    <!-- 每一行的"这个数靠不靠得住"：Workers AI 那一行写明是本环境记的账、Cloudflare 按整个账号算（src/usage.ts waiCaveat） -->
+    <div id="u-left-notes" style="margin-top:var(--s3)"></div>
+    <div class="save-row" style="margin-top:var(--s2)"><button class="btn small" id="u-refresh" type="button">立即刷新</button><span class="hint">停在这一页时每 30 秒自动刷新</span></div>
+    <details class="grp box" id="u-caps"><summary>每个模型的用量和上限（要改上限点这里）</summary><div class="in">
+      <div class="tablewrap boxed"><table><thead><tr><th>模型</th><th>今天请求</th><th>今天 token（入 / 出）</th><th>每天上限</th><th>用量</th><th>状态</th><th>下次重置（台湾时间）</th></tr></thead><tbody id="u-rows"></tbody></table></div>
+      <div class="save-row"><button class="btn primary" id="u-save" type="button">保存上限</button><p class="msg" id="u-msg" role="status"></p></div>
+      <p class="hint">Gemini 的真实免费额度 Google 不提供查询，这里是我们自己数的次数和 token；Google 说用完（429）时状态会标出来。到了我们设的上限，这个模型今天先跳过，换下一个。Gemini 按次数（1～10,000），Workers AI 按 neurons（1～9,500；免费额度 10,000，超过不让保存）。"今天"按各家的重置时间算。</p></div></details>
     <!-- 用量监控第二块：分别用到了哪里。数据来自 /api/usage 的 byPurpose（表 usage_by_purpose，迁移 0010） -->
-    <h3 class="mh">分别用到了哪里<span class="sp"></span><span class="hint">今天 · 按用途 · 只看、不设上限</span></h3>
-    <div class="card"><div class="tablewrap"><table><thead><tr><th>用途</th><th>Workers AI（neurons）</th><th>Workers AI 次数</th><th>Gemini 次数</th></tr></thead><tbody id="u-purpose"><tr><td colspan="4">正在读取…</td></tr></tbody></table></div>
-      <div class="pad"><p class="hint">按"这一笔是干什么用的"分开记（表 <code>usage_by_purpose</code>）。为什么不看"按项目看用量"：素材生成器的图片和音频都算同一个项目，按项目分不出哪一笔是出图、哪一笔是配音。neurons 是<b>按价格表估算</b>的，不是 Cloudflare 的账单。<b>这一版上线以前记下的用量没有用途，不回填也不估算</b>，单独列成"没按用途记下来的"；那一行的次数写"没记录"，因为当时确实没记下来。</p></div></div>
-  </section></section>
-  <!-- 按项目看用量（工作平台批 2，D-3）：/api/usage 的 byProject；只记、不当限额 -->
-  <section class="mod" id="t-byproj"><h2 class="mh">按项目看用量<span class="sp"></span><span class="hint">今天 · 只看、不设上限</span></h2>
-    <div class="card"><div class="tablewrap"><table><thead><tr><th>项目</th><th>Gemini</th><th>Workers AI</th></tr></thead><tbody id="bp-rows"><tr><td colspan="3">正在读取…</td></tr></tbody></table></div>
-      <div class="pad"><p class="hint">"今天"和上面的用量和限额一样按各家的重置时间算。额度是所有项目一起用的，上限只在"用量和限额"里设。"平台自己"是设置页"测试 AI"这类平台自己发的请求。这一版上线以前没分项目（不回填），所以今天按项目加起来可能比上面的总数少。</p></div></div>
+    <details class="grp box" id="u-purpose-box"><summary>分别用到了哪里（今天 · 按用途 · 只看、不设上限）</summary><div class="in">
+      <div class="tablewrap boxed"><table><thead><tr><th>用途</th><th>Workers AI（neurons）</th><th>Workers AI 次数</th><th>Gemini 次数</th></tr></thead><tbody id="u-purpose"><tr><td colspan="4">正在读取…</td></tr></tbody></table></div>
+      <p class="hint">按"这一笔是干什么用的"分开记（表 <code>usage_by_purpose</code>）。为什么不看"按项目看用量"：素材生成器的图片和音频都算同一个项目，按项目分不出哪一笔是出图、哪一笔是配音。neurons 是<b>按价格表估算</b>的，不是 Cloudflare 的账单。<b>这一版上线以前记下的用量没有用途，不回填也不估算</b>，单独列成"没按用途记下来的"；那一行的次数写"没记录"，因为当时确实没记下来。</p></div></details>
   </section>
-  <!-- Webhook 开关（工作平台批 3）：settings 的 hook:github；GET /api/active 的 on、POST /api/hook {on} -->
-  <section class="mod" id="t-hook"><h2 class="mh">Webhook 开关<span class="sp"></span><span class="hint">工作台"团队在做什么"的数据来源</span></h2>
-    <div class="card"><div class="pad">
-      <p class="sum" style="margin:0"><button class="btn primary" id="hook-toggle" type="button" aria-pressed="true" hidden>正在读取…</button><span class="msg" id="hook-msg" role="status"></span></p>
-      <p class="hint">开着：GitHub 发来的推送、PR、自动检查结果写进"团队在做什么"。关着：签名对的事件照样回"收到"，但一条都不写（出问题时先关这里止损）。要连请求都挡住，到 GitHub 仓库 Settings → Webhooks 取消 Active。</p>
-    </div></div>
-  </section>
-  ${ASSETS_MOD}
-  ${TTS_MOD}
-  ${VOICE_MOD}
-  <section class="mod" id="t-ext"><h2 class="mh">插件下载</h2>
-  <section id="v-ext">
-    <div class="card"><div class="pad">
-      <p class="sum" style="margin:0">副驾驶插件 <b>${EXTENSION_VERSION}</b>（和这个后台是同一次部署，版本对得上）</p>
-      <button class="btn primary" id="dl" type="button">下载插件 ${EXTENSION_VERSION}</button><p class="msg" id="dl-msg" role="status"></p>
-      <b>第一次安装（电脑上的 Chrome）</b>
+      <details class="more"><summary>这些数靠不靠得住？两本账怎么看</summary><div class="in"><p class="hint">两本账<b>分开看、不要加在一起</b>（单位都不一样）：Workers AI 按 neurons 算，备用 AI、素材生成器、语音生成花的都是这一本；Gemini 按请求次数算。<b>"一天"按各家自己的重置时间</b>：Workers AI 是 UTC 0 点清零，也就是<b>台湾早上 8 点</b>；Gemini 是美国太平洋时间半夜清零，也就是<b>台湾下午 3 点或 4 点</b>（看美国当时有没有夏令时）。这里的"上限"是我们自己在下面那张表里设的数，<b>不是各家的真实剩余额度</b>——Google 不提供查询接口；Cloudflare 的免费额度每天 10,000 neurons 是<b>按整个账号算的</b>，正式版和测试版共用一份、却各记各的账（两个不同的数据库），所以上面那个"还剩"只能当<b>最多还有这么多</b>看。<b>要知道真实剩余只有两条路</b>：一是 Cloudflare 自己报错（报了上面就出红字），二是去接 Cloudflare 的分析接口（要 Amos 的 API 令牌，这一版没做）。</p></div></details>
+    </section>
+    <!-- 按项目看用量（工作平台批 2，D-3）：/api/usage 的 byProject；只记、不当限额 -->
+    <section class="card mod" id="t-byproj">
+      <header class="mh"><h2>按项目看用量</h2><span class="sp"></span><span class="aux">今天 · 只看、不设上限</span></header>
+      <p class="lead" id="bp-lead"><span class="skel" style="width:50%"></span></p>
+      <div class="mbody"><div class="tablewrap boxed"><table><thead><tr><th>项目</th><th>Gemini</th><th>Workers AI</th></tr></thead><tbody id="bp-rows"><tr><td colspan="3">正在读取…</td></tr></tbody></table></div></div>
+      <details class="more"><summary>这一版上线以前没分项目（不回填）：加起来可能比上面的总数少</summary><div class="in"><p>"今天"和上面的用量和限额一样按各家的重置时间算。额度是所有项目一起用的，上限只在"用量和限额"里设。"平台自己"是设置页"测试 AI"这类平台自己发的请求。这一版上线以前没分项目（不回填），所以今天按项目加起来可能比上面的总数少。</p></div></details>
+    </section>
+    <!-- 插件下载（批 B：原来在页面最后，现在照菜单放第 5） -->
+    <section class="card mod" id="t-ext">
+      <header class="mh"><h2>插件下载</h2><span class="sp"></span><span class="aux">副驾驶 · 和这个后台同一次部署</span></header>
+      <p class="lead"><span class="dot ok"></span><span>最新版 ${EXTENSION_VERSION}，和这个后台是同一次部署，版本对得上。</span><span class="soft">装过的话，只要覆盖文件夹再点刷新。</span></p>
+  <section id="v-ext" class="mbody">
+      <div class="ext"><div class="ver">${EXTENSION_VERSION}</div><div><p class="sum" style="padding:0">副驾驶插件 <b>${EXTENSION_VERSION}</b>（Chrome 插件 · zip）</p><p class="msg" id="dl-msg" role="status"></p></div>
+        <button class="btn primary big" id="dl" type="button">下载插件 ${EXTENSION_VERSION}</button></div>
+      <div class="row2">
+        <div><b>第一次安装（电脑上的 Chrome）</b>
       <ol class="steps">
         <li>点上面的按钮下载，把 zip 解压到一个固定的地方（例如"文件"里），得到 <code>marketing-copilot</code> 文件夹。<b>以后不要移动或删除这个文件夹</b>，插件就从这里读。</li>
         <li>Chrome 地址栏打开 <code>chrome://extensions</code>，打开右上角的"开发者模式"。</li>
         <li>点"加载已解压的扩展程序"，选 <code>marketing-copilot</code> 文件夹。</li>
         <li>打开 X 或 Threads，点插件图标打开侧边栏，到"设置"填中转服务地址 <code id="origin"></code> 和连接令牌（令牌只填在插件里，不要发到聊天里）。</li>
-      </ol>
-      <b>更新到新版本</b>
+      </ol></div>
+        <div><b>更新到新版本</b>
       <ol class="steps">
         <li>下载新版，解压后把里面的文件<b>覆盖</b>到原来的 <code>marketing-copilot</code> 文件夹（位置不变，插件的设置会保留）。</li>
         <li>到 <code>chrome://extensions</code> 找到"Quick Come 副驾驶"，点刷新按钮 ↻，再刷新 X / Threads 页面。</li>
-      </ol>
-    </div></div>
-  </section></section>
+      </ol></div>
+      </div>
+  </section>
+    </section>
+  ${ASSETS_MOD}
+  ${TTS_MOD}
+    <!-- Webhook 开关（工作平台批 3；批 B 改成开关样式、放到最后）：settings 的 hook:github；GET /api/active 的 on、POST /api/hook {on} -->
+    <section class="card mod" id="t-hook">
+      <header class="mh"><h2>Webhook 开关</h2><span class="sp"></span><span class="aux">工作台"团队在做什么"的数据来源</span></header>
+      <p class="lead" id="hook-lead"><span class="dot gray"></span><span>正在读取开关…</span></p>
+      <div class="mbody"><div class="save-row" style="margin:0"><button class="switch" id="hook-toggle" type="button" role="switch" aria-pressed="true" aria-checked="true" hidden><i aria-hidden="true"></i><span id="hook-state">正在读取…</span></button><span class="msg" id="hook-msg" role="status"></span></div></div>
+      <details class="more"><summary>开着、关着分别会怎样</summary><div class="in"><p>开着：GitHub 发来的推送、PR、自动检查结果写进"团队在做什么"。关着：签名对的事件照样回"收到"，但一条都不写（出问题时先关这里止损）。要连请求都挡住，到 GitHub 仓库 Settings → Webhooks 取消 Active。</p></div></details>
+    </section>
   </section>
   <!-- 公司总览：原运营仪表盘"公司"页（右上角"公司总览"进入，地址 #/company），脚本和样式都没改 -->
   <section id="v-company" hidden>
@@ -656,6 +786,8 @@ function route(){if(!authed)return;let h=hashOf();
   if(page==='company'){try{companyOpen(prev==='company');}catch(e){$('co-at').textContent='这一页出错了：'+e.message;}}
   // 批 2：在公共工具、公司总览刷新时，一级菜单上的待办数量也马上读出来（以前要切到工作台才有）
   if(page==='work'||page==='project'){try{platformOpen(page,mod);}catch(e){}}else{try{platformStop();platformPeek();}catch(e){}}
+  // 批 B：语音对话实测台在"语音生成"的折叠 #tts-more 里：打开 #/tools/voice 先把折叠打开再滚过去
+  if(page==='tools'&&view==='voice'){const f=$('tts-more');if(f)f.open=true;}
   const el=mod&&$(mod);if(el&&!el.closest('[hidden]')){el.scrollIntoView({block:'start'});subPin={s:mod,y:scrollY};}else if(prev!==page||prevProj!==proj)window.scrollTo(0,0);
   subLast='';subSpy();}
 window.addEventListener('hashchange',route);
@@ -706,6 +838,10 @@ try{MM.addEventListener('change',()=>moreMenu(false));}catch(e){}moreMenu(false)
 document.addEventListener('click',(e)=>{const d=$('more-menu');if(MM.matches&&d.open&&!d.contains(e.target))moreMenu(false);});
 document.addEventListener('keydown',(e)=>{const d=$('more-menu');if(e.key==='Escape'&&MM.matches&&d.open){moreMenu(false);d.querySelector('summary').focus();}});
 $('origin').textContent=location.origin;
+// 自己点开"语音生成"底部折叠时，实测台的价格表和场景也要读出来（window.voiceOpen 只读一次）
+// 点"语音对话实测台 ↓"时当场打开折叠（不等 hashchange 之后的 route()，免得地址变了、实测台还没露出来）
+document.querySelectorAll('#t-tts a[href="#/tools/voice"]').forEach((a)=>a.addEventListener('click',()=>{$('tts-more').open=true;}));
+$('tts-more').addEventListener('toggle',()=>{if($('tts-more').open){try{window.voiceOpen();}catch(e){}}subSpySoon();});
 $('dl').addEventListener('click',async()=>{const b=$('dl'),m=$('dl-msg');b.disabled=true;b.textContent='下载中…';m.className='msg';m.textContent='';
   try{const r=await fetch('/api/extension.zip',{credentials:'same-origin'});if(r.status===401){showLogin('请重新登录');return;}if(!r.ok)throw new Error('下载失败（'+r.status+'），稍后再试');
     const name=(/filename="([^"]+)"/.exec(r.headers.get('content-disposition')||'')||[])[1]||'marketing-copilot.zip';const url=URL.createObjectURL(await r.blob());const a=document.createElement('a');a.href=url;a.download=name;document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),60000);
@@ -730,9 +866,11 @@ function render(){
   // 每天回帖上限按项目（D-2）：每条看它所在项目的"今天已回 / 上限"（state.caps）；老接口没有 caps 时用整体的
   const fullOf=(p)=>{const c=state.caps&&state.caps[p];return c?c.doneToday>=c.cap:state.doneToday>=state.cap;};
   $('count').textContent='今天已回 '+state.doneToday+' / '+state.cap;
+  try{queueHead(fullOf);}catch(e){}
   const sel=$('f-prod'), cur=sel.value; sel.replaceChildren(Object.assign(document.createElement('option'),{value:'',textContent:'全部'}),...state.products.map(p=>Object.assign(document.createElement('option'),{value:p,textContent:PROD[p]||p})));sel.value=cur;
   $('total').textContent='共 '+state.total+' 条'+(state.total>state.items.length?'（只显示最近 '+state.items.length+' 条）':'');
   $('bulk').hidden=!state.items.length;$('bulk').textContent='删除筛选出的这 '+state.items.length+' 条';
+  $('q-filters-s').textContent='筛选：'+filterText();
   const L=$('list');L.replaceChildren();
   if(!state.items.length){L.innerHTML='<div class="empty">'+(filter==='pending'?'没有待回的帖子。打开插件的自动模式，或者自己往下滑，分数够的会出现在这里。':'这里还没有记录。')+'</div><p class="hint" style="text-align:center">也可以换个筛选条件看看。</p>';return;}
   for(const it of state.items){
@@ -749,7 +887,7 @@ function render(){
     if(it.handledAt)times.append(Object.assign(document.createElement('span'),{textContent:(it.status==='done'?'我回了 ':'跳过 ')+tw(it.handledAt)}));
     left.append(who,times,Object.assign(document.createElement('p'),{className:'post',textContent:it.snippet}));
     if(it.reasons&&it.reasons.length){const w=document.createElement('div');w.className='why';w.append(Object.assign(document.createElement('b'),{textContent:'打分依据'}));const ul=document.createElement('ul');it.reasons.forEach(r=>ul.append(Object.assign(document.createElement('li'),{textContent:r})));w.append(ul);left.append(w);}
-    const dr=Object.assign(document.createElement('div'),{className:'draft',textContent:it.draft});
+    const dr=Object.assign(document.createElement('div'),{className:'draft'});dr.append(Object.assign(document.createElement('span'),{className:'k',textContent:'AI 草稿'}),document.createTextNode(it.draft||''));
     if(it.source)dr.append(Object.assign(document.createElement('div'),{className:'src',textContent:'数据来源：'+it.source}));
     if(it.engine==='workers-ai')dr.append(Object.assign(document.createElement('div'),{className:'src',textContent:'备用 AI 写的（Gemini 当时用不了），发之前多看一眼'}));
     left.append(dr);
@@ -758,17 +896,17 @@ function render(){
       const r=Object.assign(document.createElement('a'),{className:'btn primary',href:it.replyUrl,target:'_blank',rel:'noopener',textContent:'一键回复'});
       if(fullOf(it.product)){r.setAttribute('aria-disabled','true');r.textContent='今天已到上限';}
       r.addEventListener('click',()=>toast('已打开回复窗口。发完回来点"我回了"。'));
-      acts.append(r,mk(it,'done','我回了'),mk(it,'skip','跳过'));
+      acts.append(r,mk(it,'done','我回了'),mk(it,'skip','跳过','btn text'));
     }else acts.append(mk(it,'pending','放回待回'));
     acts.append(del(it,acts));
     d.append(left,acts);L.append(d);
   }
 }
-function mk(it,to,label){const b=Object.assign(document.createElement('button'),{className:'btn',textContent:label});
+function mk(it,to,label,cls){const b=Object.assign(document.createElement('button'),{className:cls||'btn',type:'button',textContent:label});
   b.addEventListener('click',async()=>{b.disabled=true;b.textContent='处理中…';
     try{await call('/api/queue/'+it.id,{status:to});toast(to==='done'?'已移到"已回"':to==='skip'?'已移到"跳过"':'已放回待回');await load();}
     catch(e){toast(e.message,true);b.disabled=false;b.textContent=label;}});return b;}
-function del(it,acts){const b=Object.assign(document.createElement('button'),{className:'btn small danger',textContent:'删除'});
+function del(it,acts){const b=Object.assign(document.createElement('button'),{className:'btn text danger',type:'button',textContent:'删除'});
   b.addEventListener('click',()=>{const c=document.createElement('div');c.className='confirm';c.style.margin='0';
     c.append('删了不能恢复，确定？');
     const y=Object.assign(document.createElement('button'),{className:'btn small danger',type:'button',textContent:'确认删除'});
@@ -779,6 +917,21 @@ function del(it,acts){const b=Object.assign(document.createElement('button'),{cl
     c.append(y,n);b.replaceWith(c);});
   return b;}
 function rangeText(){const parts=[{pending:'待回',done:'已回',skip:'跳过'}[filter]];if($('f-prod').value)parts.push(PROD[$('f-prod').value]||$('f-prod').value);if($('f-plat').value)parts.push(P[$('f-plat').value]);if($('f-from').value||$('f-to').value)parts.push(($('f-from').value||'最早')+' ～ '+($('f-to').value||'今天'));return parts.join(' · ');}
+/** 批 B：清单的一句话结论、角标、"今天已回"进度条（数据都来自这次 /api/queue 的返回） */
+function queueHead(fullOf){const pend=filter==='pending',n=state.total,cap=state.cap,done=state.doneToday,left=Math.max(0,cap-done);
+  const q=$('q-n');q.textContent=String(pend?n:state.items.length);q.className='cbadge'+(pend&&n?' red':'');
+  const bar=$('q-bar');bar.style.width=(cap>0?Math.min(100,Math.round(done/cap*100)):0)+'%';bar.parentElement.className='meter'+(done>=cap?' bad':done>=cap*0.8?' warn':'');
+  const sel=$('f-prod').value;const full=sel?fullOf(sel):done>=cap;let L;
+  if(!pend)L=['gray',(filter==='done'?'已回 ':'跳过 ')+n+' 条'+(rangeText().indexOf(' · ')>0?'（'+rangeText().split(' · ').slice(1).join(' · ')+'）':'')+'。','点"放回待回"能放回去。'];
+  else if(!n)L=['ok','没有待回的。','插件存进新的帖子后会出现在这里。'];
+  else if(full)L=['red',n+' 条等你回，但今天已到上限（'+done+' / '+cap+'）。','明天再回，或者到"每天回帖上限"里调高。'];
+  else L=['amber',n+' 条等你回，今天还能回 '+left+' 条。','先回分高的。'];
+  const e=$('q-lead');e.replaceChildren(Object.assign(document.createElement('span'),{className:'dot '+L[0]}),Object.assign(document.createElement('span'),{textContent:L[1]}));if(L[2])e.append(Object.assign(document.createElement('span'),{className:'soft',textContent:L[2]}));}
+/** 折叠"筛选"上写现在筛的是什么，不点开也知道 */
+function filterText(){const ps=[$('f-prod').value?(PROD[$('f-prod').value]||$('f-prod').value):'全部项目',$('f-plat').value?P[$('f-plat').value]:'全部平台',$('f-sort').value==='score'?'评分高的在前':'最新的在前'];
+  const rg=document.querySelector('[data-rg][aria-pressed="true"]');ps.push($('f-from').value||$('f-to').value?(rg&&rg.dataset.rg==='today'?'今天':rg&&rg.dataset.rg==='7'?'近 7 天':($('f-from').value||'最早')+' ～ '+($('f-to').value||'今天')):'全部时间');return ps.join(' · ');}
+/** 一句话结论写进 .lead（和第三段脚本的 setLead 一样：圆点 + 结论 + 浅色补充） */
+function leadT(id,dot,main,soft){const e=$(id);if(!e)return;e.replaceChildren(Object.assign(document.createElement('span'),{className:'dot '+dot}),Object.assign(document.createElement('span'),{textContent:main}));if(soft)e.append(Object.assign(document.createElement('span'),{className:'soft',textContent:soft}));}
 $('bulk').addEventListener('click',()=>{$('bulk-text').textContent='要永久删除现在列出的 '+state.items.length+' 条（'+rangeText()+'），删了不能恢复。';$('bulk-confirm').hidden=false;$('bulk-yes').focus();});
 $('bulk-no').addEventListener('click',()=>{$('bulk-confirm').hidden=true;});
 $('bulk-yes').addEventListener('click',async()=>{const y=$('bulk-yes');y.disabled=true;y.textContent='正在删除…';$('bulk-no').disabled=true;
@@ -787,8 +940,18 @@ $('bulk-yes').addEventListener('click',async()=>{const y=$('bulk-yes');y.disable
 // 用量页：打开时读一次；停在这一页时每 30 秒自动刷新（0.3.5，B-2）；输入框正在改时不覆盖
 let uTimer=null, uEditing=false;
 function uStamp(){$('u-at').textContent='更新于 '+tw(Date.now()).slice(11)+'（停在这一页时每 30 秒自动刷新）';}
+/** 批 B：用量和限额、按项目看用量的一句话结论（数据来自 /api/usage 的 left、accountLimit、byProject） */
+function usageLead(j){const L=j.left||[];
+  if(j.accountLimit&&j.accountLimit.text)leadT('u-lead','red','Cloudflare 说今天账号的额度用完了。','到台湾早上 8 点清零，下面写了原话。');
+  else if(!L.length)leadT('u-lead','gray','读不到额度。','过 30 秒自动再试。');
+  else{const ps=L.map((x)=>({x,left:x.cap>0?Math.max(0,Math.round((1-x.used/x.cap)*100)):0}));const worst=ps.reduce((a,b)=>b.left<a.left?b:a);
+    if(worst.left<=10)leadT('u-lead','red',worst.x.label+' 今天只剩 '+worst.left+'%。','用完以后这本账的请求今天先停；两本账分开看。');
+    else if(worst.left<=30)leadT('u-lead','amber',worst.x.label+' 今天还剩 '+worst.left+'%，省着用。','两本账分开看，不要加在一起。');
+    else leadT('u-lead','ok','今天额度宽裕：'+ps.map((p)=>p.x.label+' 还剩 '+p.left+'%').join('，')+'。','两本账分开看，不要加在一起。');}
+  const B=j.byProject||[];if(!B.length)leadT('bp-lead','gray','今天还没有按项目记下的用量。','插件第一次打分后，这里每个项目一行。');
+  else{const g=B.reduce((a,x)=>a+x.gemini,0),w=B.reduce((a,x)=>a+x.workersAi,0);leadT('bp-lead','ok','今天 '+B.length+' 个项目有用量：Gemini 合计 '+g.toLocaleString()+' 次，Workers AI 合计 '+Math.round(w).toLocaleString()+' neurons。','只看、不设上限。');}}
 async function loadUsage(manual){const b=$('u-refresh');if(manual){b.disabled=true;b.textContent='正在刷新…';}
-  try{const j=await call('/api/usage');const rows=j.rows;if(!uEditing||manual){usage=rows;renderUsage();}renderByProject(j.byProject||[]);renderAcct(j.accountLimit);renderLeft(j.left||[]);renderPurpose(j.byPurpose||[]);uStamp();subSpySoon();if(manual)$('u-msg').textContent='';}
+  try{const j=await call('/api/usage');const rows=j.rows;if(!uEditing||manual){usage=rows;renderUsage();}renderByProject(j.byProject||[]);renderAcct(j.accountLimit);renderLeft(j.left||[]);renderPurpose(j.byPurpose||[]);usageLead(j);uStamp();subSpySoon();if(manual)$('u-msg').textContent='';}
   catch(e){$('u-at').textContent='刷新失败：'+e.message+'（30 秒后再试）';}
   finally{if(manual){b.disabled=false;b.textContent='立即刷新';}}}
 function usageTimer(on){clearInterval(uTimer);uTimer=on?setInterval(()=>{if(page==='tools'&&document.visibilityState==='visible')loadUsage(false);},30000):null;}
@@ -842,19 +1005,27 @@ function renderPurpose(list){const T=$('u-purpose');T.replaceChildren();
 // Webhook 开关（工作平台批 3）：读到状态才显示按钮（免得先显示一个不对的状态）；点了以后等服务端确认再变
 // 审查 R8：每次读 / 切都拿一个序号，只认最新那次的返回（晚到的旧 GET 不能把按钮改回去）
 let hookSeq=0;
-async function loadHook(){const my=++hookSeq;const m=$('hook-msg');try{const a=await call('/api/active');if(my===hookSeq)showHook(a.on);}catch(e){if(e.message!=='请重新登录'){m.className='msg';m.textContent='读不到开关：'+e.message;}}}
-function showHook(on){const b=$('hook-toggle');b.hidden=false;b.disabled=false;b.setAttribute('aria-pressed',String(!!on));b.textContent=on?'开着（点一下关掉）':'关着（点一下打开）';b.className='btn '+(on?'primary':'danger');}
-$('hook-toggle').addEventListener('click',async()=>{const b=$('hook-toggle'),m=$('hook-msg');const want=b.getAttribute('aria-pressed')!=='true';++hookSeq;b.disabled=true;m.className='msg';m.textContent=want?'正在打开…':'正在关…';
+async function loadHook(){const my=++hookSeq;const m=$('hook-msg');try{const a=await call('/api/active');if(my===hookSeq)showHook(a.on);}catch(e){if(e.message!=='请重新登录'){m.className='msg';m.textContent='读不到开关：'+e.message;leadT('hook-lead','red','暂时读不到开关。','点"公共工具"重新进来会再读一次。');}}}
+// 批 B：开关样式（.switch，aria-pressed / aria-checked 都跟着），一句话结论写在 #hook-lead
+function showHook(on){const b=$('hook-toggle');b.hidden=false;b.disabled=false;b.setAttribute('aria-pressed',String(!!on));b.setAttribute('aria-checked',String(!!on));$('hook-state').textContent=on?'开着（点一下关掉）':'关着（点一下打开）';b.className='switch';
+  if(on)leadT('hook-lead','ok','开着：GitHub 的推送、PR、检查结果在正常写进来。','出问题时先关这里止损。');else leadT('hook-lead','amber','关着：新的事件不再写进"团队在做什么"。','要恢复就点开关打开。');}
+$('hook-toggle').addEventListener('click',async()=>{const b=$('hook-toggle'),m=$('hook-msg');const want=b.getAttribute('aria-pressed')!=='true';++hookSeq;b.disabled=true;m.className='msg';m.textContent=want?'正在打开…':'正在关…';$('hook-state').textContent='处理中…';
   try{const r=await fetch('/api/hook',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({on:want}),credentials:'same-origin'});
     if(r.status===401){showLogin('请重新登录');return;}if(!r.ok)throw new Error('没切成（'+r.status+'），稍后再试');const j=await r.json().catch(()=>({on:want}));hookSeq++;showHook(typeof j.on==='boolean'?j.on:want);m.className='msg ok';m.textContent=want?'✓ 已打开：新的事件会写进"团队在做什么"':'✓ 已关掉：新的事件不写库';}
-  catch(e){b.disabled=false;m.className='msg';m.textContent=e.message;}});
+  catch(e){b.disabled=false;showHook(!want);m.className='msg';m.textContent=e.message;}});
 // 每天回帖上限按项目（工作平台批 2，D-2）：GET / POST /api/reply-cap；1～50 的整数，前后端同一个范围
 let replyRows=[];
-async function loadReply(){try{replyRows=(await call('/api/reply-cap')).rows;renderReply();subSpySoon();}catch(e){if(e.message!=='请重新登录'){const m=$('rc-msg');m.className='msg';m.textContent='读不到上限：'+e.message;}}}
+async function loadReply(){try{replyRows=(await call('/api/reply-cap')).rows;renderReply();subSpySoon();}catch(e){if(e.message!=='请重新登录'){const m=$('rc-msg');m.className='msg';m.textContent='读不到上限：'+e.message;leadT('rc-lead','red','暂时读不到上限。','刷新页面再试。');}}}
 function renderReply(){const T=$('rc-rows');T.replaceChildren();
   replyRows.forEach(r=>{const tr=document.createElement('tr');tr.append(Object.assign(document.createElement('td'),{textContent:PROD[r.project]?r.project+'（'+PROD[r.project]+'）':r.project}));
     const c=document.createElement('td');c.dataset.label='每天上限';const inp=Object.assign(document.createElement('input'),{className:'cap-in',id:'rc-'+r.project,value:String(r.cap),inputMode:'numeric'});inp.setAttribute('aria-label',r.project+' 每天上限');c.append(inp,' 条');tr.append(c);
-    const d=document.createElement('td');d.dataset.label='今天已回';d.textContent=r.doneToday+' 条'+(r.doneToday>=r.cap?'（到上限了）':'');tr.append(d);T.append(tr);});}
+    const d=document.createElement('td');d.dataset.label='今天已回';d.textContent=r.doneToday+' 条'+(r.doneToday>=r.cap?'（到上限了）':'')+' ';
+    const mt=document.createElement('span');mt.className='meter'+(r.doneToday>=r.cap?' bad':r.doneToday>=r.cap*0.8?' warn':'');mt.setAttribute('aria-hidden','true');const i=document.createElement('i');i.style.width=(r.cap>0?Math.min(100,Math.round(r.doneToday/r.cap*100)):0)+'%';mt.append(i);d.append(mt);tr.append(d);T.append(tr);});
+  // 批 B：一句话结论（哪个项目今天到上限了）
+  const full=replyRows.filter((r)=>r.doneToday>=r.cap);
+  if(!replyRows.length)leadT('rc-lead','gray','还没有项目。','有项目页的项目会各占一行。');
+  else if(full.length)leadT('rc-lead','amber',full.map((r)=>r.project+' 今天到上限了（'+r.doneToday+' / '+r.cap+'）').join('；')+'。','到上限的项目"一键回复"变灰，别的照常。');
+  else leadT('rc-lead','ok',(replyRows.length>1?replyRows.length+' 个项目今天都没到上限':replyRows[0].project+' 今天还能回 '+(replyRows[0].cap-replyRows[0].doneToday)+' 条')+'。','上限按项目分开算。');}
 $('rc-save').addEventListener('click',async()=>{const b=$('rc-save'),m=$('rc-msg');const caps={},bad=[];
   replyRows.forEach(r=>{const el=$('rc-'+r.project);const v=String(el.value).trim();const n=Number(v);const ok=/^[0-9]+$/.test(v)&&n>=1&&n<=50;el.setAttribute('aria-invalid',String(!ok));if(!ok)bad.push(r.project+' 要在 1～50 之间（整数）');caps[r.project]=n;});
   if(bad.length){m.className='msg';m.textContent='没保存：'+bad.join('；');return;}
@@ -1111,6 +1282,10 @@ function todoLi(x,first,now){const l=lvl(x,now);const li=pe('li','todo '+l+(firs
       if(open)body.append(detailEl(x));b.setAttribute('aria-expanded',String(open));b.textContent=x.btn+(open?' ↑':' ↓');});
     go.append(b);if(on)body.append(detailEl(x));}
   else if(x.href)go.append(link(x.btn+' →',x.href,'btn primary'));
+  // 批 B（批 A 走查："审《阶段计划》并过关卡 A"那条右边什么都没有）：agents 推来的待办没带链接、也没带正文时，上面几种都不成立；
+  // 有链接才给青色主按钮，没有就给一个明确的次按钮"做完了，打勾"（和左边圆圈同一个动作），并在下面写一句去哪做
+  if(!go.childNodes.length){const b=pe('button','btn','做完了，打勾');b.type='button';b.dataset.act='tick';b.addEventListener('click',()=>{b.setAttribute('aria-busy','true');b.textContent='处理中…';tick(x,b);});go.append(b);
+    body.append(pe('p','why','没有链接：在 Claude 窗口里或线下做完，回来打勾。'));}
   li.append(t,body,go);return li;}
 /** 展开的正文：正文（长的先折叠，"展开全文"）、"已截断"、要你决定的问题表（每条带建议）、小链接"在 GitHub 打开"。全部 textContent */
 function detailEl(x){const D=x.detail;const d=pe('div','detail');
@@ -1134,7 +1309,7 @@ function formEl(x){const f=pe('div','form');f.hidden=!PL.open.has(x.key);const i
 function doneLi(x){const li=pe('li');li.append(pe('span','pill p-ok','✓'),pe('s',null,x.title),pe('span','hint','做完 '+md(PL.done.get(x.key))));const b=pe('button','btn small','撤销');b.type='button';b.dataset.undo=x.key;b.addEventListener('click',()=>undo(x,b));li.append(b);return li;}
 function fillList(ulId,doneId,nId,dnId,list,now,emptyB,emptyS){const open=list.filter((x)=>!isDone(x.key)),closed=list.filter((x)=>isDone(x.key)&&PL.done.has(x.key));
   const ul=$(ulId);ul.replaceChildren(...open.map((x,i)=>todoLi(x,i===0,now)));if(!open.length){const e=pe('li','empty');e.append(pe('b',null,emptyB),pe('span',null,emptyS));ul.append(e);}
-  $(doneId).replaceChildren(...closed.map(doneLi));if(!closed.length)$(doneId).append(pe('li','none','还没有'));$(nId).textContent=open.length;$(dnId).textContent=closed.length;return open;}
+  $(doneId).replaceChildren(...closed.map(doneLi));if(!closed.length)$(doneId).append(pe('li','none','还没有'));$(nId).textContent=open.length;$(nId).className='cbadge'+(open.length?' red':'');$(dnId).textContent='（'+closed.length+'）';return open;}
 /**
  * 工作台"全部待办"按时间段分组（批 A，2026-11-04；Amos 同意从"按项目折叠"改成这个口径）：
  * 已超时（含自动检查没过的"现在就看"）/ 24 小时内到期 / 之后到期 / 没定截止时间（这一组默认折叠）；
@@ -1239,9 +1414,10 @@ function renderLive(now){const f=liveFeed(now);const A=PL.active||{items:[],ende
   // 项目页：只看当前这个项目的
   const cp=curProj();$('f-live-stamp').textContent=cp?'只看 '+cp+' 的':'';
   fill('f-live-warn',f.warns);$('f-live-dot').className='live-dot '+f.cls;const fl=A.items.filter((x)=>x.project===cp),fe=A.ended.filter((x)=>x.project===cp);$('f-live-n').textContent=String(fl.filter((x)=>!x.external).length);
+  { const L=liveLead(f,{items:fl,ended:fe},now);if(!f.none&&f.cls!=='off'&&PL.active&&!fl.filter((x)=>!x.external).length)L[1]=cp+' 现在没有在做的事。';setLead('f-live-lead',...L); }
   const F=$('f-live-body');F.replaceChildren();if(f.none)F.append(pe('p','empty',NOT_YET));else if(!fl.length)F.append(pe('p','empty',cp+' 现在没有在做的事。'));
   fl.slice().sort((a,b)=>b.at-a.at).forEach((x)=>F.append(actItem(x,now,false)));
-  if(fe.length){const d=pe('details','fold recent');const sm=pe('summary',null,'最近结束 ');sm.append(pe('span','pill p-mute',String(fe.length)));d.append(sm);fe.forEach((x)=>d.append(actItem(x,now,true)));F.append(d);}}
+  if(fe.length){const d=pe('details','grp recent');const sm=pe('summary',null,'最近结束 ');sm.append(pe('span','pill p-mute',String(fe.length)));d.append(sm);fe.forEach((x)=>d.append(actItem(x,now,true)));F.append(d);}}
 /** 团队在做什么：例如"3 件在做，其中 1 件 3 小时没动静。不用你处理，看看就好。" */
 function liveLead(f,A,now){if(!PL.active)return ['red','暂时读不到团队进度。','过一会儿自动再试。'];
   if(f.none)return ['gray','还没接上：等 Webhook 配好。','配好后岗位一推分支，这里几秒内就会出现。'];
@@ -1286,7 +1462,7 @@ function renderHero(open,now){const h=$('hero');h.removeAttribute('aria-busy');c
   else if(x.gh)act.append(link('在 GitHub 打开',x.gh,'btn big'));
   else if(x.detail){const a=link(x.btn+' ↓','#/work/todo','btn primary big');a.addEventListener('click',toTodo);act.append(a);}
   else if(x.href)act.append(link(x.btn+' →',x.href,'btn primary big'));
-  const t=pe('button','btn text','做完了，打勾 ✓');t.type='button';t.addEventListener('click',()=>{t.setAttribute('aria-busy','true');t.textContent='处理中…';tick(x,t);});act.append(t);
+  const t=pe('button',act.childNodes.length?'btn text':'btn big ghost','做完了，打勾 ✓');t.type='button';t.addEventListener('click',()=>{t.setAttribute('aria-busy','true');t.textContent='处理中…';tick(x,t);});act.append(t);
   h.replaceChildren(l,act);}
 /** 数字和目标都是数时才画进度条："50"、"100"、"5 万 / 月"（= 50000）这类；"2026-12-31 前"这种不画 */
 function numOf(v){const m=/^\\s*(\\d+(?:\\.\\d+)?)\\s*(万)?\\s*(?:\\/\\s*\\S+)?\\s*$/.exec(String(v==null?'':v));return m?Number(m[1])*(m[2]?10000:1):null;}
@@ -1341,14 +1517,28 @@ function renderMeet(now){const B=$('w-meet-body');const next=nextMeet(now);const
   const m=pe('div','meet');m.append(d,right);B.replaceChildren(m);
   setLead('w-meet-lead',open?'amber':'gray','下一次还剩 '+dur(next-now)+(open?'；上次要你定的事还有 '+open+' 件没打勾':'')+'。');}
 // ---- forecast 项目页 ----
-function renderProject(pj,all,now){if(!pj)return;const mine=all.filter((x)=>x.proj===pj);const open=fillList('f-todos','f-donelist','f-next-n','f-done-n',mine,now,pj+' 现在没事要做','有新的事会出现在这里。');
+const P_LEADS=['f-next-lead','f-guide-lead','f-card-lead','f-pack-lead','f-match-lead','f-tools-lead','f-handoff-lead'];
+/** 批 B：项目页还没读成功过一次（第一次就失败）——照工作台 renderBlind：各模块写"暂时读不到"，不冒充"现在没事要做""本周还没有周包" */
+function renderProjectBlind(pj){const why=PL.errWhy||'暂时出错';
+  const ul=$('f-todos');const e=pe('li','empty');e.append(pe('b',null,'暂时读不到'),pe('span',null,'读不到 '+pj+' 的待办：'+why+'。点上面的"再读一次"，或者等一会儿自动再试。'));ul.replaceChildren(e);
+  $('f-next-n').textContent='—';$('f-next-n').className='cbadge';$('f-donelist').replaceChildren();$('f-done-n').textContent='（—）';setCnt('s-fnext',0);setCnt('s-guide',0);
+  P_LEADS.forEach((id)=>setLead(id,'gray','暂时读不到。','读到后这里会写结论。'));
+  ['f-guide-aux','f-card-at','f-pack-aux','f-match-aux'].forEach((id)=>{$(id).textContent='';});$('f-guide-h').textContent='操作指引';$('f-pack-h').textContent='本周帖子';$('f-match-h').textContent='焦点战';
+  ['f-guide-body','f-card-body','f-pack-body','f-match-body','f-handoff-body'].forEach((id)=>$(id).replaceChildren(emptyP('暂时读不到')));
+  $('f-tools-stamp').textContent='只算 '+pj+' 的';renderTools(pj);}
+function renderProject(pj,all,now){if(!pj)return;if(!PL.okAt){renderProjectBlind(pj);return;}const mine=all.filter((x)=>x.proj===pj);const open=fillList('f-todos','f-donelist','f-next-n','f-done-n',mine,now,pj+' 现在没事要做','有新的事会出现在这里。');
+  const ld=todoLead(open,now);setLead('f-next-lead',ld[0],ld[1],ld[2]);
   setCnt('s-fnext',open.length);$('f-tools-stamp').textContent='只算 '+pj+' 的';
-  const pb=okBlocks('pack').find((b)=>b.key===pj);const p=pb&&pb.payload;renderGuide(p,now);renderPack(p);
+  const pb=okBlocks('pack').find((b)=>b.key===pj);const p=pb&&pb.payload;renderGuide(p,now);renderPack(p,now);
   renderCard(pj);renderTools(pj);renderHandoff(pj);}
 function renderGuide(p,now){const B=$('f-guide-body');const H=$('f-guide-h');
-  if(!p||!(p.steps||[]).length){H.textContent='操作指引';B.replaceChildren(emptyP('本周还没有周包：市场经理交了周包以后，这里一步步列出要你做的事。'));setCnt('s-guide',0);return;}
-  const steps=p.steps;const c=steps.filter((s)=>isDone(stepKey(p,s.n))).length;H.replaceChildren('操作指引'+(typeof p.due==='number'?' · '+dateL(p.due):''),pe('span','sp'),pe('span','stamp','周包 '+p.date+' · '+steps.length+' 步'));
+  if(!p||!(p.steps||[]).length){H.textContent='操作指引';$('f-guide-aux').textContent='';B.replaceChildren(emptyP('本周还没有周包：市场经理交了周包以后，这里一步步列出要你做的事。'));setCnt('s-guide',0);
+    setLead('f-guide-lead','gray','本周还没有周包。','市场经理交了周包以后，这里一步步列出要你做的事。');return;}
+  const steps=p.steps;const c=steps.filter((s)=>isDone(stepKey(p,s.n))).length;H.textContent='操作指引'+(typeof p.due==='number'?' · '+dateL(p.due):'');$('f-guide-aux').textContent='周包 '+p.date+' · '+steps.length+' 步';
   const cur=steps.find((s)=>!isDone(stepKey(p,s.n)));
+  // 一句话结论：做到第几步、还剩几步、什么时候截止
+  if(!cur)setLead('f-guide-lead','ok',steps.length+' 步都做完了。','待办里的这件已自动打勾。');
+  else{const late=typeof p.due==='number'&&p.due<now,soon=typeof p.due==='number'&&p.due-now<DY;setLead('f-guide-lead',late?'red':soon?'amber':'gray','做完 '+c+' / '+steps.length+' 步，现在做第 '+cur.n+' 步。',typeof p.due==='number'?(late?'已超时 ':'还剩 ')+dur(p.due-now)+'（'+dateL(p.due)+'）。':'');}
   const pr=pe('div','progress');const g=pe('span',null,'完成 '+c+' / '+steps.length+(cur?' · 现在做第 '+cur.n+' 步':''));g.id='g-prog';const mt=pe('div','meter');const fill=pe('i');fill.style.width=Math.round(c/steps.length*100)+'%';mt.append(fill);pr.append(g,mt);
   const bar=pe('div','bar-row');const cb=pe('button','btn small','复制 '+(p.matches||[]).length+' 场焦点战');cb.type='button';cb.id='copy-match';const cm=pe('span','msg');cm.id='copy-msg';cm.setAttribute('role','status');
   bar.append(cb,cm,link('看周包全文',p.link||'#','btn small'));const ta=pe('textarea');ta.readOnly=true;ta.hidden=true;ta.setAttribute('aria-label','焦点战（手动复制）');
@@ -1370,31 +1560,46 @@ function copyMatches(p,b,m,ta){const text=(p.matches||[]).map((x)=>[x.league,x.h
   const fin=(ok)=>{b.disabled=false;PL.copy={ok,text,msg:ok?'已复制 '+p.matches.length+' 场。到官网名单页的"导入"里粘贴就行。':'没复制成功（浏览器不让）。下面整段已经选好，请手动复制（Ctrl+C / ⌘C）。'};
     m.className='msg'+(ok?' ok':'');m.textContent=PL.copy.msg;if(!ok){ta.hidden=false;ta.value=text;ta.focus();ta.select();}else ta.hidden=true;};
   try{if(!navigator.clipboard||!navigator.clipboard.writeText)throw new Error('no clipboard');navigator.clipboard.writeText(text).then(()=>fin(true),()=>fin(false));}catch(e){fin(false);}}
-function renderPack(p){const none='本周还没有周包';
-  if(!p){$('f-pack-h').textContent='本周帖子';$('f-match-h').textContent='焦点战';$('f-pack-body').replaceChildren(emptyP(none));$('f-match-body').replaceChildren(emptyP(none));return;}
-  const d0=Date.parse(p.date+'T12:00:00+08:00');$('f-pack-h').replaceChildren('本周帖子 · '+md(d0)+'～'+md(d0+6*DY),pe('span','sp'),pe('span','stamp',(p.posts||[]).length+' 条'));
+function renderPack(p,now){const none='本周还没有周包';
+  if(!p){$('f-pack-h').textContent='本周帖子';$('f-match-h').textContent='焦点战';$('f-pack-aux').textContent='';$('f-match-aux').textContent='';$('f-pack-body').replaceChildren(emptyP(none));$('f-match-body').replaceChildren(emptyP(none));
+    setLead('f-pack-lead','gray',none+'。','周包到了，这周要发的帖子列在这里。');setLead('f-match-lead','gray',none+'。','周包到了，这周的焦点战列在这里。');return;}
+  const posts=p.posts||[],ms=p.matches||[];
+  const d0=Date.parse(p.date+'T12:00:00+08:00');$('f-pack-h').textContent='本周帖子 · '+md(d0)+'～'+md(d0+6*DY);$('f-pack-aux').textContent=posts.length+' 条';
+  // 一句话结论：下一条什么时候发（有发出时间的才算；都过了就直说）
+  const timed=posts.filter((x)=>typeof x.at==='number'),nx=timed.filter((x)=>x.at>=now).sort((a,b)=>a.at-b.at)[0];
+  if(!posts.length)setLead('f-pack-lead','gray','这一包没有帖子。','');
+  else if(nx)setLead('f-pack-lead',nx.at-now<DY?'amber':'gray','这周 '+posts.length+' 条，下一条（第 '+nx.n+' 条）'+dateL(nx.at)+' 发。','还剩 '+dur(nx.at-now)+'。');
+  else if(timed.length)setLead('f-pack-lead','ok','这周 '+posts.length+' 条都过了建议发出的时间。','没发的看"最晚"那一栏。');
+  else setLead('f-pack-lead','gray','这周 '+posts.length+' 条帖子。','发出时间看"几点发"那一栏。');
+  setLead('f-match-lead',ms.length?'gray':'gray',ms.length?'这周 '+ms.length+' 场焦点战，要导入官网名单页。':'这一包没有焦点战。',ms.length?'在操作指引里一键复制。':'');
   $('f-pack-body').replaceChildren((p.posts||[]).length?table(['第几条','写的什么','几点发','最晚'],p.posts.map((x)=>tr(td('第几条',String(x.n),'num'),td('写的什么',x.title),td('几点发',x.at_text||(x.at?dateL(x.at):'')),td('最晚',x.deadline||''))),['13%','40%','22%','25%']):emptyP('这一包没有帖子'));
-  $('f-match-h').replaceChildren('焦点战 · '+(p.matches||[]).length+' 场',pe('span','sp'),pe('span','stamp','导入官网名单页'));
+  $('f-match-h').textContent='焦点战 · '+ms.length+' 场';$('f-match-aux').textContent='导入官网名单页';
   $('f-match-body').replaceChildren((p.matches||[]).length?table(['联赛','对阵','开赛（台湾）'],p.matches.map((x)=>tr(td('联赛',x.league),td('对阵',[x.home+' vs '+x.away,x.note?pe('br'):null,x.note?pe('span','hint',x.note):null]),td('开赛',x.time,'num'))),['16%','52%','32%']):emptyP('这一包没有焦点战'));}
 function renderCard(pj){const b=okBlocks('status').find((x)=>x.key===pj);const B=$('f-card-body');$('f-card-at').textContent=b?'状态卡 '+stampOf(b):'';
-  if(!b){B.replaceChildren(emptyP('还没收到 '+pj+' 的状态卡'));return;}const p=b.payload;
-  const rows=(p.metrics||[]).map((m)=>{const v=metricNow(pj,m,b.source_at);return tr(td('看什么',m.name),td('现在',v.now),td('目标',m.target||'—'),td('从哪来',v.src));});
+  if(!b){B.replaceChildren(emptyP('还没收到 '+pj+' 的状态卡'));setLead('f-card-lead','gray','还没收到 '+pj+' 的状态卡。','状态卡推上来后，这里列出要看的数和在等你的事。');return;}const p=b.payload;
+  let miss=0;const rows=(p.metrics||[]).map((m)=>{const v=metricNow(pj,m,b.source_at);if(v.src==='平台里还没有')miss++;return tr(td('看什么',m.name),td('现在',v.now),td('目标',m.target||'—'),td('从哪来',v.src));});
+  { const ws=(p.waiting||[]).length,n=(p.metrics||[]).length;const ps=[];if(ws)ps.push('在等你 '+ws+' 件');if(miss)ps.push(miss+' 个数还没填');
+    setLead('f-card-lead',ps.length?'amber':'ok',ps.length?ps.join('，')+'。':(n?n+' 个数都有了，没有在等你的事。':'状态卡里没有数字，也没有在等你的事。'),p.state?'现在的阶段：'+p.state:''); }
   const out=[table(['看什么','现在','目标','从哪来'],rows,['28%','30%','20%','22%'])];const pd=pe('div','pd');pd.style.borderTop='1px solid var(--line)';
   if(p.state)pd.append(pe('p',null,'现在的阶段：'+p.state));if(p.week)pd.append(pe('p',null,'这周：'+p.week));
   const ws=(p.waiting||[]);if(ws.length){const ul=pe('ul','ul');ws.forEach((w)=>ul.append(pe('li',null,'在等你：'+(w.text||''))));pd.append(ul);}
   if(p.link)pd.append(link('看状态卡全文',p.link,'btn small'));out.push(pd);B.replaceChildren(...out);}
 function renderTools(pj){const q=PL.qProj[pj];const B=$('f-tools-body');const a=pe('div','toolcard');a.append(pe('h3',null,'副驾驶 · 跟帖评论清单'));
-  a.append(pe('p',null,q?'等你回 '+q.total+' 条 · 今天已回 '+q.doneToday+' / '+q.cap:'清单条数暂时读不到'));const r=pe('div','row');r.append(link('去跟帖评论清单 →','#/tools/queue','btn primary'));a.append(r);
+  a.append(pe('p',null,q?'等你回 '+q.total+' 条 · 今天已回 '+q.doneToday+' / '+q.cap:'清单条数暂时读不到'));
+  if(!q)setLead('f-tools-lead','gray','跟帖评论清单的条数暂时读不到。','AI 用量看"按项目看用量"。');
+  else if(!q.total)setLead('f-tools-lead','ok','跟帖评论清单里没有 '+pj+' 待回的。','今天已回 '+q.doneToday+' / '+q.cap+'。');
+  else setLead('f-tools-lead',q.doneToday>=q.cap?'red':'amber','跟帖评论清单里 '+pj+' 有 '+q.total+' 条等你回。',q.doneToday>=q.cap?'今天已到上限（'+q.doneToday+' / '+q.cap+'）。':'今天还能回 '+Math.max(0,q.cap-q.doneToday)+' 条。');const r=pe('div','row');r.append(link('去跟帖评论清单 →','#/tools/queue','btn primary'));a.append(r);
   const u=pe('div','toolcard');u.append(pe('h3',null,'AI 用量'),pe('p','hint','额度是所有项目一起用的；每个项目今天各用了多少，看"按项目看用量"。'));const r2=pe('div','row');r2.append(link('按项目看用量 →','#/tools/byproj','btn'),link('用量和限额 →','#/tools/usage','btn'));u.append(r2);B.replaceChildren(a,u);}
 function renderHandoff(pj){const hs=okBlocks('handoff').filter((b)=>b.key.indexOf(pj+'/')===0).sort((a,b)=>String(b.payload.date||'').localeCompare(String(a.payload.date||''))||b.source_at-a.source_at);const B=$('f-handoff-body');
-  if(!hs.length){B.replaceChildren(emptyP('还没有 '+pj+' 的交接记录'));return;}const ul=pe('ul','hand');
+  if(!hs.length){B.replaceChildren(emptyP('还没有 '+pj+' 的交接记录'));setLead('f-handoff-lead','gray','还没有 '+pj+' 的交接记录。','换人接手时，交接记录会列在这里。');return;}const ul=pe('ul','hand');
+  { const t=hs[0].payload||{};setLead('f-handoff-lead','gray','共 '+hs.length+' 条，最近一条是 '+(t.date||'')+' '+(t.role||hs[0].key.split('/').pop())+'交的。',t.next?'下一步：'+t.next:''); }
   hs.forEach((b)=>{const p=b.payload;const li=pe('li');const d=pe('div');d.append(pe('div','hint',(p.date||'')+' · '+(p.role||b.key.split('/').pop())),pe('div',null,p.done||''));if(p.next)d.append(pe('div','hint','下一步：'+p.next));li.append(d);
     const g=pe('div');if(p.link)g.append(link('看全文',p.link,'btn small'));li.append(g);ul.append(li);});B.replaceChildren(ul);}
 // ---- 读数据、渲染、30 秒刷新 ----
 function renderAll(){if(!PL.data)return;const now=Date.now();const all=sorted(items());
-  $('f-err').hidden=!PL.err;$('f-err').textContent=PL.err;$('w-err').hidden=true;
+  $('f-err').hidden=true;$('w-err').hidden=true;
   // 工作台读取失败（批 A）：保留上次读到的内容，上面写"下面是 HH:MM 读到的"和"再读一次"；还没读到过就直说
-  $('w-stale').hidden=!PL.err;if(PL.err)$('w-stale-t').textContent='读取失败：'+PL.errWhy+'。'+(PL.okAt?'下面是 '+hm(PL.okAt)+' 读到的内容。':'还没读到过内容。')+'过一会儿也会自动再试。';
+  $('w-stale').hidden=$('f-stale').hidden=!PL.err;if(PL.err)$('w-stale-t').textContent=$('f-stale-t').textContent='读取失败：'+PL.errWhy+'。'+(PL.okAt?'下面是 '+hm(PL.okAt)+' 读到的内容。':'还没读到过内容。')+'过一会儿也会自动再试。';
   try{renderWork(all,now);}catch(e){$('w-err').hidden=false;$('w-err').textContent='工作台这一页出错了：'+e.message;}
   try{renderProject(curProj(),all,now);}catch(e){$('f-err').hidden=false;$('f-err').textContent='项目页出错了：'+e.message;}
   try{renderLive(now);}catch(e){$('w-err').hidden=false;$('w-err').textContent='团队在做什么出错了：'+e.message;}
@@ -1421,8 +1626,8 @@ var platformOpen=function(p,mod){const changed=PL.page!==p||PL.proj!==curProj();
 var platformStop=function(){PL.page='';PL.peek=false;};
 /** 停在公共工具、公司总览时：还没读过就读一次，让一级菜单上的待办数量马上显示（批 1 问题，Amos 2026-11-02） */
 var platformPeek=function(){PL.peek=true;if(!PL.timer)tickTimer();if(!PL.data&&!PL.busy)refresh();};
-$('w-retry').addEventListener('click',async()=>{const b=$('w-retry');b.setAttribute('aria-busy','true');b.textContent='正在读…';await refresh();b.removeAttribute('aria-busy');b.textContent='再读一次';
-  if(!PL.err)toastP('已重新读取，现在是最新的');});
+['w-retry','f-retry'].forEach((id)=>$(id).addEventListener('click',async()=>{const b=$(id);b.setAttribute('aria-busy','true');b.textContent='正在读…';await refresh();b.removeAttribute('aria-busy');b.textContent='再读一次';
+  if(!PL.err)toastP('已重新读取，现在是最新的');}));
 /** 第一次读到数据之前，工作台、项目页先不显示（免得看到空的模块）；工作台这段时间显示占位骨架 #boot（批 A） */
 var platformReady=function(){return !!PL.data;};
 }catch(e){var platformReady=function(){return true;};var platformOpen=function(){['w-err','f-err'].forEach((id)=>{const x=document.getElementById(id);if(x){x.hidden=false;x.textContent='这一页出错了：'+e.message;}});};var platformStop=function(){};var platformPeek=function(){};}
