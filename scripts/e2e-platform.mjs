@@ -100,6 +100,7 @@ async function open({ width = 1280, height = 900, colorScheme = 'light', clock =
   const ctx = await browser.newContext({ viewport: { width, height }, colorScheme });
   if (clip === 'ok') await ctx.grantPermissions(['clipboard-read', 'clipboard-write'], { origin: BASE });
   const page = await ctx.newPage();
+  LOOK.trackApi(page);
   page.on('pageerror', (e) => errors.push(e.message));
   if (clock) await page.clock.install({ time: clock });
   return page;
@@ -125,10 +126,8 @@ const which = (list, t) => list.findIndex((x) => x.text.includes(t));
  * 只有最后一组"没定截止时间"是默认收起的 <details>：点它的标题展开（用户也是这样点），之后才能点里面的按钮
  */
 async function openGroups(page) {
-  // 点每个收起的组的标题（新结构只有 none 一组；改版前的按项目分组也是 details，同样点得开，所以前面各段不因结构过渡而连带变红）
-  const closed = page.locator('#w-todos details:not([open]) > summary');
-  for (let i = await closed.count(); i > 0; i--) await closed.first().click({ timeout: WAIT });
-  await page.waitForFunction(() => ![...document.querySelectorAll('#w-todos details')].some((d) => !d.open), null, { timeout: WAIT });
+  // 2026-11-04 修偶发失败（C57）：原来在 #w-todos 还会被切页那次读取重画时就点，重画落在点击中间会丢这一下；根因和新写法见 scripts/e2e-look.mjs openGroups()
+  await LOOK.openGroups(page, WAIT);
 }
 /** 分组一览（按页面顺序）：时间段、条数、是不是收起的 details、标题文字 */
 const groupsOf = (page) => page.evaluate(() => [...document.querySelectorAll('#w-todos [data-bucket]')].map((d) => ({

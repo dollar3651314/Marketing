@@ -46,7 +46,7 @@ import { mkdirSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { chromium } from 'playwright';
 import { startServer, PASS, twDay, twStart, q, checker } from './e2e-server.mjs';
-import { FS, FS_CTL, TAIL_MAX, CONTRAST_MIN, fontOutliers, lowContrast, tailOf, orderOf, modShape, isConclusion, reveal } from './e2e-look.mjs';
+import { FS, FS_CTL, TAIL_MAX, CONTRAST_MIN, fontOutliers, lowContrast, tailOf, orderOf, modShape, isConclusion, reveal, trackApi, openGroups as openGroupsLook } from './e2e-look.mjs';
 
 const shotsAt = process.argv.indexOf('--shots');
 const SHOTS = shotsAt > 0 ? path.resolve(process.argv[shotsAt + 1]) : '';
@@ -111,6 +111,7 @@ async function open({ width = 1440, height = 900, colorScheme = 'light' } = {}) 
   const ctx = await browser.newContext({ viewport: { width, height }, colorScheme });
   await ctx.route(/^https:\/\/(x\.com|www\.threads\.com|github\.com)\//, (r) => r.fulfill({ status: 200, contentType: 'text/html', body: '<p>替身外部页面</p>' }));
   const page = await ctx.newPage();
+  trackApi(page);
   page.setDefaultTimeout(WAIT);
   page.on('pageerror', (e) => errors.push(e.message));
   curPage = page;
@@ -224,9 +225,8 @@ const badges = (page) => page.evaluate(() => {
  * 改版前按项目分组的 details.tgrp 也一样点得开。只是辅助函数，不改任何判定。
  */
 async function openGroups(page) {
-  const closed = page.locator('#w-todos details:not([open]) > summary');
-  for (let i = await closed.count(); i > 0; i--) await closed.first().click({ timeout: WAIT });
-  await page.waitForFunction(() => ![...document.querySelectorAll('#w-todos details')].some((d) => !d.open), null, { timeout: WAIT });
+  // 2026-11-04 修偶发失败（C57）：原来在 #w-todos 还会被切页那次读取重画时就点，重画落在点击中间会丢这一下；根因和新写法见 scripts/e2e-look.mjs openGroups()
+  await openGroupsLook(page, WAIT);
 }
 const todayOf = (page) => page.evaluate(() => { const m = /今天已回\s*(\d+)\s*\/\s*(\d+)/.exec(document.body.innerText); return m ? [Number(m[1]), Number(m[2])] : null; });
 const item = (page, author) => page.locator('#list .item', { has: page.locator('.who a', { hasText: author }) });
