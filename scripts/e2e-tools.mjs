@@ -28,6 +28,10 @@
  *      打开时 VOICE_JS 真的跑起来（场景按钮和一轮 10 分钟的算术表是现读 /api/voice/plan 填的）；操作手册印在页面上、页面上不出现命令行；没录音时「跑一轮」是灰的。375、1440 宽。
 *   I-2.（2026-11-04 第 2 轮，测试会话写）375 宽选中项滚进横向子菜单的可见范围、页面 scrollY 不跟着动；滑动不改 hash（"点到不了顶的模块"那条在 e2e-platform 的 8.6 段：公共工具页窗口拉多高，t-tts 都还能滑到顶，构造不出来）。
 *   I.（2026-11-04）二级菜单跟着滚动选中：不点菜单直接滑页面，子菜单 aria-current 跟着变（滑到第 2 个模块、最底、回顶端；点菜单后不被滚动计算改掉）。375、1440 宽。
+ *   J.（2026-11-04 改版批 B，测试会话先写，研发不改断言）公共工具页：子菜单 = 页面顺序 = 跟帖评论清单 → 每天回帖上限 → 用量和限额 → 按项目看用量 → 插件下载 → 素材生成器 → 语音生成 → Webhook 开关；
+ *      每块是 .card.mod，固定结构 .mh（h2）→ .lead（.dot.red/.amber/.ok/.gray，结论由数据算）→ 主内容 → details.more（默认收起）；折叠外没有 >60 字的 p / .hint；
+ *      #t-voice 在 #t-tts 的一个 details 里、默认收起；跟帖筛选收进 details#q-filters（#f-prod、#f-plat、#f-sort、[data-rg]、#f-from、#f-to 在里面，[data-f] 在外面）；
+ *      每条跟帖一个主按钮（一键回复 / 今天已到上限）；删除按两次；字号阶梯、不横滚、底部空白 ≤160px、深色对比度 ≥4.5。1280 / 375 × 明暗。量法在 scripts/e2e-look.mjs。
 *   C. 按项目看用量（D-3）：#t-byproj 每个项目一行，Gemini 次数加起来 = 用量总额度里 Gemini 的请求数；写着以前没分项目、"测试 AI"那行是平台自己。
  *
  * 页面约定（照原型 v2；研发要改名就同一个 PR 改这里并在 PR 描述写明）：
@@ -42,6 +46,7 @@ import { mkdirSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { chromium } from 'playwright';
 import { startServer, PASS, twDay, twStart, q, checker } from './e2e-server.mjs';
+import { FS, FS_CTL, TAIL_MAX, CONTRAST_MIN, fontOutliers, lowContrast, tailOf, orderOf, modShape, isConclusion, reveal } from './e2e-look.mjs';
 
 const shotsAt = process.argv.indexOf('--shots');
 const SHOTS = shotsAt > 0 ? path.resolve(process.argv[shotsAt + 1]) : '';
@@ -102,8 +107,8 @@ const srv = await startServer({ name: 'e2e-tools', vars: { DAILY_REPLY_CAP: '10'
 const BASE = srv.BASE;
 const browser = await chromium.launch();
 const errors = [];
-async function open({ width = 1440, height = 900 } = {}) {
-  const ctx = await browser.newContext({ viewport: { width, height } });
+async function open({ width = 1440, height = 900, colorScheme = 'light' } = {}) {
+  const ctx = await browser.newContext({ viewport: { width, height }, colorScheme });
   await ctx.route(/^https:\/\/(x\.com|www\.threads\.com|github\.com)\//, (r) => r.fulfill({ status: 200, contentType: 'text/html', body: '<p>替身外部页面</p>' }));
   const page = await ctx.newPage();
   page.setDefaultTimeout(WAIT);
@@ -242,6 +247,8 @@ async function filterProd(page, v) {
     const u = new URL(r.url());
     return v === '' ? !u.searchParams.has('product') : u.searchParams.get('product') === v;
   }, { timeout: WAIT });
+  // 改版批 B：项目筛选收进 details#q-filters（默认收起）——先点开它（辅助步骤，和用户一样；还没有折叠时什么都不做），判定不变
+  await reveal(page, '#f-prod');
   await page.selectOption('#f-prod', v);
   const r = await resp.catch(() => null);
   if (!r) throw new Error(`筛项目"${v || '全部'}"：等不到 product=${v || '（无）'} 的 /api/queue 返回`);
@@ -687,6 +694,117 @@ try {
     await subInViewCase(page, '#sub-tools', 'I-2 375 宽 公共工具（A 选中项看得见）', { mustScroll: false });
     await page.context().close();
   });
+
+  // ---------- J. 改版批 B：公共工具页（2026-11-04，测试会话先写，研发不改这里的断言） ----------
+  // 依据：原型 prototype-tools.html；Amos 11/4"好很多了，改吧，完事儿直接上生产"；主会话给的批 B 口径：
+  //   每块包成卡片，模块固定结构（标题行 → 一句话结论 → 主内容 → 底部折叠说明）；子菜单顺序 = 页面顺序 = TOOLS_B；
+  //   "语音对话实测"并进"语音生成"的折叠里（不单独一块、不占菜单）；说明默认折叠；跟帖清单的筛选收进一个"筛选"折叠 details#q-filters；
+  //   每条跟帖一个主按钮（一键回复），其余是次按钮或文字按钮；删除要按两次。外加：字号阶梯、不横向滚动、底部空白 ≤ 160px、深色对比度 ≥ 4.5。
+  // 放在 I-2 之后：这时 forecast 的上限是 5（B2 改的），demo2 那条已回（B1），一键回复都能点。
+  {
+    const TOOLS_B = ['t-queue', 't-reply', 't-usage', 't-byproj', 't-ext', 't-assets', 't-tts', 't-hook'];
+    // 原型里有"说明"折叠的模块（最后一块是 details.more）；按项目看用量、插件下载原型里没有，有的话也要在最后、默认收起
+    const MORE_B = ['t-queue', 't-reply', 't-usage', 't-assets', 't-tts', 't-hook'];
+    const Q_CTRLS = ['#f-prod', '#f-plat', '#f-sort', '[data-rg="today"]', '[data-rg="7"]', '[data-rg="all"]', '#f-from', '#f-to'];
+    for (const [width, height] of [[1280, 900], [375, 740]]) {
+      for (const colorScheme of ['light', 'dark']) {
+        const tag = `批B 公共工具 ${width} 宽 · ${colorScheme === 'dark' ? '深色' : '浅色'}`;
+        await section(tag, async () => {
+          const page = await open({ width, height, colorScheme });
+          await login(page, '/#/tools');
+          await waitFor(page, '#v-tools');
+          await page.waitForSelector('#list .item', { timeout: WAIT }).catch(() => {});
+          await page.waitForTimeout(800);
+          // ① 子菜单正好 8 项，顺序 = TOOLS_B；页面上模块从上到下也是这个顺序
+          const o = await orderOf(page, '#sub-tools');
+          check(`${tag}：子菜单正好是 ${TOOLS_B.join(' → ')}（语音对话实测不占菜单）`, same(o.menu, TOOLS_B), o.menu);
+          check(`${tag}：页面上模块从上到下的顺序 = 子菜单顺序`, same(o.page, TOOLS_B), o);
+          // ② 模块固定结构
+          const S = await modShape(page, TOOLS_B);
+          for (const m of S) {
+            if (m.why) { check(`${tag}：${m.id} 模块在`, false, m.why); continue; }
+            check(`${tag}：${m.id} 包成卡片（section 本身是 .card.mod）`, m.card, m);
+            check(`${tag}：${m.id} 第一块是标题行 .mh（有 h2），第二块是一句话结论 .lead（前面一个红/橙/绿/灰圆点），后面至少一块主内容`, m.headOk && m.leadOk && !!m.dotCls && m.mains >= 1, { headOk: m.headOk, leadOk: m.leadOk, dot: m.dotCls, mains: m.mains, lead: m.lead.slice(0, 40) });
+            check(`${tag}：${m.id} 的一句话结论是结论（带数字或"没有 / 还没 / 开着"之类、不是"正在读取"、6～80 字）`, m.leadOk && isConclusion(m.lead), m.lead.slice(0, 90));
+            if (MORE_B.includes(m.id)) check(`${tag}：${m.id} 最后一块是折叠的说明 details.more`, m.lastIsMore, m);
+            else check(`${tag}：${m.id} 如果有 details.more，它在最后一块`, m.mores === 0 || m.lastIsMore, m);
+            check(`${tag}：${m.id} 的说明默认收起（details.more 没有 open）`, m.moreOpen === 0, m.moreOpen);
+            check(`${tag}：${m.id} 折叠外面没有超过 60 字的说明文字（p / .hint；长说明进 details.more）`, m.long.length === 0, m.long);
+          }
+          // ③ 结论由数据算：跟帖清单写待回条数；插件下载写版本号；Webhook 写开着 / 关着，和接口一致
+          const lead = (id) => page.evaluate((i) => document.querySelector(`#${i} .lead`)?.innerText.replace(/\s+/g, ' ').trim() ?? '', id);
+          const pend = (await apiGet(page, '/api/queue?status=pending')).body?.total;
+          const ql = await lead('t-queue');
+          check(`${tag}：跟帖评论清单的结论写待回条数（接口 ${pend} 条）`, Number.isFinite(pend) && (pend > 0 ? new RegExp(`(^|\\D)${pend}\\s*条`).test(ql) : /都回完|没有/.test(ql)), ql);
+          const ver = /\d+\.\d+\.\d+/.exec((await txt(page, '#dl')) || '')?.[0];
+          const el = await lead('t-ext');
+          check(`${tag}：插件下载的结论写最新版本号（${ver}）`, !!ver && el.includes(ver), el);
+          const on = (await apiGet(page, '/api/active')).body?.on;
+          const hl = await lead('t-hook');
+          check(`${tag}：Webhook 开关的结论和接口一致（on = ${on} → ${on ? '开着' : '关着'}）`, typeof on === 'boolean' && hl.includes(on ? '开着' : '关着') && !hl.includes(on ? '关着' : '开着'), hl);
+          // ④ 语音对话实测并进"语音生成"：#t-voice 在 #t-tts 里面的一个折叠里，默认收起；页面顶层不再单独一块
+          const v = await page.evaluate(() => { const x = document.getElementById('t-voice'); const d = x && x.closest('details'); return x ? { inTts: !!x.closest('#t-tts'), inDetails: !!d, open: d ? d.open : null, shown: !!x.getClientRects().length } : null; });
+          check(`${tag}：语音对话实测 #t-voice 在"语音生成" #t-tts 的折叠里，默认收起、看不见`, !!v && v.inTts && v.inDetails && v.open === false && !v.shown, v);
+          // ⑤ 跟帖清单：每条一个主按钮（一键回复 / 今天已到上限），其余按钮都不是主按钮
+          const rows = await page.evaluate(() => {
+            const probe = document.createElement('div'); probe.style.background = 'var(--teal)'; document.getElementById('v-tools').appendChild(probe);
+            const teal = getComputedStyle(probe).backgroundColor; probe.remove();
+            return [...document.querySelectorAll('#list .item')].map((it) => {
+              const ctl = [...it.querySelectorAll('a.btn, button, a[role="button"]')].filter((e) => e.getClientRects().length);
+              const prim = ctl.filter((e) => e.matches('.primary') || getComputedStyle(e).backgroundColor === teal);
+              return { who: it.querySelector('.who a')?.textContent ?? '?', prim: prim.map((e) => e.textContent.trim()), others: ctl.length - prim.length };
+            });
+          });
+          check(`${tag}：跟帖清单每条正好一个主按钮，就是"一键回复"（到上限时是"今天已到上限"），其余是次按钮或文字按钮`, rows.length > 0 && rows.every((r) => r.prim.length === 1 && /^(一键回复|今天已到上限)$/.test(r.prim[0]) && r.others >= 1), rows);
+          // ⑥ 筛选收进一个"筛选"折叠：默认收起，项目 / 平台 / 排序 / 日期都在里面；待回 / 已回 / 跳过留在外面；点开后都看得见、能用
+          const f0 = await page.evaluate((ctrls) => {
+            const d = document.getElementById('q-filters');
+            if (!d) return null;
+            return { tag: d.tagName, open: d.open, sum: d.querySelector(':scope > summary')?.innerText.trim() ?? '', inside: ctrls.filter((s) => { const e = document.querySelector(s); return !!e && d.contains(e); }),
+              status: [...document.querySelectorAll('#t-queue [data-f]')].map((b) => ({ f: b.dataset.f, out: !d.contains(b), shown: !!b.getClientRects().length })) };
+          }, Q_CTRLS);
+          check(`${tag}：跟帖清单的筛选收进 details#q-filters，默认收起，标题以"筛选"开头`, !!f0 && f0.tag === 'DETAILS' && f0.open === false && /^筛选/.test(f0.sum), f0);
+          check(`${tag}：项目、平台、排序、日期（今天 / 近 7 天 / 全部 / 从 / 到）都在 #q-filters 里`, !!f0 && same(f0.inside, Q_CTRLS), f0 && Q_CTRLS.filter((s) => !f0.inside.includes(s)));
+          check(`${tag}：待回 / 已回 / 跳过（[data-f]）留在折叠外面、看得见`, !!f0 && f0.status.length === 3 && f0.status.every((s) => s.out && s.shown), f0 && f0.status);
+          if (f0) {
+            await page.click('#q-filters > summary', { timeout: WAIT });
+            await page.waitForTimeout(200);
+            const f1 = await page.evaluate((ctrls) => ctrls.map((s) => { const e = document.querySelector(s); return [s, !!e && !!e.getClientRects().length && !e.disabled && getComputedStyle(e).visibility !== 'hidden']; }), Q_CTRLS);
+            check(`${tag}：点开"筛选"后这些控件都看得见、能用（没禁用）`, f1.every(([, ok]) => ok), f1.filter(([, ok]) => !ok).map(([s]) => s));
+            await page.click('#q-filters > summary', { timeout: WAIT });
+          }
+          // ⑦ 字号、横向滚动、底部空白、深色对比度
+          const fo = await fontOutliers(page, ['#v-tools']);
+          check(`${tag}：公共工具页看得见的文字字号只在 {${FS.join(',')}}±0.5 里（控件可以 ${FS_CTL}）`, fo.length === 0, fo);
+          check(`${tag}：页面没有横向滚动`, await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth), await page.evaluate(() => [document.documentElement.scrollWidth, innerWidth]));
+          const t = await tailOf(page, '#v-tools');
+          check(`${tag}：最后一个模块底边到页面底 ${t.tail}px ≤ ${TAIL_MAX}px`, t.tail <= TAIL_MAX, t);
+          if (colorScheme === 'dark') {
+            const lc = await lowContrast(page, ['#v-tools']);
+            check(`${tag}：深色模式文字对比度：正文 ≥ ${CONTRAST_MIN}:1（大字 ≥ 3:1，禁用的不算）`, lc.bad.length === 0, lc);
+          }
+          if (SHOTS) { mkdirSync(SHOTS, { recursive: true }); await page.screenshot({ path: path.join(SHOTS, `tools-B-${width}-${colorScheme}.png`), fullPage: true }); }
+          await page.context().close();
+        });
+      }
+    }
+    // ⑧ 删除要按两次：第一下只出确认（这条还在、没有发删除请求），第二下才删。这里只按第一下，然后刷新放弃（真删的流程在 e2e-queue 第 7 段）
+    await section('批B 公共工具：删除要按两次', async () => {
+      const page = await open();
+      await login(page, '/#/tools/queue');
+      await page.waitForSelector('#list .item', { timeout: WAIT });
+      const writes = [];
+      page.on('request', (r) => { if (r.method() !== 'GET' && /\/api\/queue\//.test(r.url())) writes.push(r.method() + ' ' + new URL(r.url()).pathname); });
+      const it = page.locator('#list .item').first();
+      const who = await it.locator('.who a').first().textContent();
+      const n0 = await page.locator('#list .item').count();
+      await it.locator('button', { hasText: /^删除$/ }).first().click({ timeout: WAIT });
+      await page.waitForTimeout(500);
+      const again = await it.locator('button, a', { hasText: /再按一次|确认删除/ }).count();
+      check('批B：跟帖清单点一下"删除"——这条还在、没有发删除请求，出现"再按一次删除"或"确认删除"', (await page.locator('#list .item').count()) === n0 && writes.length === 0 && again >= 1 && (await it.locator('.who a').first().textContent()) === who, { writes, again, n0 });
+      await page.context().close();
+    });
+  }
 
   check('A、B、D、E、F、G 段没有脚本错误', errors.length === 0, errors);
 } catch (e) {

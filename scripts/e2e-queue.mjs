@@ -8,6 +8,8 @@
  * 跳过 → 我回了（"今天已回 N / 上限"加 1）→ 到上限后"一键回复"变灰、再点"我回了"提示到上限 → 放回待回（计数减 1）→
  * 删除一条（先确认、可以取消）→ 删除筛选出的这些（先确认、可以取消）→ 页面计数和接口一致 → 手机 390 宽不横向滚动 → 全程没有脚本错误。
  * 只认清单自己的元素（#list、#f-prod、#f-plat、#f-sort、[data-f]、[data-rg]、#f-from、#f-to、#bulk、#toast）和登录框（#pw、#go）；
+ * 改版批 B（2026-11-04）起项目、平台、排序、日期筛选收进 details#q-filters（默认收起），批量删除可能收进模块的 details.more：
+ *   操作这些控件前先用 e2e-look.mjs 的 reveal() 点开它所在的折叠（辅助步骤，和用户的操作一样；不在折叠里时什么都不做），断言一条没改。
  * "今天已回 N / 上限"在页面上任何位置出现都算（PR 1 以后它可能从顶栏移到清单模块里）。
  * 样例数据在服务启动前直接写进本地库（每次空库、每轮新数据，C57）；每天上限设成 3，方便测"到上限"。任何一条不符就以非 0 退出。
  */
@@ -15,6 +17,7 @@ import { mkdirSync } from 'node:fs';
 import path from 'node:path';
 import { chromium } from 'playwright';
 import { startServer, PASS, twDay, twStart, q, checker } from './e2e-server.mjs';
+import { reveal } from './e2e-look.mjs';
 
 const shotsAt = process.argv.indexOf('--shots');
 const SHOTS = shotsAt > 0 ? path.resolve(process.argv[shotsAt + 1]) : '';
@@ -113,28 +116,28 @@ try {
   }
 
   // 3. 筛选：平台、项目、排序、日期（今天、近 7 天、自选、全部）、状态
-  s = await act(page, () => page.selectOption('#f-plat', 'threads'), ['@beta', '@delta']);
+  s = await act(page, async () => (await reveal(page, '#f-plat'), page.selectOption('#f-plat', 'threads')), ['@beta', '@delta']);
   check('筛选 平台 = Threads：只剩 Threads 的 2 条', same(s.authors, ['@beta', '@delta']) && s.total.startsWith('共 2 条'), s);
-  s = await act(page, () => page.selectOption('#f-plat', ''), ['@alpha', '@beta', '@gamma', '@delta']);
+  s = await act(page, async () => (await reveal(page, '#f-plat'), page.selectOption('#f-plat', '')), ['@alpha', '@beta', '@gamma', '@delta']);
   check('平台改回全部：4 条', same(s.authors, ['@alpha', '@beta', '@gamma', '@delta']), s);
   const opts = await page.locator('#f-prod option').evaluateAll((o) => o.map((x) => x.value));
   check('项目下拉：全部 + 清单里出现过的项目', same(opts, ['', 'demo2', 'forecast']), opts);
-  s = await act(page, () => page.selectOption('#f-prod', 'demo2'), ['@delta']);
+  s = await act(page, async () => (await reveal(page, '#f-prod'), page.selectOption('#f-prod', 'demo2')), ['@delta']);
   check('筛选 项目 = demo2：只剩 1 条', same(s.authors, ['@delta']) && s.total.startsWith('共 1 条'), s);
-  s = await act(page, () => page.selectOption('#f-prod', ''), ['@alpha', '@beta', '@gamma', '@delta']);
-  s = await act(page, () => page.selectOption('#f-sort', 'score'), ['@alpha', '@gamma', '@beta', '@delta']);
+  s = await act(page, async () => (await reveal(page, '#f-prod'), page.selectOption('#f-prod', '')), ['@alpha', '@beta', '@gamma', '@delta']);
+  s = await act(page, async () => (await reveal(page, '#f-sort'), page.selectOption('#f-sort', 'score')), ['@alpha', '@gamma', '@beta', '@delta']);
   check('排序 = 评分从高到低：90、75、60、50', same(s.authors, ['@alpha', '@gamma', '@beta', '@delta']), s);
-  s = await act(page, () => page.selectOption('#f-sort', 'time'), ['@alpha', '@beta', '@gamma', '@delta']);
+  s = await act(page, async () => (await reveal(page, '#f-sort'), page.selectOption('#f-sort', 'time')), ['@alpha', '@beta', '@gamma', '@delta']);
   check('排序改回最新的在前', same(s.authors, ['@alpha', '@beta', '@gamma', '@delta']), s);
-  s = await act(page, () => page.click('[data-rg="today"]'), ['@alpha', '@beta']);
+  s = await act(page, async () => (await reveal(page, '[data-rg="today"]'), page.click('[data-rg="today"]')), ['@alpha', '@beta']);
   check('日期 = 今天（台湾）：今天存进来的 2 条，按钮按下', same(s.authors, ['@alpha', '@beta']) && (await page.getAttribute('[data-rg="today"]', 'aria-pressed')) === 'true' && (await page.inputValue('#f-from')) === today, s);
-  s = await act(page, () => page.click('[data-rg="7"]'), ['@alpha', '@beta', '@gamma']);
+  s = await act(page, async () => (await reveal(page, '[data-rg="7"]'), page.click('[data-rg="7"]')), ['@alpha', '@beta', '@gamma']);
   check('日期 = 近 7 天：3 条（10 天前的不在）', same(s.authors, ['@alpha', '@beta', '@gamma']), s);
   const tenAgo = twDay(T - 10 * DAY + H);
-  await act(page, () => page.fill('#f-from', tenAgo), ['@alpha', '@beta', '@gamma', '@delta']);
-  s = await act(page, () => page.fill('#f-to', tenAgo), ['@delta']);
+  await act(page, async () => (await reveal(page, '#f-from'), page.fill('#f-from', tenAgo)), ['@alpha', '@beta', '@gamma', '@delta']);
+  s = await act(page, async () => (await reveal(page, '#f-to'), page.fill('#f-to', tenAgo)), ['@delta']);
   check('日期 = 自己选（10 天前那一天）：只有那天的 1 条，快捷按钮都不按下', same(s.authors, ['@delta']) && (await page.locator('[data-rg][aria-pressed="true"]').count()) === 0, s);
-  s = await act(page, () => page.click('[data-rg="all"]'), ['@alpha', '@beta', '@gamma', '@delta']);
+  s = await act(page, async () => (await reveal(page, '[data-rg="all"]'), page.click('[data-rg="all"]')), ['@alpha', '@beta', '@gamma', '@delta']);
   check('日期 = 全部：4 条，日期框清空', same(s.authors, ['@alpha', '@beta', '@gamma', '@delta']) && (await page.inputValue('#f-from')) === '' && (await page.inputValue('#f-to')) === '', s);
   s = await act(page, () => page.click('[data-f="done"]'), ['@eps']);
   check('状态 = 已回：今天回的那条，显示"我回了"时间和"放回待回"', same(s.authors, ['@eps']) && (await item(page, '@eps').innerText()).includes('我回了 ' + today) && (await item(page, '@eps').locator('button', { hasText: '放回待回' }).count()) === 1, s);
@@ -187,16 +190,18 @@ try {
   }
 
   // 8. 删除筛选出的这些：先确认，可以取消
-  s = await act(page, () => page.selectOption('#f-prod', 'demo2'), ['@delta']);
+  s = await act(page, async () => (await reveal(page, '#f-prod'), page.selectOption('#f-prod', 'demo2')), ['@delta']);
+  await reveal(page, '#bulk');
   check('批量删除按钮写明条数', (await page.locator('#bulk').innerText()) === '删除筛选出的这 1 条', await page.locator('#bulk').innerText());
   await page.click('#bulk');
   check('批量删除：先确认，写明条数和筛选条件', (await page.locator('#bulk-confirm').isVisible()) && (await page.locator('#bulk-text').innerText()).includes('1 条（待回 · demo2）'), await page.locator('#bulk-text').innerText());
   await page.click('#bulk-no');
   check('批量删除 → 取消：确认框消失、这条还在', !(await page.locator('#bulk-confirm').isVisible()) && same((await state(page)).authors, ['@delta']), null);
+  await reveal(page, '#bulk');
   await page.click('#bulk');
   s = await act(page, () => page.click('#bulk-yes'), []);
   check('批量删除 → 确认：提示"已删除 1 条"，列表空了、显示空状态', s.toast === '已删除 1 条' && s.authors.length === 0 && (await page.locator('#list .empty').innerText()).includes('没有待回的帖子'), s);
-  s = await act(page, () => page.selectOption('#f-prod', ''), ['@alpha']);
+  s = await act(page, async () => (await reveal(page, '#f-prod'), page.selectOption('#f-prod', '')), ['@alpha']);
   check('项目改回全部：只剩 1 条待回，别的项目没被误删', same(s.authors, ['@alpha']), s);
 
   // 9. "今天"计数：页面和接口一致；刷新页面后还在
