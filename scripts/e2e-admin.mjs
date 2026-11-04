@@ -129,6 +129,16 @@ async function login(page) {
   await page.click('#go');
   await page.waitForSelector('#app:not([hidden])');
 }
+/**
+ * 点顶栏的"公司总览"（#conav）/"登出"（#logout）。改版批 A（2026-11-04，照原型）：≤640px 时这两项收进顶栏的"···"（details#more-menu），
+ * 先点开 #more-menu > summary（用户也是这样点）再点；>640px 照旧直接点。
+ * 窄屏还没有 #more-menu 时（改版前的代码）照旧直接点，让后面的断言接着跑；这种情况由第 7 段"≤640px 时 #conav 在 #more-menu 里"那条断言报红。
+ */
+async function clickTop(page, sel) {
+  const narrow = page.viewportSize().width <= 640;
+  if (narrow && (await page.locator('#more-menu > summary').count()) && !(await page.evaluate(() => document.getElementById('more-menu').open))) await page.click('#more-menu > summary');
+  await page.click(sel);
+}
 /** 项目表的版面：每列宽、表格和卡片的右边、"本周"高度和行高、页面宽 */
 const projLayout = (page) => page.evaluate(() => {
   const card = document.getElementById('co-projects'), t = card.querySelector('table'), wrap = card.querySelector('.tablewrap');
@@ -206,7 +216,7 @@ try {
     for (const [width, height] of [[1280, 900], [390, 844]]) {
       const m = await open({ width, height }, 'dark');
       await login(m);
-      await m.click('#conav');
+      await clickTop(m, '#conav');
       await m.waitForSelector('#co-projects tbody tr');
       await m.screenshot({ path: path.join(SHOTS, `company-${width}-dark.png`), fullPage: true });
       await m.locator('#co-projects').screenshot({ path: path.join(SHOTS, `projects-${width}-dark.png`) });
@@ -316,7 +326,17 @@ try {
   {
     const m = await open({ width: 390, height: 844 });
     await login(m);
-    await m.click('#conav');
+    // 改版批 A（2026-11-04）：≤640px 时"公司总览""登出"收进"···"。改前：直接 m.click('#conav')（顶栏上露着）；改后：先点开 #more-menu 再点
+    const mm0 = await m.evaluate(() => { const mm = document.getElementById('more-menu'); const c = document.getElementById('conav'), l = document.getElementById('logout');
+      return { menu: !!mm && mm.tagName === 'DETAILS', open: mm ? mm.open : null, conavIn: !!c && !!c.closest('#more-menu'), logoutIn: !!l && !!l.closest('#more-menu'), conavShown: !!c && !!c.getClientRects().length }; });
+    let mm1 = null;
+    if (mm0.menu) {
+      await m.click('#more-menu > summary');
+      mm1 = await m.evaluate(() => { const c = document.getElementById('conav'); const b = c.getBoundingClientRect(); const e = document.elementFromPoint(b.left + b.width / 2, b.top + b.height / 2);
+        return { shown: !!c.getClientRects().length && b.width > 0, inScreen: b.left >= 0 && b.right <= innerWidth && b.top >= 0 && b.bottom <= innerHeight, hit: !!e && (e === c || c.contains(e)) }; });
+    }
+    check('手机 390 宽（≤640px）："公司总览" #conav 和"登出" #logout 在顶栏的"···"（details#more-menu）里，默认收起时看不见，点开后 #conav 可见可点', mm0.menu && mm0.open === false && mm0.conavIn && mm0.logoutIn && !mm0.conavShown && !!mm1 && mm1.shown && mm1.inScreen && mm1.hit, { before: mm0, after: mm1 });
+    await clickTop(m, '#conav');
     await m.waitForSelector('#co-projects tbody tr');
     const w = await m.evaluate(() => ({ page: document.documentElement.scrollWidth, people: document.getElementById('co-people').getBoundingClientRect().width, learn: document.getElementById('co-learn').getBoundingClientRect().left, people0: document.getElementById('co-people').getBoundingClientRect().left,
       proj: (() => { const c = document.getElementById('co-projects'); const wr = c.querySelector('.tablewrap'); return { right: c.querySelector('table').getBoundingClientRect().right, card: c.getBoundingClientRect().right, over: wr.scrollWidth - wr.clientWidth }; })() }));

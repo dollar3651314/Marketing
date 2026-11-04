@@ -35,35 +35,40 @@
  * 写法上的约定（和 admin-page.ts、voice-page.ts 一样）：这是模板字符串，里面**不能出现没转义的反引号或 ${'${'}**。
  */
 export const ENGLISH_CSS = `
-.en .en-steps{margin:0;padding-left:20px}
-.en .en-steps li{margin:3px 0}
-.en .en-call{border:1px solid var(--amber);background:var(--amber-soft);color:var(--ink);border-radius:10px;padding:10px 12px;margin:10px 0;font-weight:700}
-.en .en-call code{font-family:var(--mono);background:var(--surface);border:1px solid var(--line);border-radius:5px;padding:0 5px;white-space:nowrap}
-.en .en-stuck{padding:10px 12px}
-.en .en-stuck-h{margin:0 0 6px;font-size:15px;font-weight:800;display:flex;align-items:baseline;gap:8px;flex-wrap:wrap}
-.en .en-stuck-sub{font-size:12px;font-weight:400;color:var(--muted)}
+/* 批 A（原型 prototype-work.html ⑦）：标题行 + 一句话结论 + 两列提示词卡片 + 底部折叠的说明；
+   "怎么用"四步和"卡住了怎么办"四行照旧摆在卡片上面、不折叠（v3 / v4 的口径，test/english.test.ts 守着），只是收紧了样式 */
+.en .en-steps{margin:0 0 var(--s3);padding-left:20px;color:var(--ink-2)}
+.en .en-steps li{margin:2px 0}
+.en .en-call{border:1px solid var(--line);background:var(--surface-2);color:var(--ink);border-radius:12px;padding:var(--s3) var(--s4);margin:0 0 var(--s4)}
+.en .en-call code{font-family:var(--mono);font-size:var(--fs-aux);background:var(--surface);border:1px solid var(--line);border-radius:5px;padding:0 5px;white-space:nowrap}
+.en .en-stuck-h{margin:0 0 4px;font-size:var(--fs-body);font-weight:700;display:flex;align-items:baseline;gap:8px;flex-wrap:wrap}
+.en .en-stuck-sub{font-size:var(--fs-aux);font-weight:400;color:var(--muted)}
 .en .en-stuck-l{margin:0;padding-left:18px;font-weight:400}
-.en .en-stuck-l li{margin:4px 0;line-height:1.6;overflow-wrap:anywhere}
-.en .en-stuck-l code{font-weight:700}
+.en .en-stuck-l li{margin:2px 0;line-height:1.6;overflow-wrap:anywhere}
 .en .en-ar{color:var(--muted);padding:0 2px}
-.en .en-card{border:1px solid var(--line);border-radius:10px;background:var(--surface);margin:10px 0}
-.en .en-hd{display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding:10px 12px}
+.en .en-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:var(--s3);align-items:start}
+.en .en-card{border:1px solid var(--line);border-radius:12px;background:var(--surface);min-width:0}
+.en .en-card:first-child{border-color:var(--teal);background:var(--teal-soft)}
+.en .en-hd{display:flex;align-items:center;gap:var(--s2) var(--s3);flex-wrap:wrap;padding:var(--s3) var(--s4)}
 .en .en-hd .sp{flex:1;min-width:0}
-.en .en-code{font-family:var(--mono);font-size:12px;font-weight:700;color:#fff;background:var(--navy);border-radius:6px;padding:1px 7px}
-.en .en-name{font-size:15px;min-width:0}
-.en .en-star{color:var(--amber);letter-spacing:1px}
+.en .en-code{font-family:var(--mono);font-size:12px;font-weight:700;color:var(--ink-2);background:var(--gray-soft);border-radius:6px;padding:2px 6px}
+.en .en-name{font-size:var(--fs-body);font-weight:600;min-width:0}
+.en .en-star{color:var(--amber);letter-spacing:1px;font-size:12px}
 .en .en-note{font-size:12px;color:var(--muted)}
 .en .en-copy{min-width:72px}
-.en .en-copy.done{background:var(--ok);border-color:var(--ok);color:#fff}
+/* 青色只给主动作：只有第一条（推荐先说的 C-1）的"复制"是实心青色，其余是普通按钮（标记还带 primary，单元测试按这个找按钮） */
+.en .en-card+.en-card .en-copy.primary{background:var(--surface);border-color:var(--line);color:var(--ink)}
+.en .en-copy.done,.en .en-card+.en-card .en-copy.done{background:var(--ok);border-color:var(--ok);color:#fff}
 .en .en-fold{border-top:1px solid var(--line)}
-.en .en-fold summary{cursor:pointer;padding:8px 12px;font-size:13px;color:var(--muted)}
-.en .en-pre{font-family:var(--mono);font-size:12px;line-height:1.65;white-space:pre-wrap;word-break:break-word;overflow-wrap:anywhere;margin:0;padding:0 12px 12px;max-width:100%}
+.en .en-fold summary{cursor:pointer;padding:var(--s2) var(--s4);font-size:var(--fs-aux);color:var(--muted)}
+.en .en-pre{font-family:var(--mono);font-size:12px;line-height:1.65;white-space:pre-wrap;word-break:break-word;overflow-wrap:anywhere;margin:0;padding:0 var(--s4) var(--s3);max-width:100%}
+@media (max-width:640px){.en .en-grid{grid-template-columns:minmax(0,1fr)}}
 `;
 
 /** 工作台里的"英语练习"模块（id 和二级菜单 #/work/english 对应：w-english） */
-export const ENGLISH_MOD = `<section class="card mod en" id="w-english"><h2>英语练习 <span class="sp"></span><span class="stamp">想跑几轮跑几轮</span></h2>
-<div class="pd">
-  <p class="lead">不写代码、不花钱，只测一件事——<b>你愿不愿意每天开口说 10 分钟</b>。下面 8 条是完整提示词，<b>点"复制"再粘进去就行，一个字都不用改</b>。</p>
+export const ENGLISH_MOD = `<section class="card mod en" id="w-english"><header class="mh"><h2>英语练习</h2><span class="sp"></span><span class="aux">想跑几轮跑几轮</span></header>
+<p class="lead"><span class="dot gray"></span><span>没练过就从 C-1「站会同步」开始：点"复制"，粘进 Gemini Live 或 ChatGPT 语音模式。</span><span class="soft">不花钱，一个字都不用改。</span></p>
+<div class="mbody">
   <ol class="en-steps">
     <li>打开 <b>Gemini Live</b> 或 <b>ChatGPT 的语音模式</b>（手机上就行）。</li>
     <li>挑一条，点右边的<b>「复制」</b>，整段粘贴进去。</li>
@@ -79,6 +84,7 @@ export const ENGLISH_MOD = `<section class="card mod en" id="w-english"><h2>英�
       <li><b>这一轮结束前，靠提示说出来的句子它会再考你一次</b><span class="en-ar">→</span>说得出来才算学会</li>
     </ul>
   </div>
+  <div class="en-grid">
   <article class="en-card">
     <div class="en-hd"><span class="en-code">C-1</span><b class="en-name">站会同步</b><span class="en-star" title="难度">☆</span><span class="en-note">最好上手，先说这条</span><span class="sp"></span><button class="btn small primary en-copy" type="button" data-for="en-p1-t">复制</button></div>
     <details class="en-fold"><summary>看全文（31 行）</summary><pre class="en-pre" id="en-p1-t">你扮演我的同事 Mike，美国人。我们在开每天的站会，轮到我说。你先问我 "What are you up to today?"。
@@ -351,8 +357,11 @@ export const ENGLISH_MOD = `<section class="card mod en" id="w-english"><h2>英�
 2) 报三个数：我自己造的句子几句 / 靠提示才说出来的几句 / 回收时独立说对的几句
 3) 这个场景里我本该用上但没用的 3 个地道说法</pre></details>
   </article>
-  <p class="hint">☆ 越多越难，先说 C-1。正文来自 agents 仓库《测试场景-提示词-上/下.md》，原文照抄。</p>
-</div></section>`;
+  </div>
+</div>
+<details class="more"><summary>正文从哪来 · ☆ 是什么意思</summary><div class="in">
+  <p>☆ 越多越难，先说 C-1。只测一件事：你愿不愿意每天开口说 10 分钟。</p>
+  <p>正文来自 agents 仓库《测试场景-提示词-上/下.md》，原文照抄。</p></div></details></section>`;
 
 export const ENGLISH_JS = `
 /* 复制按钮：先用 navigator.clipboard，拿不到权限（非 https、浏览器不给）就退回隐藏 textarea + execCommand。
