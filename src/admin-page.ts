@@ -619,6 +619,8 @@ ${ASSETS_CSS}${TTS_CSS}${VOICE_CSS}${ENGLISH_CSS}
        页面顺序 = 二级菜单顺序（天天用 → 偶尔用 → 出事才用）。清单、用量、插件下载的脚本逻辑和接口不变，只换排版；元素 id 和 data-* 照旧 -->
   <section class="page" id="v-tools" hidden>
     <div class="crumb"><h1>公共工具</h1><span class="hint">各项目一起用的工具；上限只在这一页改</span></div>
+    <!-- 批 B 走查 🟡：清单读取失败时和工作台、项目页一样：中文原因 + "下面是 HH:MM 读到的" + "再读一次"（以前是一条英文 Failed to fetch） -->
+    <div class="errbar" id="t-stale" role="alert" hidden><span id="t-stale-t"></span><span class="sp"></span><button class="btn small" type="button" id="t-retry">再读一次</button></div>
     <section class="card mod" id="t-queue">
       <header class="mh"><h2>跟帖评论清单 <span class="cbadge" id="q-n">0</span></h2><span class="sp"></span>
         <div class="capline"><div class="r"><span id="count"></span></div><div class="meter" aria-hidden="true"><i id="q-bar" style="width:0"></i></div></div></header>
@@ -736,7 +738,7 @@ const P={x:'X',threads:'Threads'}, PROD={forecast:'Quick Come'};
 const tw=(ms)=>new Date(ms+8*3600e3).toISOString().replace('T',' ').slice(0,19);
 const twDay=(ms)=>tw(ms).slice(0,10);
 function toast(t,err){const e=$('toast');e.textContent=t;e.className='toast'+(err?' err':'');e.hidden=!t;}
-async function call(path,body){const r=await fetch(path,{method:body?'POST':'GET',headers:{'content-type':'application/json'},body:body?JSON.stringify(body):undefined,credentials:'same-origin'});const j=await r.json().catch(()=>({}));if(r.status===401&&path!=='/api/login'){showLogin('请重新登录');throw new Error('请重新登录');}if(!r.ok)throw new Error(j.error||('出错了（'+r.status+'）'));return j;}
+async function call(path,body){let r;try{r=await fetch(path,{method:body?'POST':'GET',headers:{'content-type':'application/json'},body:body?JSON.stringify(body):undefined,credentials:'same-origin'});}catch(e){throw new Error('网络断了或服务没回应');}const j=await r.json().catch(()=>({}));if(r.status===401&&path!=='/api/login'){showLogin('请重新登录');throw new Error('请重新登录');}if(!r.ok)throw new Error(j.error||('出错了（'+r.status+'）'));return j;}
 let authed=false;
 function showLogin(m){authed=false;$('more-menu').hidden=true;moreMenu(false);$('app').hidden=true;$('boot').hidden=true;$('subs').hidden=true;$('nav1').hidden=true;$('logout').hidden=true;$('nav').hidden=true;$('extnav').hidden=true;$('conav').hidden=true;$('login').hidden=false;$('count').textContent='';$('lmsg').textContent=m||'';$('pw').focus();try{platformStop();}catch(e){}}
 // #app 由 route() 决定什么时候显示：工作台、项目页等第一次读到数据再显示（免得看到空模块），工作台在这之前显示占位骨架 #boot（批 A）；清单、用量、插件下载、公司总览马上显示
@@ -867,11 +869,13 @@ document.querySelectorAll('[data-rg]').forEach(b=>b.addEventListener('click',()=
 try{if(localStorage.getItem('qc-sort')==='score')$('f-sort').value='score';}catch(e){}
 $('f-sort').addEventListener('change',()=>{try{localStorage.setItem('qc-sort',$('f-sort').value);}catch(e){}load();});
 function query(){const q=new URLSearchParams({status:filter});if($('f-prod').value)q.set('product',$('f-prod').value);if($('f-plat').value)q.set('platform',$('f-plat').value);if($('f-from').value)q.set('from',$('f-from').value);if($('f-to').value)q.set('to',$('f-to').value);if($('f-sort').value==='score')q.set('sort','score');return '/api/queue?'+q;}
+let qOkAt=0;
 async function load(){
   $('bulk-confirm').hidden=true;
-  try{state=await call(query());}catch(e){if(e.message!=='请重新登录')toast(e.message,true);return;}
-  showApp();render();subSpySoon();
+  try{state=await call(query());}catch(e){if(e.message!=='请重新登录'){const hm=qOkAt?tw(qOkAt).slice(11,16):'';$('t-stale-t').textContent='跟帖评论清单读取失败：'+e.message+'。'+(qOkAt?'下面是 '+hm+' 读到的内容。':'还没读到过内容。')+'点"再读一次"重试。';$('t-stale').hidden=false;}return;}
+  qOkAt=Date.now();$('t-stale').hidden=true;showApp();render();subSpySoon();
 }
+$('t-retry').addEventListener('click',async()=>{const b=$('t-retry');b.setAttribute('aria-busy','true');b.textContent='正在读…';await load();b.removeAttribute('aria-busy');b.textContent='再读一次';if($('t-stale').hidden)toast('已重新读取，现在是最新的');});
 function render(){
   // 每天回帖上限按项目（D-2）：每条看它所在项目的"今天已回 / 上限"（state.caps）；老接口没有 caps 时用整体的
   const fullOf=(p)=>{const c=state.caps&&state.caps[p];return c?c.doneToday>=c.cap:state.doneToday>=state.cap;};
@@ -1053,7 +1057,7 @@ $('u-save').addEventListener('click',async()=>{const b=$('u-save'),m=$('u-msg');
   if(bad.length){m.className='msg';m.textContent='没保存：'+bad.join('；');return;}
   b.disabled=true;b.textContent='正在保存…';m.textContent='';
   try{const j=await call('/api/usage',{caps});usage=j.rows;uEditing=false;renderUsage();renderAcct(j.accountLimit);renderLeft(j.left||[]);uStamp();m.className='msg ok';m.textContent='✓ 已保存，下一次请求开始生效';}catch(e){m.className='msg';m.textContent=e.message;}finally{b.disabled=false;b.textContent='保存上限';}});
-call(query()).then(j=>{state=j;showApp();render();route();}).catch(()=>{});
+call(query()).then(j=>{state=j;qOkAt=Date.now();showApp();render();route();}).catch(()=>{});
 </script>
 <script>
 // 公司页（运营仪表盘）：整段 try/catch；这里只定义函数，打开"公司"页（go('company')）时才读数据、渲染，出错只影响这一页
