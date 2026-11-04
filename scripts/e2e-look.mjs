@@ -149,3 +149,57 @@ export async function reveal(page, sel) {
     await page.evaluate(() => document.querySelectorAll('[data-e2e-reveal]').forEach((d) => d.removeAttribute('data-e2e-reveal')));
   }
 }
+
+/*
+ * 点开工作台"全部待办"里收起的组（2026-11-04 测试会话修偶发失败，C57；只是辅助步骤，判定不变）。
+ * 根因：切到工作台时 platformOpen() 会重读 /api/company，读回来就把 #w-todos 整个重画（新的 <details> 按 PL.noneOpen 决定开没开）。
+ *   原来的写法在旧数据画的待办一看得见就去点"没定截止时间"的标题；如果重画正好落在这一下的 mousedown 和 mouseup 之间，
+ *   按下和松开不在同一个元素上，浏览器不发 click，toggle 也不发，PL.noneOpen 还是 false，新画的组一直收着，
+ *   末尾"所有 details 都 open"的等待就等满 4 秒报 Timeout（e2e-tools A 段 375 宽，staging a2d4cb3 跑 3 遍撞 1 次）。
+ *   确定性复现：扣住切页那次 /api/company，mouse.down → 放行、等 #w-todos 重画 → mouse.up，组一直收着、同一句 Timeout。
+ * 现在：① 先等这一页发出去的 /api/company 都回来了（trackApi 记的在途数 = 0），再让页面跑完手上的任务，才去点；
+ *   ② 点完等一个确定的结果：要么所有组都 open，要么刚点的那个元素已经不在页面上（被重画换掉了）——后一种就对新画的再点一次，最多 3 轮；
+ *   3 轮都被换掉就报错（不放宽超时、不吞错误）。
+ */
+const INFLIGHT = new WeakMap();
+/** 记这一页在途的 /api/company 请求数（open() 里调一次） */
+export function trackApi(page) {
+  let n = 0;
+  INFLIGHT.set(page, () => n);
+  const mine = (r) => /\/api\/company(\?|$)/.test(r.url());
+  page.on('request', (r) => { if (mine(r)) n++; });
+  const done = (r) => { if (mine(r)) n = Math.max(0, n - 1); };
+  page.on('requestfinished', done);
+  page.on('requestfailed', done);
+}
+/** 等到这一页没有在途的 /api/company，再让页面跑完已排队的任务（重画就在读回来之后的任务里） */
+export async function apiSettled(page, wait = 4000) {
+  const get = INFLIGHT.get(page);
+  if (get) {
+    const t0 = Date.now();
+    while (get() > 0) {
+      if (Date.now() - t0 > wait) throw new Error(`等 /api/company 读回来等了 ${wait}ms（还有 ${get()} 个在途）`);
+      await new Promise((ok) => setTimeout(ok, 20));
+    }
+  }
+  await page.evaluate(() => new Promise((ok) => setTimeout(ok, 0)));
+  await page.evaluate(() => 0);
+}
+export async function openGroups(page, wait = 4000) {
+  for (let round = 1; round <= 3; round++) {
+    await apiSettled(page, wait);
+    const n = await page.evaluate(() => { window.__e2eOg = [...document.querySelectorAll('#w-todos details:not([open])')]; window.__e2eOg.forEach((d, i) => { d.dataset.e2eOg = String(i); }); return window.__e2eOg.length; });
+    if (!n) return;
+    for (let i = 0; i < n; i++) {
+      const sum = page.locator(`#w-todos details[data-e2e-og="${i}"] > summary`);
+      if (!(await sum.count())) break;
+      await sum.click({ timeout: wait }).catch(async (e) => { if (await page.evaluate(() => window.__e2eOg.every((d) => d.isConnected))) throw e; });
+    }
+    const r = await page.waitForFunction(() => {
+      if (window.__e2eOg.some((d) => !d.isConnected)) return 'redrawn';
+      return [...document.querySelectorAll('#w-todos details')].every((d) => d.open) ? 'open' : false;
+    }, null, { timeout: wait }).then((h) => h.jsonValue());
+    if (r === 'open') { await apiSettled(page, wait); if (await page.evaluate(() => [...document.querySelectorAll('#w-todos details')].every((d) => d.open))) return; }
+  }
+  throw new Error('点开"没定截止时间"：连续 3 轮刚点完就被重画换掉，或点开后又被收起');
+}
