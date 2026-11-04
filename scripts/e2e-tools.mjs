@@ -28,6 +28,12 @@
  *      打开时 VOICE_JS 真的跑起来（场景按钮和一轮 10 分钟的算术表是现读 /api/voice/plan 填的）；操作手册印在页面上、页面上不出现命令行；没录音时「跑一轮」是灰的。375、1440 宽。
 *   I-2.（2026-11-04 第 2 轮，测试会话写）375 宽选中项滚进横向子菜单的可见范围、页面 scrollY 不跟着动；滑动不改 hash（"点到不了顶的模块"那条在 e2e-platform 的 8.6 段：公共工具页窗口拉多高，t-tts 都还能滑到顶，构造不出来）。
 *   I.（2026-11-04）二级菜单跟着滚动选中：不点菜单直接滑页面，子菜单 aria-current 跟着变（滑到第 2 个模块、最底、回顶端；点菜单后不被滚动计算改掉）。375、1440 宽。
+ *   J.（2026-11-04 改版批 B，测试会话先写，研发不改断言）公共工具页：子菜单 = 页面顺序 = 跟帖评论清单 → 每天回帖上限 → 用量和限额 → 按项目看用量 → 插件下载 → 素材生成器 → 语音生成 → Webhook 开关；
+ *      每块是 .card.mod，固定结构 .mh（h2）→ .lead（.dot.red/.amber/.ok/.gray，结论由数据算）→ 主内容 → details.more（默认收起）；折叠外没有 >60 字的 p / .hint；
+ *      #t-voice 在 #t-tts 的一个 details 里、默认收起；跟帖筛选收进 details#q-filters（#f-prod、#f-plat、#f-sort、[data-rg]、#f-from、#f-to 在里面，[data-f] 在外面）；
+ *      每条跟帖一个主按钮（一键回复 / 今天已到上限）；删除按两次；字号阶梯、不横滚、底部空白 ≤160px、深色对比度 ≥4.5。1280 / 375 × 明暗。量法在 scripts/e2e-look.mjs。
+ *   K.（2026-11-04 批 B 验收补）/api/queue 的 product 原样匹配已知项目、不认识的（含大小写不对）400；Practical 项目页"用到的工具"只算 Practical（0 条、上限 10）；公共工具读取失败红条 #t-stale + #t-retry。
+ *   L.（2026-11-04 批 B 验收补，🔴）清单读取只认最新一次：扣住旧读取、改选别的项目再放行，列表 / 条数 / 下拉仍是最新选的；批量删除只删最新选的；旧的成功结果不收掉新的失败红条。
 *   C. 按项目看用量（D-3）：#t-byproj 每个项目一行，Gemini 次数加起来 = 用量总额度里 Gemini 的请求数；写着以前没分项目、"测试 AI"那行是平台自己。
  *
  * 页面约定（照原型 v2；研发要改名就同一个 PR 改这里并在 PR 描述写明）：
@@ -42,6 +48,7 @@ import { mkdirSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { chromium } from 'playwright';
 import { startServer, PASS, twDay, twStart, q, checker } from './e2e-server.mjs';
+import { FS, FS_CTL, TAIL_MAX, CONTRAST_MIN, fontOutliers, lowContrast, tailOf, orderOf, modShape, isConclusion, reveal, trackApi, apiSettled, openGroups as openGroupsLook } from './e2e-look.mjs';
 
 const shotsAt = process.argv.indexOf('--shots');
 const SHOTS = shotsAt > 0 ? path.resolve(process.argv[shotsAt + 1]) : '';
@@ -102,10 +109,11 @@ const srv = await startServer({ name: 'e2e-tools', vars: { DAILY_REPLY_CAP: '10'
 const BASE = srv.BASE;
 const browser = await chromium.launch();
 const errors = [];
-async function open({ width = 1440, height = 900 } = {}) {
-  const ctx = await browser.newContext({ viewport: { width, height } });
+async function open({ width = 1440, height = 900, colorScheme = 'light' } = {}) {
+  const ctx = await browser.newContext({ viewport: { width, height }, colorScheme });
   await ctx.route(/^https:\/\/(x\.com|www\.threads\.com|github\.com)\//, (r) => r.fulfill({ status: 200, contentType: 'text/html', body: '<p>替身外部页面</p>' }));
   const page = await ctx.newPage();
+  trackApi(page);
   page.setDefaultTimeout(WAIT);
   page.on('pageerror', (e) => errors.push(e.message));
   curPage = page;
@@ -219,9 +227,8 @@ const badges = (page) => page.evaluate(() => {
  * 改版前按项目分组的 details.tgrp 也一样点得开。只是辅助函数，不改任何判定。
  */
 async function openGroups(page) {
-  const closed = page.locator('#w-todos details:not([open]) > summary');
-  for (let i = await closed.count(); i > 0; i--) await closed.first().click({ timeout: WAIT });
-  await page.waitForFunction(() => ![...document.querySelectorAll('#w-todos details')].some((d) => !d.open), null, { timeout: WAIT });
+  // 2026-11-04 修偶发失败（C57）：原来在 #w-todos 还会被切页那次读取重画时就点，重画落在点击中间会丢这一下；根因和新写法见 scripts/e2e-look.mjs openGroups()
+  await openGroupsLook(page, WAIT);
 }
 const todayOf = (page) => page.evaluate(() => { const m = /今天已回\s*(\d+)\s*\/\s*(\d+)/.exec(document.body.innerText); return m ? [Number(m[1]), Number(m[2])] : null; });
 const item = (page, author) => page.locator('#list .item', { has: page.locator('.who a', { hasText: author }) });
@@ -242,6 +249,8 @@ async function filterProd(page, v) {
     const u = new URL(r.url());
     return v === '' ? !u.searchParams.has('product') : u.searchParams.get('product') === v;
   }, { timeout: WAIT });
+  // 改版批 B：项目筛选收进 details#q-filters（默认收起）——先点开它（辅助步骤，和用户一样；还没有折叠时什么都不做），判定不变
+  await reveal(page, '#f-prod');
   await page.selectOption('#f-prod', v);
   const r = await resp.catch(() => null);
   if (!r) throw new Error(`筛项目"${v || '全部'}"：等不到 product=${v || '（无）'} 的 /api/queue 返回`);
@@ -688,6 +697,117 @@ try {
     await page.context().close();
   });
 
+  // ---------- J. 改版批 B：公共工具页（2026-11-04，测试会话先写，研发不改这里的断言） ----------
+  // 依据：原型 prototype-tools.html；Amos 11/4"好很多了，改吧，完事儿直接上生产"；主会话给的批 B 口径：
+  //   每块包成卡片，模块固定结构（标题行 → 一句话结论 → 主内容 → 底部折叠说明）；子菜单顺序 = 页面顺序 = TOOLS_B；
+  //   "语音对话实测"并进"语音生成"的折叠里（不单独一块、不占菜单）；说明默认折叠；跟帖清单的筛选收进一个"筛选"折叠 details#q-filters；
+  //   每条跟帖一个主按钮（一键回复），其余是次按钮或文字按钮；删除要按两次。外加：字号阶梯、不横向滚动、底部空白 ≤ 160px、深色对比度 ≥ 4.5。
+  // 放在 I-2 之后：这时 forecast 的上限是 5（B2 改的），demo2 那条已回（B1），一键回复都能点。
+  {
+    const TOOLS_B = ['t-queue', 't-reply', 't-usage', 't-byproj', 't-ext', 't-assets', 't-tts', 't-hook'];
+    // 原型里有"说明"折叠的模块（最后一块是 details.more）；按项目看用量、插件下载原型里没有，有的话也要在最后、默认收起
+    const MORE_B = ['t-queue', 't-reply', 't-usage', 't-assets', 't-tts', 't-hook'];
+    const Q_CTRLS = ['#f-prod', '#f-plat', '#f-sort', '[data-rg="today"]', '[data-rg="7"]', '[data-rg="all"]', '#f-from', '#f-to'];
+    for (const [width, height] of [[1280, 900], [375, 740]]) {
+      for (const colorScheme of ['light', 'dark']) {
+        const tag = `批B 公共工具 ${width} 宽 · ${colorScheme === 'dark' ? '深色' : '浅色'}`;
+        await section(tag, async () => {
+          const page = await open({ width, height, colorScheme });
+          await login(page, '/#/tools');
+          await waitFor(page, '#v-tools');
+          await page.waitForSelector('#list .item', { timeout: WAIT }).catch(() => {});
+          await page.waitForTimeout(800);
+          // ① 子菜单正好 8 项，顺序 = TOOLS_B；页面上模块从上到下也是这个顺序
+          const o = await orderOf(page, '#sub-tools');
+          check(`${tag}：子菜单正好是 ${TOOLS_B.join(' → ')}（语音对话实测不占菜单）`, same(o.menu, TOOLS_B), o.menu);
+          check(`${tag}：页面上模块从上到下的顺序 = 子菜单顺序`, same(o.page, TOOLS_B), o);
+          // ② 模块固定结构
+          const S = await modShape(page, TOOLS_B);
+          for (const m of S) {
+            if (m.why) { check(`${tag}：${m.id} 模块在`, false, m.why); continue; }
+            check(`${tag}：${m.id} 包成卡片（section 本身是 .card.mod）`, m.card, m);
+            check(`${tag}：${m.id} 第一块是标题行 .mh（有 h2），第二块是一句话结论 .lead（前面一个红/橙/绿/灰圆点），后面至少一块主内容`, m.headOk && m.leadOk && !!m.dotCls && m.mains >= 1, { headOk: m.headOk, leadOk: m.leadOk, dot: m.dotCls, mains: m.mains, lead: m.lead.slice(0, 40) });
+            check(`${tag}：${m.id} 的一句话结论是结论（带数字或"没有 / 还没 / 开着"之类、不是"正在读取"、6～80 字）`, m.leadOk && isConclusion(m.lead), m.lead.slice(0, 90));
+            if (MORE_B.includes(m.id)) check(`${tag}：${m.id} 最后一块是折叠的说明 details.more`, m.lastIsMore, m);
+            else check(`${tag}：${m.id} 如果有 details.more，它在最后一块`, m.mores === 0 || m.lastIsMore, m);
+            check(`${tag}：${m.id} 的说明默认收起（details.more 没有 open）`, m.moreOpen === 0, m.moreOpen);
+            check(`${tag}：${m.id} 折叠外面没有超过 60 字的说明文字（p / .hint；长说明进 details.more）`, m.long.length === 0, m.long);
+          }
+          // ③ 结论由数据算：跟帖清单写待回条数；插件下载写版本号；Webhook 写开着 / 关着，和接口一致
+          const lead = (id) => page.evaluate((i) => document.querySelector(`#${i} .lead`)?.innerText.replace(/\s+/g, ' ').trim() ?? '', id);
+          const pend = (await apiGet(page, '/api/queue?status=pending')).body?.total;
+          const ql = await lead('t-queue');
+          check(`${tag}：跟帖评论清单的结论写待回条数（接口 ${pend} 条）`, Number.isFinite(pend) && (pend > 0 ? new RegExp(`(^|\\D)${pend}\\s*条`).test(ql) : /都回完|没有/.test(ql)), ql);
+          const ver = /\d+\.\d+\.\d+/.exec((await txt(page, '#dl')) || '')?.[0];
+          const el = await lead('t-ext');
+          check(`${tag}：插件下载的结论写最新版本号（${ver}）`, !!ver && el.includes(ver), el);
+          const on = (await apiGet(page, '/api/active')).body?.on;
+          const hl = await lead('t-hook');
+          check(`${tag}：Webhook 开关的结论和接口一致（on = ${on} → ${on ? '开着' : '关着'}）`, typeof on === 'boolean' && hl.includes(on ? '开着' : '关着') && !hl.includes(on ? '关着' : '开着'), hl);
+          // ④ 语音对话实测并进"语音生成"：#t-voice 在 #t-tts 里面的一个折叠里，默认收起；页面顶层不再单独一块
+          const v = await page.evaluate(() => { const x = document.getElementById('t-voice'); const d = x && x.closest('details'); return x ? { inTts: !!x.closest('#t-tts'), inDetails: !!d, open: d ? d.open : null, shown: !!x.getClientRects().length } : null; });
+          check(`${tag}：语音对话实测 #t-voice 在"语音生成" #t-tts 的折叠里，默认收起、看不见`, !!v && v.inTts && v.inDetails && v.open === false && !v.shown, v);
+          // ⑤ 跟帖清单：每条一个主按钮（一键回复 / 今天已到上限），其余按钮都不是主按钮
+          const rows = await page.evaluate(() => {
+            const probe = document.createElement('div'); probe.style.background = 'var(--teal)'; document.getElementById('v-tools').appendChild(probe);
+            const teal = getComputedStyle(probe).backgroundColor; probe.remove();
+            return [...document.querySelectorAll('#list .item')].map((it) => {
+              const ctl = [...it.querySelectorAll('a.btn, button, a[role="button"]')].filter((e) => e.getClientRects().length);
+              const prim = ctl.filter((e) => e.matches('.primary') || getComputedStyle(e).backgroundColor === teal);
+              return { who: it.querySelector('.who a')?.textContent ?? '?', prim: prim.map((e) => e.textContent.trim()), others: ctl.length - prim.length };
+            });
+          });
+          check(`${tag}：跟帖清单每条正好一个主按钮，就是"一键回复"（到上限时是"今天已到上限"），其余是次按钮或文字按钮`, rows.length > 0 && rows.every((r) => r.prim.length === 1 && /^(一键回复|今天已到上限)$/.test(r.prim[0]) && r.others >= 1), rows);
+          // ⑥ 筛选收进一个"筛选"折叠：默认收起，项目 / 平台 / 排序 / 日期都在里面；待回 / 已回 / 跳过留在外面；点开后都看得见、能用
+          const f0 = await page.evaluate((ctrls) => {
+            const d = document.getElementById('q-filters');
+            if (!d) return null;
+            return { tag: d.tagName, open: d.open, sum: d.querySelector(':scope > summary')?.innerText.trim() ?? '', inside: ctrls.filter((s) => { const e = document.querySelector(s); return !!e && d.contains(e); }),
+              status: [...document.querySelectorAll('#t-queue [data-f]')].map((b) => ({ f: b.dataset.f, out: !d.contains(b), shown: !!b.getClientRects().length })) };
+          }, Q_CTRLS);
+          check(`${tag}：跟帖清单的筛选收进 details#q-filters，默认收起，标题以"筛选"开头`, !!f0 && f0.tag === 'DETAILS' && f0.open === false && /^筛选/.test(f0.sum), f0);
+          check(`${tag}：项目、平台、排序、日期（今天 / 近 7 天 / 全部 / 从 / 到）都在 #q-filters 里`, !!f0 && same(f0.inside, Q_CTRLS), f0 && Q_CTRLS.filter((s) => !f0.inside.includes(s)));
+          check(`${tag}：待回 / 已回 / 跳过（[data-f]）留在折叠外面、看得见`, !!f0 && f0.status.length === 3 && f0.status.every((s) => s.out && s.shown), f0 && f0.status);
+          if (f0) {
+            await page.click('#q-filters > summary', { timeout: WAIT });
+            await page.waitForTimeout(200);
+            const f1 = await page.evaluate((ctrls) => ctrls.map((s) => { const e = document.querySelector(s); return [s, !!e && !!e.getClientRects().length && !e.disabled && getComputedStyle(e).visibility !== 'hidden']; }), Q_CTRLS);
+            check(`${tag}：点开"筛选"后这些控件都看得见、能用（没禁用）`, f1.every(([, ok]) => ok), f1.filter(([, ok]) => !ok).map(([s]) => s));
+            await page.click('#q-filters > summary', { timeout: WAIT });
+          }
+          // ⑦ 字号、横向滚动、底部空白、深色对比度
+          const fo = await fontOutliers(page, ['#v-tools']);
+          check(`${tag}：公共工具页看得见的文字字号只在 {${FS.join(',')}}±0.5 里（控件可以 ${FS_CTL}）`, fo.length === 0, fo);
+          check(`${tag}：页面没有横向滚动`, await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth), await page.evaluate(() => [document.documentElement.scrollWidth, innerWidth]));
+          const t = await tailOf(page, '#v-tools');
+          check(`${tag}：最后一个模块底边到页面底 ${t.tail}px ≤ ${TAIL_MAX}px`, t.tail <= TAIL_MAX, t);
+          if (colorScheme === 'dark') {
+            const lc = await lowContrast(page, ['#v-tools']);
+            check(`${tag}：深色模式文字对比度：正文 ≥ ${CONTRAST_MIN}:1（大字 ≥ 3:1，禁用的不算）`, lc.bad.length === 0, lc);
+          }
+          if (SHOTS) { mkdirSync(SHOTS, { recursive: true }); await page.screenshot({ path: path.join(SHOTS, `tools-B-${width}-${colorScheme}.png`), fullPage: true }); }
+          await page.context().close();
+        });
+      }
+    }
+    // ⑧ 删除要按两次：第一下只出确认（这条还在、没有发删除请求），第二下才删。这里只按第一下，然后刷新放弃（真删的流程在 e2e-queue 第 7 段）
+    await section('批B 公共工具：删除要按两次', async () => {
+      const page = await open();
+      await login(page, '/#/tools/queue');
+      await page.waitForSelector('#list .item', { timeout: WAIT });
+      const writes = [];
+      page.on('request', (r) => { if (r.method() !== 'GET' && /\/api\/queue\//.test(r.url())) writes.push(r.method() + ' ' + new URL(r.url()).pathname); });
+      const it = page.locator('#list .item').first();
+      const who = await it.locator('.who a').first().textContent();
+      const n0 = await page.locator('#list .item').count();
+      await it.locator('button', { hasText: /^删除$/ }).first().click({ timeout: WAIT });
+      await page.waitForTimeout(500);
+      const again = await it.locator('button, a', { hasText: /再按一次|确认删除/ }).count();
+      check('批B：跟帖清单点一下"删除"——这条还在、没有发删除请求，出现"再按一次删除"或"确认删除"', (await page.locator('#list .item').count()) === n0 && writes.length === 0 && again >= 1 && (await it.locator('.who a').first().textContent()) === who, { writes, again, n0 });
+      await page.context().close();
+    });
+  }
+
   check('A、B、D、E、F、G 段没有脚本错误', errors.length === 0, errors);
 } catch (e) {
   check('脚本跑完（没有中途出错）', false, String(e && e.stack || e));
@@ -815,6 +935,234 @@ try {
     check('H 段没有脚本错误', errs3.length === 0, errs3);
   });
   if (srv3) srv3.stop();
+}
+
+// ======================================================================
+// K 段（2026-11-04 批 B 验收补，测试会话写，研发不改断言）：清单按项目过滤原样匹配、项目页"用到的工具"只算本项目；公共工具读取失败的红条
+// 口径（主会话 11/4）：服务端按已知项目名原样匹配（有项目页的项目、清单里出现过的 product、forecast），不认识的回 400；不带 product 或空串是全部。
+// 来由：产品走查证实（🔴）src/queue.ts 只认 /^[a-z0-9-]{1,32}$/，product=Practical 的过滤被丢掉、返回全部项目的条数，
+//   Practical 项目页写"有 4 条等你回"（全是 forecast 的）、上限写成 forecast 的 8。研发口径：服务端按已知项目认（大小写无关），未知项目名返回 400；
+//   页面上没跟帖时写"跟帖评论清单里没有 Practical 待回的"。
+// 样例：forecast 4 条待回 + 1 条昨天回的、上限 8（reply_cap:forecast）；Practical 0 条待回、1 条昨天回的（status=done），没单独设上限 → 用默认 10。
+// 公共工具红条约定（照工作台 #w-stale / #w-retry）：#t-stale（role="alert"）写中文原因 +"下面是 HH:MM 读到的"，里面一个 #t-retry"再读一次"；读回来红条消失。
+// ======================================================================
+{
+  const KQ = [
+    ['@k1', 'forecast', 'x', '1920000000000000001', 90, 'pending'], ['@k2', 'forecast', 'x', '1920000000000000002', 80, 'pending'],
+    ['@k3', 'forecast', 'threads', 'DKk0003', 70, 'pending'], ['@k4', 'forecast', 'x', '1920000000000000004', 60, 'pending'],
+    ['@kp', 'Practical', 'x', '1920000000000000005', 50, 'done'],
+    ['@kf', 'forecast', 'x', '1920000000000000006', 40, 'done'], // 有一条 forecast 的已回，"只含 Practical 的"才测得出过滤有没有生效
+  ];
+  const yday = twDay(now - DAY);
+  const KSQL = [
+    ...KQ.map(([a, p, pl, id, s, st], i) => `INSERT INTO queue (at, updated_at, product, platform, post_id, author, snippet, post_at, score, draft, source, status, done_day, engine, reasons) VALUES (${[T + 1000 * (9 - i), T + 1000 * (9 - i), p, pl, id, a, a + ' 的原帖', null, s, a + ' 的草稿', '', st, st === 'done' ? yday : null, 'gemini', '[]'].map(q).join(', ')});`),
+    `INSERT INTO settings (key, value, updated_at) VALUES ('reply_cap:forecast', '8', ${now});`,
+  ].join('\n');
+  let srv4 = null;
+  const errs4 = [];
+  await section('K 清单按项目过滤、项目页用到的工具', async () => {
+    srv4 = await startServer({ name: 'e2e-tools-k', vars: { DAILY_REPLY_CAP: '10' }, seedSql: KSQL });
+    await srv4.ingest('agents', [
+      { kind: 'projects', key: '', source_at: now - H, payload: { version: 'v1', items: [{ name: 'forecast', stage: '试水阶段' }, { name: 'Practical', stage: '开局沟通' }] } },
+      { kind: 'status', key: 'forecast', source_at: now - H, payload: { product: 'forecast', state: 'B', level: 'mute', week: '样例', metrics: [] } },
+      { kind: 'status', key: 'Practical', source_at: now - H, payload: { product: 'Practical', state: '开局沟通', level: 'mute', week: '样例', metrics: [] } },
+    ]);
+    const ctx = await browser.newContext({ viewport: { width: 1280, height: 900 } });
+    const page = await ctx.newPage();
+    curPage = page;
+    trackApi(page);
+    // 清单读取（/api/queue?…）在途数：装断网之前要等它归零（见下面"公共工具读取失败"的注释）
+    let qInflight = 0;
+    const isQ = (r) => /\/api\/queue\?/.test(r.url());
+    page.on('request', (r) => { if (isQ(r)) qInflight++; });
+    page.on('requestfinished', (r) => { if (isQ(r)) qInflight--; });
+    page.on('requestfailed', (r) => { if (isQ(r)) qInflight--; });
+    page.on('pageerror', (e) => errs4.push(e.message));
+    // 从工作台登录、再点一级菜单进 Practical（像用户一样）；"在 Practical 页刷新"单独测在下面
+    //（2026-11-04 验收探索：改版前 staging 上带着 #/Practical 登录或刷新会落回 #/work，因为兜底名单里只有 forecast）
+    await page.goto(srv4.BASE + '/#/work');
+    await page.fill('#pw', PASS);
+    await page.click('#go');
+    await page.waitForSelector('#app:not([hidden])', { timeout: WAIT });
+    const get = (u) => page.evaluate(async (x) => { const r = await fetch(x, { credentials: 'same-origin' }); return { status: r.status, body: await r.json().catch(() => null) }; }, u);
+    // ② 未知项目名 → 400；已知的照常 200
+    const unk = await get('/api/queue?status=pending&product=nosuch');
+    const unk2 = await get('/api/queue?status=pending&product=' + encodeURIComponent('不存在的项目'));
+    check('K /api/queue?product=<未知项目> 返回 400（不再悄悄丢掉过滤、返回全部）', unk.status === 400 && unk2.status === 400, { nosuch: unk.status, 中文: unk2.status, body: unk.body });
+    const fc = await get('/api/queue?status=pending&product=forecast');
+    check('K product=forecast 照常：200、4 条待回、上限 8', fc.status === 200 && fc.body?.total === 4 && fc.body?.cap === 8, { status: fc.status, total: fc.body?.total, cap: fc.body?.cap });
+    // ③ product=Practical 原样匹配、只含 Practical 的；大小写不对的 practical 当作不认识 → 400（主会话 11/4 接受研发"原样匹配"的更严口径）
+    const P = await get('/api/queue?status=done&product=Practical'), p = await get('/api/queue?status=pending&product=practical');
+    const prods = (r) => [...new Set((r.body?.items || []).map((x) => String(x.product)))];
+    check('K product=Practical 只含 Practical 的（这份样例里已回 1 条）', P.status === 200 && (P.body?.items || []).length === 1 && same(prods(P), ['Practical']), { status: P.status, n: (P.body?.items || []).length, prods: prods(P) });
+    check('K product=practical（大小写不对）当作不认识的项目，返回 400', p.status === 400, { status: p.status, total: p.body?.total });
+    const all = await get('/api/queue?status=pending'), empty = await get('/api/queue?status=pending&product=');
+    check('K 不带 product 或 product 为空：照旧是全部（4 条待回）', all.status === 200 && all.body?.total === 4 && empty.status === 200 && empty.body?.total === 4, { all: [all.status, all.body?.total], empty: [empty.status, empty.body?.total] });
+    const pp = await get('/api/queue?status=pending&product=Practical');
+    check('K product=Practical 的待回是 0 条、上限是 Practical 自己的 10（不是 forecast 的 8）', pp.status === 200 && pp.body?.total === 0 && pp.body?.cap === 10, { status: pp.status, total: pp.body?.total, cap: pp.body?.cap });
+    // ① Practical 项目页"用到的工具"：结论和卡片都写 0 /"没有 Practical 待回的"，上限是 10
+    await page.click('nav.nav1 a[data-proj="Practical"]', { timeout: WAIT });
+    await page.waitForFunction(() => location.hash.startsWith('#/Practical') && document.getElementById('f-title')?.textContent === 'Practical' && !document.getElementById('v-project').hidden, null, { timeout: WAIT });
+    await apiSettled(page, WAIT);
+    await page.waitForFunction(() => !/读取中|正在读取/.test(document.getElementById('f-tools')?.innerText || ''), null, { timeout: WAIT }).catch(() => {});
+    await page.waitForTimeout(300);
+    const lead = (await page.locator('#f-tools .lead').first().innerText().catch(() => '')).replace(/\s+/g, ' ').trim();
+    const card = (await page.locator('#f-tools-body').innerText().catch(() => '')).replace(/\s+/g, ' ').trim();
+    const zero = (t) => /没有\s*Practical\s*待回/.test(t) || /(^|\D)0\s*条/.test(t);
+    check('K Practical 项目页"用到的工具"的结论写 0 条或"没有 Practical 待回的"（不是别的项目的 4 条）', zero(lead) && !/4\s*条/.test(lead), lead);
+    check('K Practical 项目页"用到的工具"的卡片写 0 条或"没有 Practical 待回的"', zero(card) && !/4\s*条/.test(card), card.slice(0, 160));
+    const capM = /今天已回\s*(\d+)\s*\/\s*(\d+)/.exec(lead + ' ' + card);
+    check('K Practical 项目页显示的上限是 Practical 自己的 10（默认值），今天已回 0', !!capM && capM[1] === '0' && capM[2] === '10', capM ? capM[0] : (lead + ' | ' + card).slice(0, 160));
+    // 在 Practical 页刷新：仍停在 Practical（不跳回工作台），"用到的工具"仍只算 Practical（研发 3efdff3：名单读到前先按地址打开）
+    await page.reload();
+    await page.waitForSelector('#app:not([hidden])', { timeout: WAIT });
+    const stay = await page.waitForFunction(() => location.hash.startsWith('#/Practical') && document.getElementById('f-title')?.textContent === 'Practical' && !document.getElementById('v-project').hidden, null, { timeout: WAIT }).then(() => true, () => false);
+    await apiSettled(page, WAIT);
+    const card2 = (await page.locator('#f-tools-body').innerText().catch(() => '')).replace(/\s+/g, ' ').trim();
+    check('K 在 Practical 页刷新：仍停在 Practical 项目页，"用到的工具"仍是 0 条、今天已回 0 / 10', stay && zero(card2) && /今天已回\s*0\s*\/\s*10/.test(card2), { stay, hash: await page.evaluate(() => location.hash), title: await page.locator('#f-title').textContent().catch(() => null), card: card2.slice(0, 120) });
+    // forecast 项目页对照：4 条、上限 8
+    await page.goto(srv4.BASE + '/#/forecast');
+    await page.waitForFunction(() => /4\s*条/.test(document.getElementById('f-tools')?.innerText || ''), null, { timeout: WAIT }).catch(() => {});
+    const ft = (await page.locator('#f-tools').innerText().catch(() => '')).replace(/\s+/g, ' ');
+    check('K 对照：forecast 项目页"用到的工具"写 4 条、上限 8', /(^|\D)4\s*条/.test(ft) && /\/\s*8(\D|$)/.test(ft), ft.slice(0, 160));
+
+    // 公共工具读取失败的红条：先读成功一次，再让清单读取断网（浏览器报英文 TypeError），点"待回"重读
+    await page.goto(srv4.BASE + '/#/tools/queue');
+    await page.waitForSelector('#list .item', { timeout: WAIT });
+    // 测试用例修正（2026-11-04 CI 5719956 第一次就红，C57）：切到公共工具时页面自己发一次清单读取 load()；#list 里登录时画的条目早就在，
+    // 上面那句等待马上就过了，那次读取还在路上。断网只挡之后的新请求——那次旧的读取在红条出现后才成功返回，load() 照样把红条收掉
+    //（页面的 load() 不分先后，晚到的旧结果会盖掉新的，另报研发），于是点 #t-retry 时它已经藏起来、等满 4 秒。
+    // 确定性复现：扣住切页那次读取，等断网那次失败后 5ms 再放行 → 3 遍 3 遍都是同一句 Timeout。现在：等清单读取在途数归零、页面跑完再断网。
+    { const t0 = Date.now(); while (qInflight > 0) { if (Date.now() - t0 > WAIT) throw new Error(`等清单读取回来等了 ${WAIT}ms（在途 ${qInflight}）`); await new Promise((ok) => setTimeout(ok, 20)); } }
+    await page.evaluate(() => new Promise((ok) => setTimeout(ok, 0)));
+    const n0 = await page.locator('#list .item').count();
+    // 断网一直持续到点"再读一次"那一刻：这期间别的重读（自动刷新等）也都失败，红条不会被别的读取先收掉（第一版在 unroute 和点按钮之间偶尔被别的读取收掉，8 遍撞 1 次）
+    const QRE = /\/api\/queue\?/;
+    // "恢复"的开关放在页面里：捕获阶段听到点 #t-retry 才恢复（比页面自己的点击处理先跑），所以恢复后的第一次读取一定是这一下"再读一次"发的
+    await page.evaluate(() => { window.__e2eRetry = false; document.addEventListener('click', (e) => { if (e.target.closest && e.target.closest('#t-retry')) window.__e2eRetry = true; }, true); });
+    await page.route(QRE, async (r) => ((await page.evaluate(() => window.__e2eRetry).catch(() => false)) ? r.continue() : r.abort('failed')));
+    await page.click('#t-queue [data-f="pending"]', { timeout: WAIT }).catch(() => {});
+    const barOk = await page.waitForSelector('#t-stale', { state: 'visible', timeout: WAIT }).then(() => true, () => false);
+    const bar = barOk ? (await page.locator('#t-stale').innerText()).replace(/\s+/g, ' ').trim() : null;
+    check('K 公共工具读取失败：出现红条 #t-stale（role="alert"），写中文原因、"下面是 HH:MM 读到的"，不露英文报错', barOk && /[一-龥]/.test(bar) && /下面是\s*\d{1,2}:\d{2}\s*读到的/.test(bar) && !/[A-Za-z]{5,}/.test(bar) && (await page.getAttribute('#t-stale', 'role')) === 'alert', bar ?? (await page.evaluate(() => [...document.querySelectorAll('#v-tools [role=alert], #v-tools [role=status]')].filter((e) => e.getClientRects().length).map((e) => (e.id || e.className) + '：' + e.innerText.trim()).slice(0, 4))));
+    check('K 公共工具读取失败：红条里有"再读一次"按钮 #t-retry；清单保留上次读到的内容', barOk && (await page.locator('#t-stale #t-retry').innerText().catch(() => '')).trim() === '再读一次' && (await page.locator('#list .item').count()) === n0, { n0, now: await page.locator('#list .item').count() });
+    if (barOk && (await page.locator('#t-retry').count())) {
+      await page.click('#t-retry', { timeout: WAIT });
+      const gone = await page.waitForSelector('#t-stale', { state: 'hidden', timeout: WAIT }).then(() => true, () => false);
+      check('K 点"再读一次"读回来了：红条消失、清单还在', gone && (await page.locator('#list .item').count()) === n0, { gone, n: await page.locator('#list .item').count() });
+    }
+    await ctx.close();
+    check('K 段没有脚本错误', errs4.length === 0, errs4);
+  });
+  if (srv4) srv4.stop();
+}
+
+// ======================================================================
+// L 段（2026-11-04 批 B 验收补，测试会话写，研发不改断言；主会话判 🔴）：清单读取只认最新一次，慢的旧结果不能盖掉新的
+// 来由：src/admin-page.ts load() 不分先后——先选 forecast（读取慢）、马上改选 demo2，慢的那次晚到就把列表换成 forecast 的，
+//   下拉却还是 demo2；这时"删除筛选出的这些"按列表删，确认框写"待回 · demo2"，删掉的却是 forecast 的。另外旧的成功结果会收掉新的失败红条。
+// 做法（确定性）：扣住第一次读取（product=forecast）→ 改选 demo2、等它的结果画完 → 再放行旧的、等它回来、页面跑完 → 看页面。
+// 样例：forecast 2 条待回（@la、@lb），demo2 2 条待回（@lc、@ld）。
+// ======================================================================
+{
+  const LQ = [['@la', 'forecast', 90], ['@lb', 'forecast', 80], ['@lc', 'demo2', 70], ['@ld', 'demo2', 60]];
+  const LSQL = LQ.map(([a, p, s], i) => `INSERT INTO queue (at, updated_at, product, platform, post_id, author, snippet, post_at, score, draft, source, status, done_day, engine, reasons) VALUES (${[T + 1000 * (9 - i), T + 1000 * (9 - i), p, 'x', '195000000000000000' + i, a, a + ' 的原帖', null, s, a + ' 的草稿', '', 'pending', null, 'gemini', '[]'].map(q).join(', ')});`).join('\n');
+  let srv5 = null;
+  const errs5 = [];
+  await section('L 清单读取只认最新一次', async () => {
+    srv5 = await startServer({ name: 'e2e-tools-l', vars: { DAILY_REPLY_CAP: '10' }, seedSql: LSQL });
+    const ctx = await browser.newContext({ viewport: { width: 1280, height: 900 } });
+    const page = await ctx.newPage();
+    curPage = page;
+    page.on('pageerror', (e) => errs5.push(e.message));
+    let qIn = 0;
+    const isQ = (r) => /\/api\/queue\?/.test(r.url());
+    page.on('request', (r) => { if (isQ(r)) qIn++; });
+    page.on('requestfinished', (r) => { if (isQ(r)) qIn--; });
+    page.on('requestfailed', (r) => { if (isQ(r)) qIn--; });
+    const qSettled = async () => { const t0 = Date.now(); while (qIn > 0) { if (Date.now() - t0 > WAIT) throw new Error(`等清单读取回来等了 ${WAIT}ms（在途 ${qIn}）`); await new Promise((ok) => setTimeout(ok, 20)); } await page.evaluate(() => new Promise((ok) => setTimeout(ok, 0))); };
+    const view = () => page.evaluate(() => ({ prod: document.getElementById('f-prod').value, who: [...document.querySelectorAll('#list .item .who a')].map((a) => a.textContent).sort(), total: (document.getElementById('total')?.textContent || '').trim(), stale: !document.getElementById('t-stale')?.hidden }));
+    const get = (u) => page.evaluate(async (x) => { const r = await fetch(x, { credentials: 'same-origin' }); return r.json().catch(() => null); }, u);
+    const enter = async () => {
+      await page.goto(srv5.BASE + '/#/tools/queue');
+      if (await page.locator('#pw').isVisible().catch(() => false)) { await page.fill('#pw', PASS); await page.click('#go'); }
+      await page.waitForSelector('#list .item', { timeout: WAIT });
+      await qSettled();
+      await reveal(page, '#f-prod');
+    };
+    /**
+     * 扣住接下来所有 product=forecast 的读取（选一次下拉页面会发两次同样的读取，两次都扣），放行后一起送回；
+     * 返回 { seen: 第一次已经发出, release: 放行并取消扣留 }。浏览器自己把重复请求合并掉时 continue 会报"已处理"，那一次本来就不会回到页面，忽略
+     */
+    const holdForecast = async () => {
+      let open, seenOk;
+      const gate = new Promise((ok) => { open = ok; });
+      const seen = new Promise((ok) => { seenOk = ok; });
+      const RE = /\/api\/queue\?.*product=forecast/;
+      const fn = async (r) => { seenOk(); await gate; await r.continue().catch(() => {}); };
+      await page.route(RE, fn);
+      return { seen, release: async () => { open(); await page.unroute(RE, fn); } };
+    };
+
+    // ③ 先测红条：旧的（forecast）成功结果晚到，不能收掉新的（demo2）失败红条
+    await enter();
+    {
+      const h = await holdForecast();
+      await page.selectOption('#f-prod', 'forecast');
+      await h.seen;
+      await page.route(/\/api\/queue\?.*product=demo2/, (r) => r.abort('failed'), { times: 1 });
+      const failed = page.waitForEvent('requestfailed', { predicate: (r) => /product=demo2/.test(r.url()), timeout: WAIT });
+      await page.selectOption('#f-prod', 'demo2');
+      await failed;
+      await page.evaluate(() => new Promise((ok) => setTimeout(ok, 0))); // forecast 那次还扣着、在途数不会归零：只让页面画完 demo2 的失败
+      await page.waitForSelector('#t-stale', { state: 'visible', timeout: WAIT }).catch(() => {});
+      const before = await view();
+      const back = page.waitForResponse((r) => /product=forecast/.test(r.url()), { timeout: WAIT });
+      await h.release();
+      await back;
+      await qSettled();
+      const after = await view();
+      check('L ③ 先选 forecast（读取被扣住）、改选 demo2 读取失败 → 红条出现；再放行旧的 forecast 成功结果：红条还在、列表没被换成 forecast 的', before.stale && after.stale && after.prod === 'demo2' && !same(after.who, ['@la', '@lb']), { before, after });
+    }
+    await page.unrouteAll({ behavior: 'ignoreErrors' });
+
+    // ① ② 列表、条数、下拉始终是最新选的项目；这时批量删除只删最新选的项目
+    await page.reload();
+    await page.waitForSelector('#app:not([hidden])', { timeout: WAIT });
+    await enter();
+    {
+      const h = await holdForecast();
+      await page.selectOption('#f-prod', 'forecast');
+      await h.seen;
+      const dr = page.waitForResponse((r) => /product=demo2/.test(r.url()), { timeout: WAIT });
+      await page.selectOption('#f-prod', 'demo2');
+      await dr;
+      await page.waitForFunction(() => document.getElementById('f-prod').value === 'demo2' && /共\s*2\s*条/.test(document.getElementById('total')?.textContent || ''), null, { timeout: WAIT }).catch(() => {});
+      const mid = await view();
+      const back = page.waitForResponse((r) => /product=forecast/.test(r.url()), { timeout: WAIT });
+      await h.release();
+      await back;
+      await qSettled();
+      const v = await view();
+      check('L ① 先选 forecast（读取被扣住）、改选 demo2、再放行旧的：下拉、列表、条数都还是 demo2 的（@lc、@ld，共 2 条）', v.prod === 'demo2' && same(v.who, ['@lc', '@ld']) && /共\s*2\s*条/.test(v.total), { 放行前: mid, 放行后: v });
+      // ② 批量删除：只删 demo2 的，forecast 一条没少
+      await reveal(page, '#bulk');
+      const bt = (await page.locator('#bulk').innerText().catch(() => '')).trim();
+      await page.click('#bulk', { timeout: WAIT });
+      const ct = (await page.locator('#bulk-text').innerText().catch(() => '')).trim();
+      const del = page.waitForResponse((r) => /\/api\/queue\/delete/.test(r.url()), { timeout: WAIT });
+      await page.click('#bulk-yes', { timeout: WAIT });
+      const body = await (await del).json().catch(() => null);
+      await qSettled();
+      const fc = await get('/api/queue?status=pending&product=forecast');
+      const all = await get('/api/queue?status=pending');
+      const left = (all?.items || []).map((x) => x.author).sort();
+      check('L ② 这时"删除筛选出的这些"→ 确认：按钮和确认框写 2 条、demo2；删掉的只是 demo2 的 2 条，forecast 的 2 条一条没少（查 /api/queue）', /2\s*条/.test(bt) && /2\s*条/.test(ct) && /demo2/.test(ct) && body?.deleted === 2 && fc?.total === 2 && same(left, ['@la', '@lb']), { 按钮: bt, 确认框: ct, 删了: body, forecast剩: fc?.total, 全部剩: left });
+    }
+    await ctx.close();
+    check('L 段没有脚本错误', errs5.length === 0, errs5);
+  });
+  if (srv5) srv5.stop();
 }
 
 await Promise.all(pendingShots);
