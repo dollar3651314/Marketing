@@ -6,7 +6,8 @@
  *   GET /api/company、POST /api/company/done（公司运营仪表盘，company.ts）、GET /api/active、POST /api/hook {on}（团队在做什么、Webhook 开关，hooks.ts）、
  *   GET /api/reply-cap、POST /api/reply-cap {caps:{项目: 1～50}}（每天回帖上限按项目，D-2，公司平台批 2）、
  *   POST /api/queue/delete {ids}（Amos 自己删；记录不自动删，D-4 选 B）、GET /api/usage、POST /api/usage {caps}（用量和限额 ＋ 用量监控：还剩多少 left、分别用到了哪里 byPurpose，usage.ts）、POST /api/login、POST /api/logout、
- *   /api/assets/*（素材生成器，assets.ts）、/api/tts/*（语音生成，tts.ts）、/api/voice/*（语音对话实测，voice.ts）。
+ *   /api/assets/*（素材生成器，assets.ts）、/api/tts/*（语音生成，tts.ts）、/api/voice/*（语音对话实测，voice.ts）、
+ *   /api/english/*（英语练习的跨轮记忆，english-memory.ts：词汇线、生成这一轮的提示词、把 #LOG 贴回来入库；不调任何 AI，不花钱）。
  * 登录：密钥 COPILOT_PASSWORD（≥ 16 个字符，没填时后台 404）；同一 IP 15 分钟错 5 次锁 15 分钟，全站 1 小时错 20 次锁 1 小时；
  * 失败一律回答同一句（不透露锁定规则，C128）；会话 12 小时，签名密钥由密码派生，改密码旧会话全部失效。
  */
@@ -20,6 +21,7 @@ import { activeApi } from './hooks';
 import { assetsApi } from './assets';
 import { ttsApi } from './tts';
 import { voiceApi } from './voice';
+import { englishApi } from './english-memory';
 
 export const SESSION_MS = 12 * 3600_000;
 const LOCK = { ipWindow: 15 * 60_000, ipMax: 5, ipLock: 15 * 60_000, allWindow: 3600_000, allMax: 20, allLock: 3600_000 };
@@ -160,6 +162,8 @@ export async function adminApi(env: Env, req: Request, now: number): Promise<Res
   // 语音生成（公共工具 → 语音生成，tts.ts）：跨项目可复用的单句配音，同样只看"用量和限额"里那个上限
   if (p.startsWith('/api/tts/')) return (await ttsApi(env, req, now, p.slice('/api/tts/'.length))) ?? new Response('Not found', { status: 404 });
   if (p.startsWith('/api/voice/')) return (await voiceApi(env, req, now, p.slice('/api/voice/'.length))) ?? new Response('Not found', { status: 404 });
+  // 英语练习的跨轮记忆（工作台 → 英语练习，english-memory.ts）：只做记忆 + 出题，**不调任何 AI、不花一分钱**（底线 8 / C117）
+  if (p.startsWith('/api/english/')) return (await englishApi(env, req, now, p.slice('/api/english/'.length))) ?? new Response('Not found', { status: 404 });
   const company = await companyApi(env, req, now);
   if (company) return company;
   const live = await activeApi(env, req, now);
