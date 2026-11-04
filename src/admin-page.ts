@@ -873,13 +873,18 @@ try{if(localStorage.getItem('qc-sort')==='score')$('f-sort').value='score';}catc
 $('f-sort').addEventListener('change',()=>{try{localStorage.setItem('qc-sort',$('f-sort').value);}catch(e){}load();});
 function query(){const q=new URLSearchParams({status:filter});if($('f-prod').value)q.set('product',$('f-prod').value);if($('f-plat').value)q.set('platform',$('f-plat').value);if($('f-from').value)q.set('from',$('f-from').value);if($('f-to').value)q.set('to',$('f-to').value);if($('f-sort').value==='score')q.set('sort','score');return '/api/queue?'+q;}
 let qOkAt=0;
+// 批 B 发版前（测试会话查出，改版前就有）：读清单不分先后，慢的旧请求晚到会盖掉新请求的结果（下拉是 demo2、列表却是 forecast 的），
+// 旧的成功也会收掉新的失败红条。现在每次读拿一个序号 qSeq，只认最新那次；画上去的结果记下它对应的查询 qShown（批量删除前核对用）
+let qSeq=0,qShown='',qShownSeq=0;
 async function load(){
   $('bulk-confirm').hidden=true;
-  try{state=await call(query());}catch(e){
+  const my=++qSeq,qs=query();let got;
+  try{got=await call(qs);}catch(e){if(my!==qSeq)return;
     // 筛的项目在清单里已经一条都没有了（例如刚把它的都删了）：服务端不再认这个名字（400"不认识的项目"），这里如实写"0 条"，不当成读取失败、也不退回"全部"
-    if(e.status===400&&$('f-prod').value&&/^不认识的项目/.test(e.message)){const pv=$('f-prod').value;state=Object.assign({},state,{items:[],total:0});qOkAt=Date.now();$('t-stale').hidden=true;showApp();render();$('total').textContent='共 0 条（'+(PROD[pv]||pv)+' 在清单里已经没有记录了）';subSpySoon();return;}
+    if(e.status===400&&$('f-prod').value&&/^不认识的项目/.test(e.message)){const pv=$('f-prod').value;state=Object.assign({},state,{items:[],total:0});qShown=qs;qShownSeq=my;qOkAt=Date.now();$('t-stale').hidden=true;showApp();render();$('total').textContent='共 0 条（'+(PROD[pv]||pv)+' 在清单里已经没有记录了）';subSpySoon();return;}
     if(e.message!=='请重新登录'){const hm=qOkAt?tw(qOkAt).slice(11,16):'';$('t-stale-t').textContent='跟帖评论清单读取失败：'+e.message+'。'+(qOkAt?'下面是 '+hm+' 读到的内容。':'还没读到过内容。')+'点"再读一次"重试。';$('t-stale').hidden=false;}return;}
-  qOkAt=Date.now();$('t-stale').hidden=true;showApp();render();subSpySoon();
+  if(my!==qSeq)return;
+  state=got;qShown=qs;qShownSeq=my;qOkAt=Date.now();$('t-stale').hidden=true;showApp();render();subSpySoon();
 }
 $('t-retry').addEventListener('click',async()=>{const b=$('t-retry');b.setAttribute('aria-busy','true');b.textContent='正在读…';await load();b.removeAttribute('aria-busy');b.textContent='再读一次';if($('t-stale').hidden)toast('已重新读取，现在是最新的');});
 function render(){
@@ -952,10 +957,15 @@ function filterText(){const ps=[$('f-prod').value?(PROD[$('f-prod').value]||$('f
   const rg=document.querySelector('[data-rg][aria-pressed="true"]');ps.push($('f-from').value||$('f-to').value?(rg&&rg.dataset.rg==='today'?'今天':rg&&rg.dataset.rg==='7'?'近 7 天':($('f-from').value||'最早')+' ～ '+($('f-to').value||'今天')):'全部时间');return ps.join(' · ');}
 /** 一句话结论写进 .lead（和第三段脚本的 setLead 一样：圆点 + 结论 + 浅色补充） */
 function leadT(id,dot,main,soft){const e=$(id);if(!e)return;e.replaceChildren(Object.assign(document.createElement('span'),{className:'dot '+dot}),Object.assign(document.createElement('span'),{textContent:main}));if(soft)e.append(Object.assign(document.createElement('span'),{className:'soft',textContent:soft}));}
-$('bulk').addEventListener('click',()=>{$('bulk-text').textContent='要永久删除现在列出的 '+state.items.length+' 条（'+rangeText()+'），删了不能恢复。';$('bulk-confirm').hidden=false;$('bulk-yes').focus();});
+// 批量删除按"确认框上写的那份列表"删：点按钮时记下这份列表的 id 和它对应的查询；按"确认删除"时再核对——列表还是这份、筛选没改、没有更新的读取在途，才删；
+// 对不上就一条都不删，提示原因并重新读（删的是 id，服务端按 id 删，所以页面上看到的、确认框写的、实际删的三者必须是同一份）
+let bulkSnap=null;
+$('bulk').addEventListener('click',()=>{bulkSnap={q:qShown,seq:qShownSeq,ids:state.items.map(x=>x.id)};$('bulk-text').textContent='要永久删除现在列出的 '+state.items.length+' 条（'+rangeText()+'），删了不能恢复。';$('bulk-confirm').hidden=false;$('bulk-yes').focus();});
 $('bulk-no').addEventListener('click',()=>{$('bulk-confirm').hidden=true;});
 $('bulk-yes').addEventListener('click',async()=>{const y=$('bulk-yes');y.disabled=true;y.textContent='正在删除…';$('bulk-no').disabled=true;
-  try{const r=await call('/api/queue/delete',{ids:state.items.map(x=>x.id)});toast('已删除 '+r.deleted+' 条');await load();}catch(e){toast('没删掉：'+e.message,true);}
+  const same=bulkSnap&&bulkSnap.seq===qSeq&&bulkSnap.seq===qShownSeq&&bulkSnap.q===query()&&JSON.stringify(bulkSnap.ids)===JSON.stringify(state.items.map(x=>x.id));
+  if(!same){bulkSnap=null;$('bulk-confirm').hidden=true;y.disabled=false;y.textContent='确认删除';$('bulk-no').disabled=false;toast('没删：列表和筛选条件对不上（刚改过筛选或列表正在重新读），一条都没删。已重新读取，请看清楚再点一次。',true);await load();return;}
+  try{const r=await call('/api/queue/delete',{ids:bulkSnap.ids});bulkSnap=null;toast('已删除 '+r.deleted+' 条');await load();}catch(e){toast('没删掉：'+e.message,true);}
   finally{y.disabled=false;y.textContent='确认删除';$('bulk-no').disabled=false;}});
 // 用量页：打开时读一次；停在这一页时每 30 秒自动刷新（0.3.5，B-2）；输入框正在改时不覆盖
 let uTimer=null, uEditing=false;
@@ -1063,7 +1073,7 @@ $('u-save').addEventListener('click',async()=>{const b=$('u-save'),m=$('u-msg');
   if(bad.length){m.className='msg';m.textContent='没保存：'+bad.join('；');return;}
   b.disabled=true;b.textContent='正在保存…';m.textContent='';
   try{const j=await call('/api/usage',{caps});usage=j.rows;uEditing=false;renderUsage();renderAcct(j.accountLimit);renderLeft(j.left||[]);uStamp();m.className='msg ok';m.textContent='✓ 已保存，下一次请求开始生效';}catch(e){m.className='msg';m.textContent=e.message;}finally{b.disabled=false;b.textContent='保存上限';}});
-call(query()).then(j=>{state=j;qOkAt=Date.now();showApp();render();route();}).catch(()=>{});
+{const my=++qSeq,qs=query();call(qs).then(j=>{if(my===qSeq){state=j;qShown=qs;qShownSeq=my;qOkAt=Date.now();}showApp();render();route();}).catch(()=>{});}
 </script>
 <script>
 // 公司页（运营仪表盘）：整段 try/catch；这里只定义函数，打开"公司"页（go('company')）时才读数据、渲染，出错只影响这一页
