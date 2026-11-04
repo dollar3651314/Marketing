@@ -13,8 +13,9 @@ import { MAX_PROJECT_PAGES, PLATFORM_CONFIG, PROJECT_PAGES_FALLBACK, PROJECT_SIT
  * 登录后默认工作台（P-9），/queue 打开直接进清单。没登录显示密码框；手机、电脑都能用。
  * 三段脚本：① 外框 + 清单、用量和限额、插件下载（这三块的脚本和接口没改，只换外框）；② "公司总览"（原运营仪表盘"公司"页，整段 try/catch）；
  * ③ 工作台、项目页（整段 try/catch，出错只影响这两页）。每个按钮都有处理中 / 成功 / 失败的反馈（C135）；删除先在页面上确认（删了不能恢复）。
- * 工作台"全部待办"2026-11-02 起按项目分组（Amos"31 个待办混在一起 我要疯掉了"）：逾期的单独置顶一块，其余每个项目一个可折叠分组、默认收起，
- * 展开状态记在这台设备的 localStorage 里。只改渲染，todo 块的数据结构（src/company.ts SCHEMA）没动。
+ * 工作台"全部待办"：2026-11-02 起按项目分组（Amos"31 个待办混在一起 我要疯掉了"）；2026-11-04 界面改版·批 A 起改成按时间段分组
+ * （已超时 / 24 小时内到期 / 之后到期 / 没定截止时间，最后一组默认收起）+ 上面按项目筛选（原型 prototype-work.html，Amos 同意换口径）。
+ * 只改渲染，todo 块的数据结构（src/company.ts SCHEMA）没动。批 A 同时换了全站设计变量（:root）、外框菜单、工作台 7 个模块的结构。
  * 注意：整页是一个模板字符串，页面脚本里不能用反引号和 ${（只有插件版本号和 src/projects.ts 的对照表是在这里插进去的）。
  */
 export const ADMIN_PAGE = `<!doctype html>
@@ -51,6 +52,9 @@ body{margin:0;background:var(--bg);color:var(--ink);font:var(--fs-body)/1.6 "Not
 .top .sp{flex:1}
 .top button{font:inherit;font-size:13px;background:none;border:1px solid #33425F;color:#C3CEE0;border-radius:99px;padding:4px 12px;cursor:pointer;white-space:nowrap;flex:0 0 auto}
 .top button:hover{border-color:#5B6B8C;color:#fff}
+.more-menu{position:relative;flex:0 0 auto}.more-menu>summary{display:none;list-style:none;cursor:pointer}.more-menu>summary::-webkit-details-marker{display:none}
+.tacts{display:flex;gap:var(--s3);align-items:center}
+.tacts button:focus-visible,.more-menu>summary:focus-visible{outline:2px solid var(--amber);outline-offset:2px}
 .sub{position:relative;background:var(--surface);border-bottom:1px solid var(--line)}
 .sub .in{max-width:1120px;margin:0 auto;display:flex;gap:var(--s1);overflow-x:auto;scrollbar-width:none;padding:0 max(var(--s5),env(safe-area-inset-left))}
 .sub .in::-webkit-scrollbar{display:none}
@@ -69,6 +73,10 @@ h3.mh{font-size:var(--fs-body)}
 @media (max-width:640px){:root{--fs-page:22px;--fs-mod:17px;--fs-num:26px}
   .top{height:48px;padding:0 var(--s3);gap:var(--s2)}.brand,.nav1 .grp-l,.top #nav,.top #extnav{display:none}
   .nav1 a{padding:5px 10px}.nav1 .sep{margin:0 2px}.top button{padding:3px 9px}
+  /* 手机：品牌名和"公司总览 / 登出"收进"···"，一级菜单的宽度留给项目名 */
+  .more-menu>summary{display:block;font-size:14px;line-height:1;color:#C3CEE0;border:1px solid #33425F;border-radius:99px;padding:5px 10px}
+  .tacts{position:absolute;right:0;top:calc(100% + 10px);flex-direction:column;align-items:stretch;gap:2px;padding:6px;min-width:150px;background:var(--surface);border:1px solid var(--line);border-radius:12px;box-shadow:0 8px 24px rgba(0,0,0,.18);z-index:40}
+  .tacts button{color:var(--ink);border:0;border-radius:8px;padding:8px 12px;text-align:left;font-size:14px}.tacts button:hover{background:var(--gray-soft);color:var(--ink)}
   .sub .in{padding:0 var(--s2)}.sub a{height:42px;padding:0 10px}
   main{padding:var(--s4) max(var(--s4),env(safe-area-inset-right)) var(--s7) max(var(--s4),env(safe-area-inset-left))}}
 .sub .in.more,.nav1.more{-webkit-mask-image:linear-gradient(90deg,#000 84%,transparent);mask-image:linear-gradient(90deg,#000 84%,transparent)}
@@ -229,10 +237,10 @@ th{font-size:12px;color:var(--muted);font-weight:600}td.n{text-align:right}
 #v-work .empty{padding:var(--s6) var(--s5);text-align:center;display:grid;gap:var(--s1);justify-items:center;margin:0}
 #v-work .empty b{font-size:var(--fs-body)}#v-work .empty span{font-size:var(--fs-aux);color:var(--muted)}
 /* 读取中：占位骨架；读取失败：保留上次内容，上面一条红色提示 + "再读一次" */
-#v-work .skel{display:block;height:14px;border-radius:6px;background:linear-gradient(90deg,var(--gray-soft),var(--surface-2),var(--gray-soft));background-size:200% 100%;animation:sk 1.2s infinite linear}
-#v-work .skels{display:grid;gap:14px;padding:20px 24px}
+#v-work .skel,.boot .skel{display:block;height:14px;border-radius:6px;background:linear-gradient(90deg,var(--gray-soft),var(--surface-2),var(--gray-soft));background-size:200% 100%;animation:sk 1.2s infinite linear}
+#v-work .skels,.boot .skels{display:grid;gap:14px;padding:20px 24px}
 @keyframes sk{to{background-position:-200% 0}}
-@media (prefers-reduced-motion:reduce){#v-work .skel{animation:none}}
+@media (prefers-reduced-motion:reduce){#v-work .skel,.boot .skel{animation:none}}
 #v-work .errbar{display:flex;gap:var(--s3);align-items:center;flex-wrap:wrap;padding:var(--s3) var(--s4);border-radius:12px;background:var(--err-soft);color:var(--err);font-size:var(--fs-body);font-weight:600;margin:0 0 var(--s3)}
 #v-work .errbar .sp{flex:1}
 /* ① 最该做的事：全页唯一的深色块（深色模式用 --hero-bg 加描边） */
@@ -399,7 +407,7 @@ ${ASSETS_CSS}${TTS_CSS}${VOICE_CSS}${ENGLISH_CSS}
 </style></head><body>
 <div class="bars" id="bars"><header class="top" id="top"><span class="logo" aria-hidden="true"><i style="height:16px;background:#2DD4BF"></i><i style="height:10px;background:#FBBF24"></i></span><span class="brand">工作平台</span><b class="sr" id="title">工作台</b>
   <nav class="nav1" id="nav1" aria-label="一级菜单" hidden><a href="#/work" data-p="work">工作台<span class="cnt" id="c-work" hidden></span></a><span class="sep" id="nav1-sep0" aria-hidden="true" hidden></span><span class="grp-l" id="nav1-grp" hidden>项目</span><span class="sep" id="nav1-sep" aria-hidden="true"></span><a href="#/tools" data-p="tools" id="nav1-tools">公共工具</a></nav>
-  <span class="sp"></span><button id="nav" hidden>用量和限额 →</button><button id="extnav" hidden>插件下载</button><button id="conav" hidden>公司总览</button><button id="logout" hidden>登出</button></header>
+  <span class="sp"></span><button id="nav" hidden>用量和限额 →</button><button id="extnav" hidden>插件下载</button><details class="more-menu" id="more-menu" hidden><summary aria-label="更多：公司总览、登出">···</summary><span class="tacts" id="tacts"><button id="conav" hidden>公司</button><button id="logout" hidden>登出</button></span></details></header>
 <div id="subs" hidden>
 <nav class="sub" id="sub-work" aria-label="工作台模块" hidden><div class="in">
   <a href="#/work/now" data-s="w-now">最该做的事</a><a href="#/work/todo" data-s="w-todo">全部待办<span class="n red" id="s-todo" hidden></span></a><a href="#/work/live" data-s="w-live">团队在做什么</a><a href="#/work/proj" data-s="w-proj">项目概况</a><a href="#/work/num" data-s="w-num">公司数字</a><a href="#/work/meet" data-s="w-meet">经营会</a><a href="#/work/english" data-s="w-english">英语练习</a>
@@ -575,6 +583,12 @@ ${ASSETS_CSS}${TTS_CSS}${VOICE_CSS}${ENGLISH_CSS}
     <div id="co-body"></div>
   </section>
 </main>
+<!-- 工作台第一次读取中的占位骨架（批 A）：读到数据就藏起来、显示 #app -->
+<main class="boot" id="boot" aria-busy="true" hidden><div class="page plat" style="gap:var(--s6)">
+  <div class="hero calm"><div style="display:grid;gap:12px;width:min(420px,100%)"><span class="skel" style="width:40%"></span><span class="skel" style="height:26px"></span><span class="skel" style="width:60%"></span></div><p class="sr">正在读取…</p></div>
+  <div class="card"><div class="skels"><span class="skel" style="width:30%;height:18px"></span><span class="skel"></span><span class="skel" style="width:70%"></span><span class="skel" style="width:85%"></span></div></div>
+  <div class="card"><div class="skels"><span class="skel" style="width:30%;height:18px"></span><span class="skel"></span><span class="skel" style="width:60%"></span></div></div>
+</div></main>
 <script>
 const $=(id)=>document.getElementById(id);
 let filter='pending', view='list', state={items:[],total:0,max:500,products:[],doneToday:0,cap:10}, usage=[];
@@ -584,12 +598,12 @@ const twDay=(ms)=>tw(ms).slice(0,10);
 function toast(t,err){const e=$('toast');e.textContent=t;e.className='toast'+(err?' err':'');e.hidden=!t;}
 async function call(path,body){const r=await fetch(path,{method:body?'POST':'GET',headers:{'content-type':'application/json'},body:body?JSON.stringify(body):undefined,credentials:'same-origin'});const j=await r.json().catch(()=>({}));if(r.status===401&&path!=='/api/login'){showLogin('请重新登录');throw new Error('请重新登录');}if(!r.ok)throw new Error(j.error||('出错了（'+r.status+'）'));return j;}
 let authed=false;
-function showLogin(m){authed=false;$('app').hidden=true;$('subs').hidden=true;$('nav1').hidden=true;$('logout').hidden=true;$('nav').hidden=true;$('extnav').hidden=true;$('conav').hidden=true;$('login').hidden=false;$('count').textContent='';$('lmsg').textContent=m||'';$('pw').focus();try{platformStop();}catch(e){}}
-// #app 由 route() 决定什么时候显示：项目页等第一次读到数据再显示（免得看到空模块）；工作台马上显示、读到之前是占位骨架（批 A）；清单、用量、插件下载、公司总览马上显示
-function showApp(){authed=true;$('subs').hidden=false;$('nav1').hidden=false;$('logout').hidden=false;frameButtons();setTimeout(()=>{try{subHint();}catch(e){}},0);}
+function showLogin(m){authed=false;$('more-menu').hidden=true;moreMenu(false);$('app').hidden=true;$('boot').hidden=true;$('subs').hidden=true;$('nav1').hidden=true;$('logout').hidden=true;$('nav').hidden=true;$('extnav').hidden=true;$('conav').hidden=true;$('login').hidden=false;$('count').textContent='';$('lmsg').textContent=m||'';$('pw').focus();try{platformStop();}catch(e){}}
+// #app 由 route() 决定什么时候显示：工作台、项目页等第一次读到数据再显示（免得看到空模块），工作台在这之前显示占位骨架 #boot（批 A）；清单、用量、插件下载、公司总览马上显示
+function showApp(){authed=true;$('subs').hidden=false;$('nav1').hidden=false;$('logout').hidden=false;$('more-menu').hidden=false;frameButtons();setTimeout(()=>{try{subHint();}catch(e){}},0);}
 $('login').addEventListener('submit',async(e)=>{e.preventDefault();const b=$('go');b.disabled=true;b.textContent='正在登录…';$('lmsg').textContent='';
   try{await call('/api/login',{password:$('pw').value});$('pw').value='';$('login').hidden=true;await load();route();}catch(err){$('lmsg').textContent=err.message;}finally{b.disabled=false;b.textContent='登录';}});
-$('logout').addEventListener('click',async()=>{await call('/api/logout',{}).catch(()=>{});showLogin('已登出');});
+$('logout').addEventListener('click',async()=>{moreMenu(false);await call('/api/logout',{}).catch(()=>{});showLogin('已登出');});
 const TITLES={hook:'Webhook 开关',list:'跟帖评论清单',usage:'用量和限额',reply:'每天回帖上限',ext:'插件下载',assets:'素材生成器',tts:'语音生成',voice:'语音对话实测',company:'公司',work:'工作台'};
 // 外框路由（工作平台批 1）：#/<页>/<模块>；页 = work / <项目> / tools / company；模块 id = 页的前缀 + 模块名（#/work/todo → w-todo）
 // 2026-11-02：项目不再写死。地址里第一段是项目名时，内部页名一律是 'project'（一套 DOM #v-project 轮流显示），当前项目记在 proj 里。
@@ -627,8 +641,8 @@ function route(){if(!authed)return;let h=hashOf();
   if(page==='project')setProject(h.proj);
   const mod=h.m&&PFX[page]?PFX[page]+h.m:'';
   const ready=(typeof platformReady!=='function')||platformReady();
-  // 批 A：工作台先显示占位骨架（读取中），项目页还是第一次读到数据再显示（批 B 再改）
-  $('app').hidden=page==='project'&&!ready;
+  // 批 A：工作台第一次读到数据之前显示占位骨架 #boot（在 #app 外面，#app 还是读到数据再显示，免得看到空模块）；项目页照旧
+  $('app').hidden=(page==='work'||page==='project')&&!ready;$('boot').hidden=!(page==='work'&&!ready);
   ['work','project','tools','company'].forEach(x=>{$('v-'+x).hidden=x!==page;const sb=$('sub-'+x);if(sb)sb.hidden=x!==page;});
   document.querySelectorAll('#nav1 a[data-p]').forEach(a=>{const on=a.dataset.p===page&&(!a.dataset.proj||a.dataset.proj===proj);if(on)a.setAttribute('aria-current','page');else a.removeAttribute('aria-current');});
   inView($('nav1'),$('nav1').querySelector('a[aria-current="page"]'));
@@ -683,7 +697,14 @@ document.querySelectorAll('nav.sub a[data-s], #nav1 a[data-p]').forEach(a=>a.add
 function go(v){const h=v==='company'?'#/company':'#/tools/'+({list:'queue',usage:'usage',ext:'ext'}[v]||'queue');if(location.hash===h)route();else location.hash=h;}
 $('nav').addEventListener('click',()=>go(view==='list'?'usage':'list'));
 $('extnav').addEventListener('click',()=>go('ext'));
-$('conav').addEventListener('click',()=>go('company'));
+$('conav').addEventListener('click',()=>{moreMenu(false);go('company');});
+/** 手机上（≤640px）"公司总览、登出"收进顶栏右边的"···"（批 A，原型 .more-menu）：点"···"展开 / 收起，点别处或 Esc 收起；电脑上两个按钮直接在顶栏 */
+// 实现：一个 details#more-menu。电脑上它一直是 open、summary 藏起来，两个按钮就在顶栏；手机上默认收起，点 summary"···"展开
+const MM=matchMedia('(max-width:640px)');
+function moreMenu(open){const d=$('more-menu');d.open=MM.matches?!!open:true;}
+try{MM.addEventListener('change',()=>moreMenu(false));}catch(e){}moreMenu(false);
+document.addEventListener('click',(e)=>{const d=$('more-menu');if(MM.matches&&d.open&&!d.contains(e.target))moreMenu(false);});
+document.addEventListener('keydown',(e)=>{const d=$('more-menu');if(e.key==='Escape'&&MM.matches&&d.open){moreMenu(false);d.querySelector('summary').focus();}});
 $('origin').textContent=location.origin;
 $('dl').addEventListener('click',async()=>{const b=$('dl'),m=$('dl-msg');b.disabled=true;b.textContent='下载中…';m.className='msg';m.textContent='';
   try{const r=await fetch('/api/extension.zip',{credentials:'same-origin'});if(r.status===401){showLogin('请重新登录');return;}if(!r.ok)throw new Error('下载失败（'+r.status+'），稍后再试');
@@ -1266,9 +1287,9 @@ function renderHero(open,now){const h=$('hero');h.removeAttribute('aria-busy');c
   const t=pe('button','btn text','做完了，打勾 ✓');t.type='button';t.addEventListener('click',()=>{t.setAttribute('aria-busy','true');t.textContent='处理中…';tick(x,t);});act.append(t);
   h.replaceChildren(l,act);}
 /** 数字和目标都是数时才画进度条："50"、"100"、"5 万 / 月"（= 50000）这类；"2026-12-31 前"这种不画 */
-function numOf(v){const m=/^\s*(\d+(?:\.\d+)?)\s*(万)?\s*(?:\/\s*\S+)?\s*$/.exec(String(v==null?'':v));return m?Number(m[1])*(m[2]?10000:1):null;}
+function numOf(v){const m=/^\\s*(\\d+(?:\\.\\d+)?)\\s*(万)?\\s*(?:\\/\\s*\\S+)?\\s*$/.exec(String(v==null?'':v));return m?Number(m[1])*(m[2]?10000:1):null;}
 /** ④ 项目概况：每个在跑的项目一张卡（阶段、这周、数字 + 进度条、在等你几件） */
-function renderProj(now){const sts=okBlocks('status').filter((b)=>CFG.NOT_PROJECTS.indexOf(b.key)<0);const B=$('w-proj-body');$('w-proj-at').textContent=sts.length?'状态卡'+stampOf(newestOf(sts)):'';$('w-proj-n').textContent=String(sts.length);
+function renderProj(now){const pi=(k)=>{const i=PROJS.indexOf(k);return i<0?99:i;};const sts=okBlocks('status').filter((b)=>CFG.NOT_PROJECTS.indexOf(b.key)<0).sort((a,b)=>pi(a.key)-pi(b.key));const B=$('w-proj-body');$('w-proj-at').textContent=sts.length?'状态卡'+stampOf(newestOf(sts)):'';$('w-proj-n').textContent=String(sts.length);
   if(!sts.length){B.replaceChildren(emptyP('还没收到项目的状态卡'));setLead('w-proj-lead','gray','还没收到项目的状态卡。','项目开工后，状态卡一推上来这里就有一张卡。');return;}
   const all=items();const waits=[];let gap='';
   const cards=sts.map((b)=>{const p=b.payload;const c=pe('div','proj');c.dataset.proj=b.key;const hd=pe('div','hd');const has=PROJS.indexOf(b.key)>=0;
@@ -1291,7 +1312,7 @@ function renderProj(now){const sts=okBlocks('status').filter((b)=>CFG.NOT_PROJEC
   const ps=(waits.length>2?waits.slice(0,2).concat(['还有 '+(waits.length-2)+' 个项目在等你']):waits).concat(gap?[gap]:[]);setLead('w-proj-lead',waits.length?'amber':'ok',ps.length?ps.join('；')+'。':'项目都在走，没有在等你的事。');}
 const newestOf=(bs)=>bs.reduce((a,b)=>(!a||b.source_at>a.source_at)?b:a,null);
 /** "0 元" → 大字 0 + 小字 元；不是"数字 + 短单位"的整段当文字显示 */
-function numTile(v){const m=/^\s*([\d.,]+)\s*(\S{0,3})\s*$/.exec(String(v==null?'':v));const n=pe('div','n');if(m){n.append(m[1]);if(m[2])n.append(pe('small',null,m[2]));}else{n.classList.add('txt');n.textContent=String(v==null||v===''?'—':v);}return n;}
+function numTile(v){const m=/^\\s*([\\d.,]+)\\s*(\\S{0,3})\\s*$/.exec(String(v==null?'':v));const n=pe('div','n');if(m){n.append(m[1]);if(m[2])n.append(pe('small',null,m[2]));}else{n.classList.add('txt');n.textContent=String(v==null||v===''?'—':v);}return n;}
 /** ⑤ 公司数字：周报里的数 + 你填的数，每个一个数字块 */
 function renderNum(now){const B=$('w-num-body');const wb=PL.data.weekly;const w=wb&&wb.payload;$('w-num-at').textContent=w?'周报'+(w.title||'')+(w.range?' · '+w.range:''):'';
   const tiles=[];const tile=(n,l,cls,extra)=>{const t=pe('div','tile');if(cls)n.classList.add(cls);t.append(n);const lb=pe('div','l',l);if(extra)lb.append(extra);t.append(lb);tiles.push(t);};
@@ -1303,7 +1324,7 @@ function renderNum(now){const B=$('w-num-body');const wb=PL.data.weekly;const w=
   if(use)tile(numTile(use.value+'%'),'Claude 用量 · 你 '+md(use.at)+' 填的');else tile(pe('div','n','还没报'),'Claude 用量','mute',link('去报 →','#/work/todo','btn small'));
   const g=pe('div','tiles');g.append(...tiles);B.replaceChildren(g);
   if(!w){setLead('w-num-lead','gray','还没收到周报。','周报每周六 17:00 前到。');return;}
-  const ps=[];ps.push(!w.cost?'周报里没写花了多少钱':/^\s*0(\s|元|$)/.test(w.cost)?'本周没花钱':'本周花了 '+w.cost);const calm=ps.length;
+  const ps=[];ps.push(!w.cost?'周报里没写花了多少钱':/^\\s*0(\\s|元|$)/.test(w.cost)?'本周没花钱':'本周花了 '+w.cost);const calm=ps.length;
   if(w.mistakes>0)ps.push('同类错误又犯了 '+w.mistakes+' 次，经营会要看');if(!use)ps.push('Claude 用量还没报');if(ps.length===calm)ps.push('没有要你看的数');
   setLead('w-num-lead',w.mistakes>0||!use?'amber':'ok',ps.join('；')+'。');}
 /** ⑥ 经营会：日期块 + 三件要确认的事 */
@@ -1375,7 +1396,7 @@ function renderAll(){if(!PL.data)return;const now=Date.now();const all=sorted(it
   try{renderWork(all,now);}catch(e){$('w-err').hidden=false;$('w-err').textContent='工作台这一页出错了：'+e.message;}
   try{renderProject(curProj(),all,now);}catch(e){$('f-err').hidden=false;$('f-err').textContent='项目页出错了：'+e.message;}
   try{renderLive(now);}catch(e){$('w-err').hidden=false;$('w-err').textContent='团队在做什么出错了：'+e.message;}
-  if(PL.page){$('app').hidden=false;}
+  if(PL.page){$('app').hidden=false;$('boot').hidden=true;}
   if(PL.scroll){const el=$(PL.scroll);PL.scroll='';if(el){el.scrollIntoView({block:'start'});subPin={s:el.id,y:scrollY};}}
   subSpySoon();}
 async function getJ(u){const r=await fetch(u,{credentials:'same-origin'});if(r.status===401){showLogin('请重新登录');throw new Error('请重新登录');}if(!r.ok){const j=await r.json().catch(()=>({}));throw new Error(j.error||'出错了（'+r.status+'）');}return r.json();}
@@ -1400,7 +1421,7 @@ var platformStop=function(){PL.page='';PL.peek=false;};
 var platformPeek=function(){PL.peek=true;if(!PL.timer)tickTimer();if(!PL.data&&!PL.busy)refresh();};
 $('w-retry').addEventListener('click',async()=>{const b=$('w-retry');b.setAttribute('aria-busy','true');b.textContent='正在读…';await refresh();b.removeAttribute('aria-busy');b.textContent='再读一次';
   if(!PL.err)toastP('已重新读取，现在是最新的');});
-/** 第一次读到数据之前，项目页先不显示（免得看到空的模块）；工作台不等它，先显示占位骨架（批 A） */
+/** 第一次读到数据之前，工作台、项目页先不显示（免得看到空的模块）；工作台这段时间显示占位骨架 #boot（批 A） */
 var platformReady=function(){return !!PL.data;};
 }catch(e){var platformReady=function(){return true;};var platformOpen=function(){['w-err','f-err'].forEach((id)=>{const x=document.getElementById(id);if(x){x.hidden=false;x.textContent='这一页出错了：'+e.message;}});};var platformStop=function(){};var platformPeek=function(){};}
 </script>
