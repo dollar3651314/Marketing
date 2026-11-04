@@ -884,9 +884,9 @@ try {
       const last = G.at(-1);
       check(`${tg}：最后一组"没定截止时间"默认收起（details 没有 open，里面的看不见），前三组常显`, !!last && last.b === 'none' && last.fold && !last.open && G.slice(0, -1).every((g) => g.open && g.shown && !g.fold), G);
       check(`${tg}：每组标题写组名和"N 件"，N = 组里的条数`, G.every((g) => g.head.includes(BUCKET_NAME[g.b]) && new RegExp(`${g.n}\\s*件`).test(g.head)), G.map((g) => [g.b, g.n, g.head]));
-      // 每条在哪一组、组里的先后（attached 就算，收起的那组也读得到）
+      // 每条在哪一组、组里的先后（attached 就算；用 textContent：收起的 details 里 innerText 是空串，读不到 none 组的条目）
       const rows = () => p.evaluate(() => [...document.querySelectorAll('#w-todos [data-bucket]')].flatMap((g) => [...g.querySelectorAll('li.todo')].map((li) => ({
-        b: g.dataset.bucket, cls: ['over', 'soon', 'later', 'none'].find((c) => li.classList.contains(c)) || '', proj: li.querySelector('.ptag')?.textContent.trim() ?? null, text: li.innerText.replace(/\s+/g, ' ').trim(),
+        b: g.dataset.bucket, cls: ['over', 'soon', 'later', 'none'].find((c) => li.classList.contains(c)) || '', proj: li.querySelector('.ptag')?.textContent.trim() ?? null, text: li.textContent.replace(/\s+/g, ' ').trim(),
       }))));
       const R = await rows();
       const at = (t) => R.findIndex((r) => r.text.includes(t));
