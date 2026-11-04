@@ -28,12 +28,12 @@ export const ADMIN_PAGE = `<!doctype html>
    字号只用 5 级：页面标题 --fs-page、模块标题 --fs-mod、正文 --fs-body、辅助 --fs-aux、大数字 --fs-num（12px 只给角标标签）；间距 4/8/12/16/24/32/48。
    --muted、--ok 比原型深一点点：原型的值在 --bg、--gray-soft 上对比度不到 4.5:1（WCAG AA）。 */
 :root{--bg:#F3F5F8;--surface:#fff;--surface-2:#F7F9FB;--ink:#13203A;--ink-2:#3D4A60;--muted:#616D80;--line:#E4E8EF;--navy:#0F1B33;--hero-bg:#0F1B33;--hero-line:transparent;
-  --teal:#14B8A6;--teal-ink:#0B7A6E;--teal-soft:#E2F6F3;--amber:#B45309;--amber-soft:#FEF3E2;--ok:#147A3A;--ok-soft:#E5F5EA;--err:#C0262D;--err-soft:#FDECEC;--gray-soft:#EEF1F5;--th:#6B3FA0;--stale:#8A94A6;
+  --teal:#14B8A6;--teal-ink:#0B7A6E;--teal-soft:#E2F6F3;--amber:#B45309;--amber-soft:#FEF3E2;--ok:#147A3A;--ok-soft:#E5F5EA;--err:#C0262D;--err-strong:#C0262D;--err-soft:#FDECEC;--gray-soft:#EEF1F5;--th:#6B3FA0;--stale:#8A94A6;
   --mono:ui-monospace,"SF Mono",Menlo,Consolas,monospace;--shadow:0 1px 2px rgba(15,27,51,.04),0 4px 14px rgba(15,27,51,.05);
   --fs-page:24px;--fs-mod:18px;--fs-body:15px;--fs-aux:13px;--fs-num:30px;
   --s1:4px;--s2:8px;--s3:12px;--s4:16px;--s5:24px;--s6:32px;--s7:48px;--r-card:14px;--r-btn:10px;color-scheme:light}
 @media (prefers-color-scheme: dark){:root{--bg:#0B1220;--surface:#121B2C;--surface-2:#172238;--ink:#E7ECF4;--ink-2:#BAC4D6;--muted:#8D99AE;--line:#223049;--navy:#08101F;--hero-bg:#15233F;--hero-line:#3A5285;
-  --teal:#2DD4BF;--teal-ink:#5EEAD4;--teal-soft:#0F3632;--amber:#F5A524;--amber-soft:#382912;--ok:#4ADE80;--ok-soft:#12301E;--err:#F87171;--err-soft:#3A181B;--gray-soft:#1C2740;--th:#B993E6;--stale:#6B7689;--shadow:none;color-scheme:dark}}
+  --teal:#2DD4BF;--teal-ink:#5EEAD4;--teal-soft:#0F3632;--amber:#F5A524;--amber-soft:#382912;--ok:#4ADE80;--ok-soft:#12301E;--err:#F87171;--err-strong:#DC2626;--err-soft:#3A181B;--gray-soft:#1C2740;--th:#B993E6;--stale:#6B7689;--shadow:none;color-scheme:dark}}
 *{box-sizing:border-box}[hidden]{display:none!important}
 body{margin:0;background:var(--bg);color:var(--ink);font:var(--fs-body)/1.6 "Noto Sans TC","PingFang TC","Microsoft JhengHei",sans-serif;-webkit-font-smoothing:antialiased}
 /* 外框：顶栏（一级菜单：工作台 · 项目 · 公共工具）+ 二级菜单（直通模块），两层一起固定在屏幕顶部；地址用 #/work/todo 这类锚点 */
@@ -60,7 +60,7 @@ body{margin:0;background:var(--bg);color:var(--ink);font:var(--fs-body)/1.6 "Not
 .sub .in::-webkit-scrollbar{display:none}
 .sub a{flex:0 0 auto;display:inline-flex;align-items:center;gap:6px;height:46px;padding:0 var(--s3);font-size:14px;color:var(--muted);text-decoration:none;border-bottom:2px solid transparent;white-space:nowrap}
 .sub a:hover{color:var(--ink)}.sub a[aria-current="true"]{color:var(--ink);font-weight:700;border-bottom-color:var(--teal)}
-.sub .n{display:inline-grid;place-items:center;min-width:18px;height:18px;padding:0 5px;border-radius:99px;font-size:12px;font-weight:700;line-height:1;background:var(--gray-soft);color:var(--ink-2)}.sub .n.red{background:var(--err);color:#fff}
+.sub .n{display:inline-grid;place-items:center;min-width:18px;height:18px;padding:0 5px;border-radius:99px;font-size:12px;font-weight:700;line-height:1;background:var(--gray-soft);color:var(--ink-2)}.sub .n.red{background:var(--err-strong);color:#fff}
 main{max-width:1120px;margin:0 auto;padding:var(--s5) max(var(--s5),env(safe-area-inset-right)) var(--s7) max(var(--s5),env(safe-area-inset-left));min-width:0}
 /* 批 A 去掉了 .page::after{height:60vh} 那段空白：页面底部的几块顶不到菜单下面时，二级菜单靠 subSpy() 的"快到底时判定线下移"选中 */
 .page{display:grid;gap:var(--s5);min-width:0}
@@ -253,7 +253,7 @@ th{font-size:12px;color:var(--muted);font-weight:600}td.n{text-align:right}
 .plat .hero .ptag{background:rgba(255,255,255,.1);color:#DCE4F2}
 .plat .hero .why{margin:var(--s3) 0 0;font-size:var(--fs-aux);color:#C3CEE0;overflow-wrap:anywhere;padding:0;background:none}
 .plat .hero .act{display:grid;gap:var(--s3);justify-items:end}
-.plat .hero .act .btn.text{color:#9FB0CC}.plat .hero .act .btn.text:hover{color:#fff}
+#v-work .hero .act .btn.text{color:#9FB0CC}#v-work .hero .act .btn.text:hover{color:#fff}
 .plat .hero .act .btn.ghost{background:transparent;color:#fff;border-color:#3A4A6A}
 .plat .hero .next{margin:var(--s4) 0 0;font-size:var(--fs-aux);color:#9FB0CC}.plat .hero .next a{color:#DCE4F2}
 .plat .hero.calm .one{font-size:24px}
@@ -288,18 +288,18 @@ th{font-size:12px;color:var(--muted);font-weight:600}td.n{text-align:right}
 #v-work #recent-body .act-item{padding:var(--s3) 0}
 /* ④ 项目概况：每个项目一张卡 + 进度条 */
 #v-work .projs{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,300px),1fr));gap:var(--s4)}
-#v-work .proj{border:1px solid var(--line);border-radius:12px;padding:var(--s4) var(--s5);display:grid;gap:var(--s3);background:var(--surface);min-width:0;align-content:start}
-#v-work .proj .hd{display:flex;align-items:center;gap:var(--s2);flex-wrap:wrap}
-#v-work .proj .hd b{font-size:17px}#v-work .proj .hd a{color:inherit;text-decoration:none}#v-work .proj .hd a:hover{text-decoration:underline}
-#v-work .proj .stage{font-size:12px;border-radius:99px;padding:1px 9px;background:var(--gray-soft);color:var(--ink-2)}
-#v-work .proj .wk{margin:0;font-size:var(--fs-body);color:var(--ink-2);overflow-wrap:anywhere}
+#v-work .projcard{border:1px solid var(--line);border-radius:12px;padding:var(--s4) var(--s5);display:grid;gap:var(--s3);background:var(--surface);min-width:0;align-content:start}
+#v-work .projcard .hd{display:flex;align-items:center;gap:var(--s2);flex-wrap:wrap}
+#v-work .projcard .hd b{font-size:17px}#v-work .projcard .hd a{color:inherit;text-decoration:none}#v-work .projcard .hd a:hover{text-decoration:underline}
+#v-work .projcard .stage{font-size:12px;border-radius:99px;padding:1px 9px;background:var(--gray-soft);color:var(--ink-2)}
+#v-work .projcard .wk{margin:0;font-size:var(--fs-body);color:var(--ink-2);overflow-wrap:anywhere}
 #v-work .metric{display:grid;gap:4px}
 #v-work .metric .r{display:flex;justify-content:space-between;gap:var(--s3);font-size:var(--fs-aux);color:var(--muted);flex-wrap:wrap}
 #v-work .metric .r>span:last-child{text-align:right}#v-work .metric .r b{font-size:15px;color:var(--ink)}
 #v-work .metric .new{font-size:12px;color:var(--muted)}
-#v-work .proj .ft{display:flex;align-items:center;gap:var(--s3);justify-content:space-between;flex-wrap:wrap;border-top:1px solid var(--line);padding-top:var(--s3)}
+#v-work .projcard .ft{display:flex;align-items:center;gap:var(--s3);justify-content:space-between;flex-wrap:wrap;border-top:1px solid var(--line);padding-top:var(--s3)}
 #v-work .wait{font-size:var(--fs-aux);font-weight:700;color:var(--amber)}#v-work .wait.none{color:var(--muted);font-weight:400}
-.plat .meter{height:6px;border-radius:99px;background:var(--gray-soft);overflow:hidden;display:block}.plat .meter i{display:block;height:100%;border-radius:99px;background:var(--teal)}
+.plat .meter{height:6px;border-radius:99px;background:var(--gray-soft);overflow:hidden;display:block;width:auto}.plat .meter i{display:block;height:100%;border-radius:99px;background:var(--teal)}
 .plat .meter.warn i{background:var(--amber)}.plat .meter.bad i{background:var(--err)}
 /* ⑤ 公司数字：数字块 */
 #v-work .tiles{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:var(--s4)}
@@ -310,7 +310,7 @@ th{font-size:12px;color:var(--muted);font-weight:600}td.n{text-align:right}
 /* ⑥ 经营会 */
 #v-work .meet{display:grid;grid-template-columns:auto minmax(0,1fr);gap:var(--s5);align-items:center}
 #v-work .date{width:84px;border-radius:12px;overflow:hidden;border:1px solid var(--line);text-align:center}
-#v-work .date .mo{background:var(--err);color:#fff;font-size:12px;font-weight:700;padding:2px 0}
+#v-work .date .mo{background:var(--err-strong);color:#fff;font-size:12px;font-weight:700;padding:2px 0}
 #v-work .date .d{font-size:var(--fs-num);font-weight:700;line-height:1.3;font-variant-numeric:tabular-nums}#v-work .date .w{font-size:12px;color:var(--muted);padding-bottom:6px}
 #v-work .checks{list-style:none;margin:0;padding:0;display:grid;gap:var(--s2)}
 #v-work .checks li{display:flex;gap:var(--s3);align-items:center;flex-wrap:wrap;font-size:var(--fs-body)}
@@ -1160,7 +1160,8 @@ function fillBuckets(list,now){const open=list.filter((x)=>!isDone(x.key)),close
   if(!shown.length){const e=pe('div','empty');e.append(pe('b',null,'现在没事要做'),pe('span',null,nextHint(now)));B.append(e);}
   $('w-donelist').replaceChildren(...closed.map(doneLi));if(!closed.length)$('w-donelist').append(pe('li','none','还没有'));
   $('w-todo-n').textContent=open.length;$('w-todo-n').className='cbadge'+(open.length?' red':'');$('w-done-n').textContent='（'+closed.length+'）';
-  setLead('w-todo-lead',...todoLead(open,now));
+  // 一句话结论跟着筛选算（选了某个项目就只说这个项目的）
+  const ld=todoLead(shown,now);if(PL.pf)ld[1]=PL.pf+'：'+ld[1];setLead('w-todo-lead',...ld);
   return open;}
 const setCnt=(id,n,txt)=>{const e=$(id);if(!e)return;e.textContent=txt!=null?txt:String(n);e.hidden=!n&&txt==null;};
 // ---- 一句话结论（每个模块标题下面那一句，全部由数据算出来）----
@@ -1176,7 +1177,8 @@ function todoLead(open,now){if(!open.length)return ['ok','现在没事要做。'
   if(hot){const ps=[];if(n.over)ps.push(n.over+' 件已超时');if(n.soon)ps.push(n.soon+' 件 24 小时内到期');
     return [n.over?'red':'amber',ps.join('、')+'，先做'+(hot>1?'这 '+hot+' 件':'这件')+'。',rest?'其余 '+rest+' 件不急。':''];}
   const first=open.find((x)=>x.due!=null);
-  return ['gray','没有急的。',first?'最近的一件'+dueLeft(first,now)+'；还有 '+open.length+' 件，有空就做。':open.length+' 件都没定截止时间，有空就做。'];}
+  const rest2=open.length-1;
+  return ['gray','没有急的。',first?'最近的一件'+dueLeft(first,now)+(rest2?'；还有 '+rest2+' 件，有空就做。':'。'):(open.length===1?'这 1 件没定截止时间，有空就做。':open.length+' 件都没定截止时间，有空就做。')];}
 const dueLeft=(x,now)=>'还剩 '+dur(x.due-now)+'（'+dateL(x.due)+'）';
 // ---- 填的数字：状态卡写"见工作平台"的那一格换成平台里的最新值 ----
 const latest=(proj,name)=>PL.reports.find((r)=>r.project===proj&&r.name===name)||null;
@@ -1292,7 +1294,7 @@ function numOf(v){const m=/^\\s*(\\d+(?:\\.\\d+)?)\\s*(万)?\\s*(?:\\/\\s*\\S+)?
 function renderProj(now){const pi=(k)=>{const i=PROJS.indexOf(k);return i<0?99:i;};const sts=okBlocks('status').filter((b)=>CFG.NOT_PROJECTS.indexOf(b.key)<0).sort((a,b)=>pi(a.key)-pi(b.key));const B=$('w-proj-body');$('w-proj-at').textContent=sts.length?'状态卡'+stampOf(newestOf(sts)):'';$('w-proj-n').textContent=String(sts.length);
   if(!sts.length){B.replaceChildren(emptyP('还没收到项目的状态卡'));setLead('w-proj-lead','gray','还没收到项目的状态卡。','项目开工后，状态卡一推上来这里就有一张卡。');return;}
   const all=items();const waits=[];let gap='';
-  const cards=sts.map((b)=>{const p=b.payload;const c=pe('div','proj');c.dataset.proj=b.key;const hd=pe('div','hd');const has=PROJS.indexOf(b.key)>=0;
+  const cards=sts.map((b)=>{const p=b.payload;const c=pe('div','projcard');c.dataset.proj=b.key;const hd=pe('div','hd');const has=PROJS.indexOf(b.key)>=0;
     const nm=has?link('','#/'+encodeURIComponent(b.key)):pe('span');nm.append(pe('b',null,b.key));hd.append(nm);if(p.state)hd.append(pe('span','stage',p.state));c.append(hd);
     if(p.week)c.append(pe('p','wk','这周：'+p.week));
     (p.metrics||[]).forEach((m)=>{const v=metricNow(b.key,m,b.source_at);const d=pe('div','metric');const r=pe('div','r');const right=pe('span');const extra=[];
