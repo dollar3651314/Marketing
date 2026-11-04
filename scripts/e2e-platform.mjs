@@ -151,6 +151,127 @@ async function scrollSpyCase(page, sub, tag) {
   const c4 = await cur();
   check(`${tag}：点子菜单 ${pick} 跳过去之后，选中的就是 ${pick}（不被滚动计算改掉）`, only(c4, pick), { on: onNow(c4) });
 }
+/*
+ * 子菜单跟着滚动选中·第 2 轮（2026-11-04，测试会话写，研发不改断言；产品口径）：
+ *   A. 选中项变化时，子菜单 .sub .in 横向滚动的，要把选中项滚进可见范围；只改 .sub .in 的 scrollLeft，页面 scrollY 不能变。
+ *   B. 并排的几块（顶端高度差 ≤4px）：当前选中的在这一排里就保持不变（点过哪个保持哪个）；从别处滑进这一排时选菜单里靠前的那个。
+ *   另：点的模块到不了顶栏下面、又不是最后一个时，点完停在页面最底也要选点的那个（证明 subPin 真起作用）；滑动不改地址 hash。
+ */
+const spyWait = (page) => page.waitForTimeout(150);
+/** 当前子菜单里 aria-current="true" 的模块 id */
+const spyOn = (page, sub) => page.evaluate((s) => [...document.querySelectorAll(s + ' a[data-s]')].filter((a) => a.getAttribute('aria-current') === 'true').map((a) => a.dataset.s), sub);
+/** 看得见的模块，按页面上的位置排：{id, top(相对文档), h} */
+const spyMods = (page, sub) => page.evaluate((s) => [...document.querySelectorAll(s + ' a[data-s]')].map((a) => document.getElementById(a.dataset.s))
+  .filter((e) => e && !e.closest('[hidden]') && e.getClientRects().length)
+  .map((e) => ({ id: e.id, top: Math.round(e.getBoundingClientRect().top + scrollY), h: Math.round(e.getBoundingClientRect().height) })).sort((a, b) => a.top - b.top), sub);
+const spyPos = (page) => page.evaluate(() => ({ y: Math.round(scrollY), max: Math.round(document.documentElement.scrollHeight - innerHeight), hash: location.hash, bars: Math.round(document.getElementById('bars').getBoundingClientRect().height) }));
+const spyTo = async (page, y) => { await page.evaluate((t) => window.scrollTo(0, t === 'end' ? document.documentElement.scrollHeight : t), y); await spyWait(page); return spyPos(page); };
+/** 选中项在横向子菜单 .sub .in 里是否完整看得见（左右各容 1px） */
+const spyInView = (page, sub) => page.evaluate((s) => {
+  const box = document.querySelector(s + ' .in'), a = document.querySelector(s + ' a[data-s][aria-current="true"]');
+  if (!box || !a) return { ok: false, why: '没有选中项' };
+  const r = a.getBoundingClientRect(), b = box.getBoundingClientRect();
+  return { ok: r.left >= b.left - 1 && r.right <= b.right + 1, s: a.dataset.s, left: Math.round(r.left), right: Math.round(r.right), boxLeft: Math.round(b.left), boxRight: Math.round(b.right), scrollLeft: Math.round(box.scrollLeft) };
+}, sub);
+/** A：窄屏子菜单横向滚动时，选中项要滚进可见范围、页面 scrollY 不因此改变 */
+async function subInViewCase(page, sub, tag, { mustScroll = true } = {}) {
+  const mods = await spyMods(page, sub);
+  const scrollable = await page.evaluate((s) => { const b = document.querySelector(s + ' .in'); return { sw: b.scrollWidth, cw: b.clientWidth }; }, sub);
+  // mustScroll=false：这一页的子菜单现在不用横滑（例如 375 宽公共工具，2026-11-04 实测 scrollWidth = clientWidth = 375），只守住"选中项看得见、页面不动、hash 不变"
+  if (mustScroll) check(`${tag}：前提——子菜单比屏幕宽、要横滑（不然这条测不到东西）`, scrollable.sw > scrollable.cw + 1 && mods.length >= 2, scrollable);
+  const hash0 = (await spyPos(page)).hash;
+  // ① 滑到最底：选中最后一个模块，它在子菜单里看得见；页面停在最底，没被横滚带着动
+  const p1 = await spyTo(page, 'end');
+  await page.waitForTimeout(300);
+  const p1b = await spyPos(page), v1 = await spyInView(page, sub), on1 = await spyOn(page, sub);
+  check(`${tag}：滑到最底 → 选中 ${mods.at(-1).id}，且它在横向子菜单里完整看得见`, JSON.stringify(on1) === JSON.stringify([mods.at(-1).id]) && v1.ok, { on: on1, ...v1 });
+  check(`${tag}：滑到最底后页面 scrollY 没被横滚改掉（仍是 ${p1.max}）`, p1.y === p1.max && p1b.y === p1.y, { 刚滑完: p1.y, 等300ms后: p1b.y, max: p1.max });
+  // ② 先把子菜单横滑到最右，再竖着滑回顶：选中第一个模块，且它被滚回可见范围；scrollY 是 0
+  await page.evaluate((s) => { const b = document.querySelector(s + ' .in'); b.scrollLeft = b.scrollWidth; }, sub);
+  await spyWait(page);
+  const left0 = await page.evaluate((s) => Math.round(document.querySelector(s + ' .in').scrollLeft), sub);
+  const p2 = await spyTo(page, 0);
+  await page.waitForTimeout(300);
+  const p2b = await spyPos(page), v2 = await spyInView(page, sub), on2 = await spyOn(page, sub);
+  check(`${tag}：子菜单先横滑到最右（scrollLeft ${left0}）再竖着滑回顶 → 选中 ${mods[0].id}，且它被滚回看得见`, JSON.stringify(on2) === JSON.stringify([mods[0].id]) && v2.ok, { on: on2, ...v2 });
+  check(`${tag}：滑回顶后页面 scrollY 仍是 0（横滚不带动页面）`, p2.y === 0 && p2b.y === 0, { 刚滑完: p2.y, 等300ms后: p2b.y });
+  check(`${tag}：A 段滑来滑去，地址 hash 没变（仍是 ${hash0}）`, p2b.hash === hash0, p2b.hash);
+}
+/** 证明 subPin 真起作用：挑一个"到不了顶栏下面、又不是最后一个"的模块，把窗口拉高到它确实到不了，点它 → 停在最底也选它 */
+async function subPinCase(page, sub, tag) {
+  const w = page.viewportSize().width;
+  let mods = await spyMods(page, sub), pos = await spyPos(page);
+  const lastTop = mods.at(-1).top;
+  const k = [...mods].reverse().find((m) => m.top < lastTop - 4); // 倒数第一个和最后一个不在同一排的
+  check(`${tag}：前提——有一个不是最后一个的模块`, !!k, mods);
+  if (!k) return;
+  const need = k.top - pos.bars - 8; // 点菜单跳过去时 scrollY 应到的位置（模块顶端在顶栏下 8px）
+  // 窗口拉高到"最多滑到的位置"比它要的少 120px；拉高后页面高度可能跟着变，最多量 4 次
+  let k2 = k, need2 = need;
+  for (let i = 0; i < 4; i++) {
+    const sh = await page.evaluate(() => document.documentElement.scrollHeight);
+    await page.setViewportSize({ width: w, height: Math.min(8000, sh - need2 + 120) });
+    await spyTo(page, 0);
+    mods = await spyMods(page, sub); pos = await spyPos(page);
+    k2 = mods.find((m) => m.id === k.id); need2 = k2.top - pos.bars - 8;
+    if (pos.max < need2 - 2) break;
+  }
+  check(`${tag}：前提——窗口拉高后 ${k.id} 到不了顶栏下面（最多滑到 ${pos.max}，它要 ${need2}），且不是最后一个`, pos.max < need2 - 2 && mods.at(-1).id !== k.id, { max: pos.max, need: need2, last: mods.at(-1).id });
+  await page.click(`${sub} a[data-s="${k.id}"]`, { timeout: 4000 });
+  await page.waitForTimeout(400);
+  const p1 = await spyPos(page), on1 = await spyOn(page, sub);
+  check(`${tag}：点 ${k.id}（跳过去停在页面最底）→ 选中 ${k.id}，不是按"到底选最后一个"的 ${mods.at(-1).id}`, p1.y === p1.max && JSON.stringify(on1) === JSON.stringify([k.id]), { on: on1, ...p1 });
+  await page.evaluate(() => window.scrollBy(0, -1));
+  await spyWait(page);
+  const on2 = await spyOn(page, sub);
+  check(`${tag}：点 ${k.id} 后只动 1px → 仍选 ${k.id}`, JSON.stringify(on2) === JSON.stringify([k.id]), { on: on2, ...(await spyPos(page)) });
+}
+/** B：并排的两块（1280 宽 forecast 的 f-pack、f-match）。a = 菜单里靠前的，b = 靠后的 */
+async function subRowCase(page, sub, a, b, tag) {
+  const mods = await spyMods(page, sub);
+  const ma = mods.find((m) => m.id === a), mb = mods.find((m) => m.id === b);
+  check(`${tag}：前提——${a} 和 ${b} 并排（顶端高度差 ≤4px）`, !!ma && !!mb && Math.abs(ma.top - mb.top) <= 4, { [a]: ma, [b]: mb });
+  if (!ma || !mb) return;
+  const menu = await page.evaluate((s) => [...document.querySelectorAll(s + ' a[data-s]')].map((x) => x.dataset.s), sub);
+  const hash0 = (await spyPos(page)).hash;
+  // ① 从顶往下慢滑（一次 20px）：一定会经过 a；从上面滑进这一排时不选 b；选中只往前走
+  await spyTo(page, 0);
+  const down = [];
+  for (let i = 0; i < 400; i++) {
+    const p = await page.evaluate(() => { window.scrollBy(0, 20); return { y: Math.round(scrollY), max: Math.round(document.documentElement.scrollHeight - innerHeight) }; });
+    await page.waitForTimeout(40);
+    const on = (await spyOn(page, sub))[0];
+    if (down.at(-1) !== on) down.push(on);
+    if (p.y >= p.max) break;
+  }
+  await spyWait(page);
+  const idx = down.map((s) => menu.indexOf(s));
+  check(`${tag}：从顶往下慢滑一定会经过 ${a}`, down.includes(a), down);
+  check(`${tag}：从上面滑进 ${a}/${b} 这一排时选靠前的 ${a}，不跳到 ${b}`, !down.includes(b), down);
+  check(`${tag}：往下慢滑选中只往前走、不来回跳`, idx.every((v, i) => i === 0 || v > idx[i - 1]), down);
+  // ② 从最底往上慢滑：从下面滑进这一排时也选 a
+  const up = [];
+  for (let i = 0; i < 400; i++) {
+    const y = await page.evaluate(() => { window.scrollBy(0, -20); return Math.round(scrollY); });
+    await page.waitForTimeout(40);
+    const on = (await spyOn(page, sub))[0];
+    if (up.at(-1) !== on) up.push(on);
+    if (y <= 0) break;
+  }
+  check(`${tag}：从下往上慢滑进 ${a}/${b} 这一排时也选 ${a}`, up.includes(a) && !up.includes(b), up);
+  check(`${tag}：B 段慢滑来回，地址 hash 没变（仍是 ${hash0}）`, (await spyPos(page)).hash === hash0, (await spyPos(page)).hash);
+  // ③ 点 a 后再往下滑 40px：仍是 a；点 b 后再往下滑 40px：仍是 b（点过哪个保持哪个）
+  for (const pick of [a, b]) {
+    await spyTo(page, 0);
+    await page.click(`${sub} a[data-s="${pick}"]`, { timeout: 4000 });
+    await page.waitForTimeout(400);
+    const p0 = await spyPos(page);
+    await page.evaluate(() => window.scrollBy(0, 40));
+    await spyWait(page);
+    const p1 = await spyPos(page), on = await spyOn(page, sub);
+    check(`${tag}：点 ${pick} 后再往下滑 40px（${p0.y}→${p1.y}）→ 仍选 ${pick}`, p1.y - p0.y >= 38 && JSON.stringify(on) === JSON.stringify([pick]), { on, from: p0.y, to: p1.y });
+  }
+}
 
 try {
   // ---------- 推送样例 ----------
@@ -474,6 +595,29 @@ try {
       await scrollSpyCase(p, '#sub-project', `${width} 宽 forecast 项目页`);
       await p.context().close();
     }
+  });
+
+  // ---------- 8.6 子菜单跟着滚动·第 2 轮（2026-11-04，测试会话写，产品口径 A/B；研发不改这里的断言） ----------
+  await section('子菜单跟着滚动·第 2 轮', async () => {
+    const openForecast = async (width, height) => {
+      const p = await open({ width, height });
+      await login(p, '/#/forecast');
+      await waitFor(p, '#v-project');
+      await p.waitForTimeout(400);
+      return p;
+    };
+    // A：375 宽 forecast，子菜单要横滑
+    let p = await openForecast(375, 740);
+    await subInViewCase(p, '#sub-project', '375 宽 forecast（A 选中项看得见）');
+    await p.context().close();
+    // B：1280 宽 forecast，f-pack 和 f-match 并排
+    p = await openForecast(1280, 900);
+    await subRowCase(p, '#sub-project', 'f-pack', 'f-match', '1280 宽 forecast（B 并排）');
+    await p.context().close();
+    // subPin：点到不了顶的模块，停在最底也选它
+    p = await openForecast(1280, 900);
+    await subPinCase(p, '#sub-project', '1280 宽 forecast（点菜单为准）');
+    await p.context().close();
   });
 
   // ---------- 9. 自动检查变红：排第一 ----------
