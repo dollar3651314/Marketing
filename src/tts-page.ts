@@ -6,23 +6,32 @@
  * 按"把操作员当小白"做（agents #92）：粘字 → 选模型 → **先看这次要花多少、今天还剩多少** → 生成 → 当场试听 → 下载。
  * 贵的那个模型（aura-2-en）在界面上直接把"贵多少倍"写出来，不只给模型名。
  */
+import { VOICE_MOD } from './voice-page';
+
 export const TTS_CSS = `
-.tv .box{border:1px solid var(--line);border-radius:10px;background:var(--surface);padding:12px;margin:10px 0}
-.tv textarea{width:100%;height:5em;font:14px/1.6 inherit;border:1px solid var(--line);border-radius:8px;background:transparent;color:inherit;padding:8px}
-.tv .row{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin:8px 0}
-.tv .cost{font-weight:700;margin:6px 0}
+.tv .box{border:1px solid var(--line);border-radius:12px;background:var(--surface);padding:var(--s4);margin:0 0 var(--s3)}
+.tv textarea{width:100%;height:5em;font:var(--fs-body)/1.6 inherit;border:1px solid var(--line);border-radius:8px;background:var(--surface);color:inherit;padding:8px 10px}
+.tv .row{display:flex;flex-wrap:wrap;gap:var(--s2);align-items:center;margin:var(--s2) 0}
+.tv .cost{font-weight:600}
 .tv .warn{color:var(--err);font-weight:700}
-.tv label.pick{display:inline-flex;gap:6px;align-items:center;border:1px solid var(--line);border-radius:8px;padding:6px 10px;cursor:pointer}
+.tv label.pick{display:inline-flex;gap:6px;align-items:center;border:1px solid var(--line);border-radius:var(--r-btn);padding:6px 12px;cursor:pointer;font-size:var(--fs-body)}
+.tv label.pick:has(input:checked){border-color:var(--teal);background:var(--teal-soft)}
 .tv label.pick input{margin:0}
-.tv audio{width:100%;height:36px;margin-top:8px}
-.tv .st{font-size:12px;color:var(--muted)}
+.tv audio{width:100%;height:36px;margin-top:var(--s2)}
+.tv .st{font-size:var(--fs-aux);color:var(--muted);margin:var(--s1) 0}
+.tv .tolab{margin:var(--s3) 0 0;font-size:var(--fs-aux);color:var(--muted)}
 `;
 
-/** 公共工具里的"语音生成"模块（id 和二级菜单 #/tools/tts 对应：t-tts） */
-export const TTS_MOD = `<section class="mod tv" id="t-tts"><h2 class="mh">语音生成<span class="sp"></span><span class="hint">给一段英文 · 生成一段发音</span></h2>
-  <p class="lead">任何项目都能用：粘一段英文 → 选模型 → 看清楚这次要花多少 → 生成 → 当场听 → 存下来。
-  （整批跑 Practical 那 30 个场景请用上面的"素材生成器"，那个带场景台账和断点续传。）</p>
-  <div class="box">
+/**
+ * 公共工具里的"语音生成"模块（id 和二级菜单 #/tools/tts 对应：t-tts）。
+ * 界面改版·批 B（2026-11-04）：卡片 = 标题行 → 一句话结论（#tv-cost，脚本按字数现算）→ 主内容（写字、选模型、生成）→ 底部折叠；
+ * "语音对话实测"（#t-voice）并进这一块的折叠 #tts-more 里，不再单独一块、不占二级菜单（T-4 上限 8 项）；
+ * 打开 #/tools/voice 时 route() 先把折叠打开再滚过去。
+ */
+export const TTS_MOD = `<section class="card mod tv" id="t-tts">
+  <header class="mh"><h2>语音生成</h2><span class="sp"></span><span class="aux">给一段英文 · 生成一段发音</span></header>
+  <p class="lead"><span class="dot gray" aria-hidden="true"></span><span class="cost" id="tv-cost">还没写字。</span><span class="soft">推荐 melotts：一句话约 0.8 neurons。</span></p>
+  <div class="mbody">
     <label for="tv-text"><b>要读的英文</b></label>
     <textarea id="tv-text" maxlength="500" placeholder="Grab an apple and put it on the table."></textarea>
     <p class="st" id="tv-len">0 / 500 个字符</p>
@@ -30,18 +39,20 @@ export const TTS_MOD = `<section class="mod tv" id="t-tts"><h2 class="mh">语音
       <label class="pick"><input type="radio" name="tv-m" value="melotts" checked> <span><b>melotts</b>（默认，推荐）</span></label>
       <label class="pick"><input type="radio" name="tv-m" value="aura"> <span><b>aura-2-en</b> <span class="warn" id="tv-x">贵很多</span></span></label>
     </div>
-    <p class="st">melotts 是 2026-11-03 实测判"地道"的那个，一句话（38 个字符）约 0.8 neurons。aura-2-en 音色更好，但同样一句话约 103.6 neurons
-      —— <b class="warn">实测贵约 129.5 倍</b>（按 Cloudflare 价格表算是 131.8 倍，上面那行按你写的字数现算）。确实需要再点它。</p>
-    <p class="cost" id="tv-cost">还没写字。</p>
-    <p class="st">额度是你自己管的：这里只把"要花多少、还剩多少"摆出来，不替你设上限，也不改"用量和限额"里的数。</p>
     <div class="row"><button class="btn primary" id="tv-go" type="button">生成并试听</button><span class="msg" id="tv-msg" role="status"></span></div>
     <audio id="tv-audio" controls hidden></audio>
     <div class="row"><a class="btn" id="tv-dl" download hidden>下载这段 MP3</a></div>
     <p class="st" id="tv-spec"></p>
+    <p class="tolab">要试"说一句英文、让 AI 回你"？<a class="btn text small" href="#/tools/voice">语音对话实测台 ↓</a>（在这一块最下面的折叠里）</p>
   </div>
-  <p class="st"><b>找"说一句英文、让 AI 回你"的那个实测台？</b>它在这一页再往下
-    （<a href="#/tools/voice">语音对话实测 →</a>）。没放进上面的二级菜单，是因为菜单上限 8 项已经满了
-    （agents 工作平台/工具台账.md 的 T-4：第 9 项会撑破手机菜单）。</p>
+  <details class="more" id="tts-more"><summary>两个模型差多少 · 语音对话实测台（不占菜单）</summary><div class="in">
+    <p>melotts 是 2026-11-03 实测判"地道"的那个，一句话（38 个字符）约 0.8 neurons。aura-2-en 音色更好，但同样一句话约 103.6 neurons
+      —— <b class="warn">实测贵约 129.5 倍</b>（按 Cloudflare 价格表算是 131.8 倍，上面那行按你写的字数现算）。确实需要再点它。</p>
+    <p>额度是你自己管的：这里只把"要花多少、还剩多少"摆出来，不替你设上限，也不改"用量和限额"里的数。
+      整批跑 Practical 那 30 个场景请用上面的"素材生成器"，那个带场景台账和断点续传。</p>
+    <p>"说一句英文、让 AI 回你"的语音对话实测台就在下面：它不放进二级菜单，是因为菜单上限 8 项已经满了（agents 工作平台/工具台账.md 的 T-4：第 9 项会撑破手机菜单）。</p>
+    ${VOICE_MOD}
+  </div></details>
 </section>`;
 
 /** 语音生成的脚本（整段 try/catch，出错只影响这一块）。宿主页面先设 window.__ttsBase，例如 '/api/tts/' */

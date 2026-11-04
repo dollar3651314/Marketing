@@ -8,28 +8,53 @@
  * 30 个场景的清单和提示词**不写在本仓库**（C147）：页面上粘贴或上传 JSON 带进来。
  */
 export const ASSETS_CSS = `
-.ag .box{border:1px solid var(--line);border-radius:10px;background:var(--surface);padding:12px;margin:10px 0}
-.ag textarea{width:100%;height:8em;font:12px/1.5 var(--mono);border:1px solid var(--line);border-radius:8px;background:transparent;color:inherit;padding:8px}
-.ag .row{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin:8px 0}
-.ag .cost{font-weight:700}
+.ag .box{border:1px solid var(--line);border-radius:12px;background:var(--surface);padding:var(--s4);margin:0 0 var(--s3)}
+.ag .box:last-child{margin-bottom:0}
+.ag .box>b{display:block;margin-bottom:var(--s1)}
+.ag textarea{width:100%;height:8em;font:var(--fs-aux)/1.5 var(--mono);border:1px solid var(--line);border-radius:8px;background:var(--surface);color:inherit;padding:8px 10px}
+.ag .row{display:flex;flex-wrap:wrap;gap:var(--s2);align-items:center;margin:var(--s2) 0}
+.ag .cost{font-weight:600}
 .ag .warn{color:var(--err);font-weight:700}
-.ag .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:10px;margin-top:8px}
-.ag figure{margin:0;border:1px solid var(--line);border-radius:8px;overflow:hidden;background:var(--bg)}
+.ag .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:var(--s3);margin-top:var(--s2)}
+.ag figure{margin:0;border:1px solid var(--line);border-radius:10px;overflow:hidden;background:var(--surface-2)}
 .ag figure img{display:block;width:100%;aspect-ratio:1/1;object-fit:cover}
-.ag figcaption{font-size:12px;padding:4px 6px;display:flex;gap:6px;align-items:center;flex-wrap:wrap}
-.ag .sc{border-top:1px solid var(--line);padding:10px 0}
-.ag .sc h4{margin:0 0 4px;font-size:14px}
-.ag .st{font-size:12px;color:var(--muted)}
+.ag figcaption{font-size:var(--fs-aux);padding:var(--s1) var(--s2);display:flex;gap:6px;align-items:center;flex-wrap:wrap}
+.ag .sc{border-top:1px solid var(--line);padding:var(--s3) 0}
+.ag .sc h4{margin:0 0 var(--s1);font-size:var(--fs-body)}
+.ag .st{font-size:var(--fs-aux);color:var(--muted)}
 .ag audio{width:100%;height:32px}
-.ag .bar{height:8px;border-radius:4px;background:var(--line);overflow:hidden}
-.ag .bar i{display:block;height:100%;background:var(--teal)}
+.ag .bar{height:6px;border-radius:99px;background:var(--gray-soft);overflow:hidden;margin:var(--s2) 0}
+.ag .bar i{display:block;height:100%;border-radius:99px;background:var(--teal)}
+.ag pre.st{background:var(--surface-2);border:1px solid var(--line);border-radius:8px;padding:var(--s2) var(--s3);overflow-x:auto}
 `;
 
-/** 公共工具里的"素材生成器"模块（id 和二级菜单 #/tools/assets 对应：t-assets） */
-export const ASSETS_MOD = `<section class="mod ag" id="t-assets"><h2 class="mh">素材生成器<span class="sp"></span><span class="hint">Practical 盲听卡 · 图片和音频</span></h2>
-  <div class="box"><p class="lead" style="margin-top:0">一句话：粘一份场景 JSON 进来 → 看清楚这次大概要花多少 neurons → <b>先生成 6 个样片</b>看看出图行不行 → 行再"全部生成" → 最后"打包下载"。
+/**
+ * 公共工具里的"素材生成器"模块（id 和二级菜单 #/tools/assets 对应：t-assets）。
+ * 界面改版·批 B（2026-11-04）：卡片 = 标题行 → 一句话结论（#ag-cost，脚本按读入的场景现算要花多少）→ 主内容（三步：读入 → 样片 → 全部 + 打包）→ 底部折叠（JSON 格式、素材放在哪）。
+ */
+export const ASSETS_MOD = `<section class="card mod ag" id="t-assets">
+  <header class="mh"><h2>素材生成器</h2><span class="sp"></span><span class="aux">Practical 盲听卡 · 图片和音频</span></header>
+  <p class="lead"><span class="dot gray" aria-hidden="true"></span><span class="cost" id="ag-cost">还没读入场景。</span><span class="soft">先读入场景 JSON，看清楚要花多少，再生成 6 个样片。</span></p>
+  <div class="mbody">
+  <div class="box"><b>① 读入场景 JSON</b>
+  <div class="row"><input type="file" id="ag-file" accept=".json,application/json"><button class="btn small" id="ag-load" type="button">读入这份 JSON</button><span class="msg" id="ag-lmsg" role="status"></span></div>
+  <textarea id="ag-json" placeholder="也可以直接把 JSON 粘在这里"></textarea>
+  </div>
+
+  <div class="box"><b>② 先生成 6 个样片，行再全部生成</b><div class="row"><label for="ag-steps">出图步数</label><input type="number" id="ag-steps" value="4" min="1" max="8" style="width:5em">
+    <span class="hint">步数越多越贵（每步 9.6 neurons），flux-1-schnell 默认 4、最多 8</span></div>
+    <div class="row"><button class="btn primary" id="ag-six" type="button">先生成 6 个样片</button><button class="btn" id="ag-all" type="button">全部生成</button><button class="btn danger" id="ag-stop" type="button" hidden>停下</button>
+      <button class="btn" id="ag-zip" type="button">打包下载 zip</button></div>
+    <div class="bar" id="ag-barwrap" hidden><i id="ag-bar" style="width:0"></i></div>
+    <p class="msg" id="ag-msg" role="status"></p>
+  </div>
+
+  <div class="box"><b>③ 生成出来的素材</b><p class="st" id="ag-stat">还没生成过。</p><div id="ag-list"></div></div>
+  </div>
+  <details class="more"><summary>场景 JSON 长什么样 · 素材放在哪 · 额度谁管</summary><div class="in">
+    <p>一句话：粘一份场景 JSON 进来 → 看清楚这次大概要花多少 neurons → <b>先生成 6 个样片</b>看看出图行不行 → 行再"全部生成" → 最后"打包下载"。
   素材只存在<b>你这台电脑的浏览器里</b>，服务端一个字节都不存；关掉再打开接着跑，已经生成过的不会重来。</p>
-  <details><summary>场景 JSON 长什么样（点开看格式）</summary>
+    <p id="ag-quota">额度是你自己管的：这里只把"要花多少、还剩多少"摆出来，不替你设上限，也不改"用量和限额"里的数。</p>
     <pre class="st" style="white-space:pre-wrap">{
   "stylePrefix": "（《生产包》第二节那段固定不变的风格前缀）",
   "sample": ["01","03","09","15","21","26"],
@@ -38,23 +63,8 @@ export const ASSETS_MOD = `<section class="mod ag" id="t-assets"><h2 class="mh">
       "prompts": { "correct": "…", "d1-phoneme": "…", "d2-action": "…", "d3-function": "…" } }
   ]
 }</pre>
-    <p class="hint">prompts 留空的场景只生成音频，图片这一格会标"还没有提示词"——提示词按《素材方案-交给Amos的生产包》第二节由产品经理补齐，不放在代码里（C147）。</p>
-  </details>
-  <div class="row"><input type="file" id="ag-file" accept=".json,application/json"><button class="btn small" id="ag-load" type="button">读入这份 JSON</button><span class="msg" id="ag-lmsg" role="status"></span></div>
-  <textarea id="ag-json" placeholder="也可以直接把 JSON 粘在这里"></textarea>
-  </div>
-
-  <div class="box"><div class="row"><label for="ag-steps">出图步数</label><input type="number" id="ag-steps" value="4" min="1" max="8" style="width:5em">
-    <span class="hint">步数越多越贵（每步 9.6 neurons），flux-1-schnell 默认 4、最多 8</span></div>
-    <p class="cost" id="ag-cost">还没读入场景。</p>
-    <p class="hint" id="ag-quota">额度是你自己管的：这里只把"要花多少、还剩多少"摆出来，不替你设上限，也不改"用量和限额"里的数。</p>
-    <div class="row"><button class="btn primary" id="ag-six" type="button">先生成 6 个样片</button><button class="btn" id="ag-all" type="button">全部生成</button><button class="btn danger" id="ag-stop" type="button" hidden>停下</button>
-      <button class="btn" id="ag-zip" type="button">打包下载 zip</button></div>
-    <div class="bar" id="ag-barwrap" hidden><i id="ag-bar" style="width:0"></i></div>
-    <p class="msg" id="ag-msg" role="status"></p>
-  </div>
-
-  <div class="box"><p class="st" id="ag-stat">还没生成过。</p><div id="ag-list"></div></div>
+    <p>prompts 留空的场景只生成音频，图片这一格会标"还没有提示词"——提示词按《素材方案-交给Amos的生产包》第二节由产品经理补齐，不放在代码里（C147）。</p>
+  </div></details>
 </section>`;
 
 /** 素材生成器的脚本（整段 try/catch，出错只影响这一块）。宿主页面先设 window.__assetsBase，例如 '/api/assets/' */
