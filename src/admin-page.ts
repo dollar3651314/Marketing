@@ -755,6 +755,9 @@ const PFX={work:'w-',project:'f-',tools:'t-',company:''}, TOOLV={queue:'list',us
 // 有项目页的项目：先用兜底名单（src/projects.ts PROJECT_PAGES_FALLBACK），读到 /api/company 后由第三段脚本调 setProjects() 换成真的
 const PCFG=${JSON.stringify({ PROJECT_PAGES_FALLBACK, MAX_PROJECT_PAGES, PROJECT_SITE })};
 let PROJS=PCFG.PROJECT_PAGES_FALLBACK.slice();
+// 批 B 走查：名单还没从服务器读到之前（projsReady=false），地址里的项目名先照着打开（刷新 #/Practical 不再被兜底名单踢回工作台、也不再拿第一个项目的数据冒充）；
+// 读到名单后 setProjects() 再判一次，不在名单里的才回工作台
+let projsReady=false;
 /** 一级菜单上的项目链接：有几个项目出几个（每个带待办数的小红点 #c-<项目名>） */
 function renderNav1(){const nav=$('nav1'),tools=$('nav1-sep');
   nav.querySelectorAll('a[data-proj]').forEach((a)=>a.remove());
@@ -764,8 +767,8 @@ function renderNav1(){const nav=$('nav1'),tools=$('nav1-sep');
     nav.insertBefore(a,tools);});
   $('nav1-grp').hidden=$('nav1-sep0').hidden=!PROJS.length;setTimeout(()=>{try{subHint();}catch(e){}},0);}
 /** 第三段脚本读到 projects 块后调这个：名单变了就重画一级菜单；当前项目没了就回工作台 */
-function setProjects(list){const next=(list&&list.length?list:PCFG.PROJECT_PAGES_FALLBACK).slice(0,PCFG.MAX_PROJECT_PAGES);
-  if(JSON.stringify(next)===JSON.stringify(PROJS))return;PROJS=next;renderNav1();if(authed)route();}
+function setProjects(list){const next=(list&&list.length?list:PCFG.PROJECT_PAGES_FALLBACK).slice(0,PCFG.MAX_PROJECT_PAGES);const first=!projsReady;projsReady=true;
+  if(JSON.stringify(next)===JSON.stringify(PROJS)){if(first&&authed&&page==='project'&&PROJS.indexOf(proj)<0)route();return;}PROJS=next;renderNav1();if(authed)route();}
 /** 二级菜单、标题、副标题指向哪个项目 */
 function setProject(p){proj=p;$('f-title').textContent=p;
   document.querySelectorAll('#sub-project a[data-m]').forEach((a)=>{a.href='#/'+encodeURIComponent(p)+'/'+a.dataset.m;});
@@ -776,7 +779,7 @@ function frameButtons(){const t=page==='tools'||page==='company';$('nav').hidden
 function hashOf(){const m=/^#\\/([^\\/?#]+)(?:\\/([a-z0-9-]+))?/.exec(location.hash);if(!m)return null;
   let seg=m[1];try{seg=decodeURIComponent(m[1]);}catch(e){}
   if(Object.hasOwn(FIXED,seg))return {p:seg,m:m[2]||'',proj:''};
-  return PROJS.indexOf(seg)>=0?{p:'project',m:m[2]||'',proj:seg}:null;}
+  return PROJS.indexOf(seg)>=0||!projsReady?{p:'project',m:m[2]||'',proj:seg}:null;}
 function route(){if(!authed)return;let h=hashOf();
   if(!h){history.replaceState(null,'',location.pathname+location.search+(location.pathname==='/queue'?'#/tools/queue':'#/work'));h=hashOf();}
   const prev=page,prevProj=proj;page=h.p;view=page==='tools'?(TOOLV[h.m]||'list'):page;
@@ -1213,7 +1216,7 @@ const CFG=${JSON.stringify(PLATFORM_CONFIG)};
 // okAt = 上一次读成功的时间（读取失败时写"下面是 HH:MM 读到的"）；pf = 全部待办按哪个项目筛选（'' = 全部）；noneOpen = "没定截止时间"那组展开了没有（只记在这一页）
 const PL={active:null,data:null,qAll:null,qProj:{},done:new Map(),reports:[],page:'',proj:'',scroll:'',timer:null,busy:false,again:false,err:'',errWhy:'',at:0,okAt:0,want:new Map(),copy:null,open:new Set(),vals:{},det:new Set(),more:new Set(),peek:false,retry:0,pf:'',noneOpen:false};
 /** 现在打开的是哪个项目（地址里的；地址没指就用第一个） */
-const curProj=()=>(typeof proj==='string'&&PROJS.indexOf(proj)>=0)?proj:(PROJS[0]||'');
+const curProj=()=>(typeof proj==='string'&&proj&&(PROJS.indexOf(proj)>=0||!projsReady))?proj:(PROJS[0]||'');
 /** projects 块 → 有项目页的项目名；和服务端 src/projects.ts projectPagesFrom 同一套规则（C108） */
 function pagesFrom(data){const b=((data&&data.blocks)||[]).find((x)=>x.kind==='projects'&&x.payload);const its=b&&Array.isArray(b.payload.items)?b.payload.items:[];const out=[];
   its.forEach((x)=>{const n=x&&typeof x.name==='string'?x.name.trim():'';if(n&&CFG.NOT_PROJECTS.indexOf(n)<0&&out.indexOf(n)<0)out.push(n);});
