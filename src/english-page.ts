@@ -61,14 +61,14 @@ export const ENGLISH_CSS = `
 `;
 
 /** 工作台里的"英语练习"模块（id 和二级菜单 #/work/english 对应：w-english） */
-export const ENGLISH_MOD = `<section class="card mod en" id="w-english"><h2>英语练习 <span class="sp"></span><span class="stamp">一天一条 · 10 分钟封顶</span></h2>
+export const ENGLISH_MOD = `<section class="card mod en" id="w-english"><h2>英语练习 <span class="sp"></span><span class="stamp">想跑几轮跑几轮</span></h2>
 <div class="pd">
   <p class="lead">不写代码、不花钱，只测一件事——<b>你愿不愿意每天开口说 10 分钟</b>。下面 8 条是完整提示词，<b>点"复制"再粘进去就行，一个字都不用改</b>。</p>
   <ol class="en-steps">
     <li>打开 <b>Gemini Live</b> 或 <b>ChatGPT 的语音模式</b>（手机上就行）。</li>
     <li>挑一条，点右边的<b>「复制」</b>，整段粘贴进去。</li>
     <li>它会先给你 5 个语块 + 3 句「拖时间」的话 → 你说 <b>ready</b> → 开始说 → 聊够了说 <b>done</b> → 它用中文告诉你哪几句不地道。</li>
-    <li><b>一天一条，10 分钟封顶。</b></li>
+    <li><b>想跑几轮跑几轮，不用按天。</b>一轮就是一次试验——跑完把三个数发给助理：自己造了几句 / 靠提示才说出来几句 / <b>回收时独立说对几句</b>。</li>
   </ol>
   <div class="en-call en-stuck">
     <p class="en-stuck-h">卡住了怎么办<span class="en-stuck-sub">母语者也天天这么干，这不算失败</span></p>

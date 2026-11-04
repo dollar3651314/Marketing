@@ -206,7 +206,10 @@ describe('5. 顶部 4 步用法 +「卡住了怎么办」四行', () => {
     expect(steps[2]).toContain('拖时间');
     expect(steps[2]).toContain('ready');
     expect(steps[2]).toContain('done');
-    expect(steps[3]).toContain('10 分钟封顶');
+    expect(steps[3]).toContain('想跑几轮跑几轮');
+    // Amos 2026-11-04「在这类事情上，咱们取消"日"的概念，多试」——页面不许再写"一天一条"
+    expect(MOD).not.toContain('一天一条');
+    expect(steps[3]).toContain('回收时独立说对几句');
   });
 
   it('"卡住了怎么办"四行摆在醒目的位置：help / slow down / 点名念哪一句 / 回收，且"这不算失败"还在', () => {
