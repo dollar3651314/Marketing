@@ -47,7 +47,7 @@ import { mkdirSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { chromium } from 'playwright';
 import { startServer, PASS, twDay, twStart, q, checker } from './e2e-server.mjs';
-import { FS, FS_CTL, TAIL_MAX, CONTRAST_MIN, fontOutliers, lowContrast, tailOf, orderOf, modShape, isConclusion, reveal, trackApi, openGroups as openGroupsLook } from './e2e-look.mjs';
+import { FS, FS_CTL, TAIL_MAX, CONTRAST_MIN, fontOutliers, lowContrast, tailOf, orderOf, modShape, isConclusion, reveal, trackApi, apiSettled, openGroups as openGroupsLook } from './e2e-look.mjs';
 
 const shotsAt = process.argv.indexOf('--shots');
 const SHOTS = shotsAt > 0 ? path.resolve(process.argv[shotsAt + 1]) : '';
@@ -971,7 +971,9 @@ try {
     curPage = page;
     trackApi(page);
     page.on('pageerror', (e) => errs4.push(e.message));
-    await page.goto(srv4.BASE + '/#/Practical');
+    // 从工作台登录、再点一级菜单进 Practical（像用户一样）；"在 Practical 页刷新"单独测在下面
+    //（2026-11-04 验收探索：改版前 staging 上带着 #/Practical 登录或刷新会落回 #/work，因为兜底名单里只有 forecast）
+    await page.goto(srv4.BASE + '/#/work');
     await page.fill('#pw', PASS);
     await page.click('#go');
     await page.waitForSelector('#app:not([hidden])', { timeout: WAIT });
@@ -992,7 +994,9 @@ try {
     const pp = await get('/api/queue?status=pending&product=Practical');
     check('K product=Practical 的待回是 0 条、上限是 Practical 自己的 10（不是 forecast 的 8）', pp.status === 200 && pp.body?.total === 0 && pp.body?.cap === 10, { status: pp.status, total: pp.body?.total, cap: pp.body?.cap });
     // ① Practical 项目页"用到的工具"：结论和卡片都写 0 /"没有 Practical 待回的"，上限是 10
-    await page.waitForSelector('#f-tools-body', { state: 'attached', timeout: WAIT });
+    await page.click('nav.nav1 a[data-proj="Practical"]', { timeout: WAIT });
+    await page.waitForFunction(() => location.hash.startsWith('#/Practical') && document.getElementById('f-title')?.textContent === 'Practical' && !document.getElementById('v-project').hidden, null, { timeout: WAIT });
+    await apiSettled(page, WAIT);
     await page.waitForFunction(() => !/读取中|正在读取/.test(document.getElementById('f-tools')?.innerText || ''), null, { timeout: WAIT }).catch(() => {});
     await page.waitForTimeout(300);
     const lead = (await page.locator('#f-tools .lead').first().innerText().catch(() => '')).replace(/\s+/g, ' ').trim();
@@ -1002,6 +1006,13 @@ try {
     check('K Practical 项目页"用到的工具"的卡片写 0 条或"没有 Practical 待回的"', zero(card) && !/4\s*条/.test(card), card.slice(0, 160));
     const capM = /今天已回\s*(\d+)\s*\/\s*(\d+)/.exec(lead + ' ' + card);
     check('K Practical 项目页显示的上限是 Practical 自己的 10（默认值），今天已回 0', !!capM && capM[1] === '0' && capM[2] === '10', capM ? capM[0] : (lead + ' | ' + card).slice(0, 160));
+    // 在 Practical 页刷新：仍停在 Practical（不跳回工作台），"用到的工具"仍只算 Practical（研发 3efdff3：名单读到前先按地址打开）
+    await page.reload();
+    await page.waitForSelector('#app:not([hidden])', { timeout: WAIT });
+    const stay = await page.waitForFunction(() => location.hash.startsWith('#/Practical') && document.getElementById('f-title')?.textContent === 'Practical' && !document.getElementById('v-project').hidden, null, { timeout: WAIT }).then(() => true, () => false);
+    await apiSettled(page, WAIT);
+    const card2 = (await page.locator('#f-tools-body').innerText().catch(() => '')).replace(/\s+/g, ' ').trim();
+    check('K 在 Practical 页刷新：仍停在 Practical 项目页，"用到的工具"仍是 0 条、今天已回 0 / 10', stay && zero(card2) && /今天已回\s*0\s*\/\s*10/.test(card2), { stay, hash: await page.evaluate(() => location.hash), title: await page.locator('#f-title').textContent().catch(() => null), card: card2.slice(0, 120) });
     // forecast 项目页对照：4 条、上限 8
     await page.goto(srv4.BASE + '/#/forecast');
     await page.waitForFunction(() => /4\s*条/.test(document.getElementById('f-tools')?.innerText || ''), null, { timeout: WAIT }).catch(() => {});
@@ -1012,14 +1023,16 @@ try {
     await page.goto(srv4.BASE + '/#/tools/queue');
     await page.waitForSelector('#list .item', { timeout: WAIT });
     const n0 = await page.locator('#list .item').count();
+    // 断网一直持续到点"再读一次"那一刻：这期间别的重读（自动刷新等）也都失败，红条不会被别的读取先收掉（第一版在 unroute 和点按钮之间偶尔被别的读取收掉，8 遍撞 1 次）
     const QRE = /\/api\/queue\?/;
-    await page.route(QRE, (r) => r.abort('failed'));
+    // "恢复"的开关放在页面里：捕获阶段听到点 #t-retry 才恢复（比页面自己的点击处理先跑），所以恢复后的第一次读取一定是这一下"再读一次"发的
+    await page.evaluate(() => { window.__e2eRetry = false; document.addEventListener('click', (e) => { if (e.target.closest && e.target.closest('#t-retry')) window.__e2eRetry = true; }, true); });
+    await page.route(QRE, async (r) => ((await page.evaluate(() => window.__e2eRetry).catch(() => false)) ? r.continue() : r.abort('failed')));
     await page.click('#t-queue [data-f="pending"]', { timeout: WAIT }).catch(() => {});
     const barOk = await page.waitForSelector('#t-stale', { state: 'visible', timeout: WAIT }).then(() => true, () => false);
     const bar = barOk ? (await page.locator('#t-stale').innerText()).replace(/\s+/g, ' ').trim() : null;
     check('K 公共工具读取失败：出现红条 #t-stale（role="alert"），写中文原因、"下面是 HH:MM 读到的"，不露英文报错', barOk && /[一-龥]/.test(bar) && /下面是\s*\d{1,2}:\d{2}\s*读到的/.test(bar) && !/[A-Za-z]{5,}/.test(bar) && (await page.getAttribute('#t-stale', 'role')) === 'alert', bar ?? (await page.evaluate(() => [...document.querySelectorAll('#v-tools [role=alert], #v-tools [role=status]')].filter((e) => e.getClientRects().length).map((e) => (e.id || e.className) + '：' + e.innerText.trim()).slice(0, 4))));
     check('K 公共工具读取失败：红条里有"再读一次"按钮 #t-retry；清单保留上次读到的内容', barOk && (await page.locator('#t-stale #t-retry').innerText().catch(() => '')).trim() === '再读一次' && (await page.locator('#list .item').count()) === n0, { n0, now: await page.locator('#list .item').count() });
-    await page.unroute(QRE);
     if (barOk && (await page.locator('#t-retry').count())) {
       await page.click('#t-retry', { timeout: WAIT });
       const gone = await page.waitForSelector('#t-stale', { state: 'hidden', timeout: WAIT }).then(() => true, () => false);
