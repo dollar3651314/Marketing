@@ -14,7 +14,7 @@ export const TTS_CSS = `
 .tv .row{display:flex;flex-wrap:wrap;gap:var(--s2);align-items:center;margin:var(--s2) 0}
 .tv .cost{font-weight:600}
 .tv .warn{color:var(--err);font-weight:700}
-.tv label.pick{display:inline-flex;gap:6px;align-items:center;border:1px solid var(--line);border-radius:var(--r-btn);padding:6px 12px;cursor:pointer;font-size:14px}
+.tv label.pick{display:inline-flex;gap:6px;align-items:center;border:1px solid var(--line);border-radius:var(--r-btn);padding:6px 12px;cursor:pointer;font-size:var(--fs-body)}
 .tv label.pick:has(input:checked){border-color:var(--teal);background:var(--teal-soft)}
 .tv label.pick input{margin:0}
 .tv audio{width:100%;height:36px;margin-top:var(--s2)}

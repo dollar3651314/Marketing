@@ -15,7 +15,7 @@
 export const VOICE_CSS = `
 .vc .box{border:1px solid var(--line);border-radius:12px;background:var(--surface);padding:var(--s4);margin:var(--s3) 0}
 .vc .row{display:flex;flex-wrap:wrap;gap:var(--s2);align-items:center;margin:var(--s2) 0}
-.vc label.pick{display:inline-flex;gap:6px;align-items:center;border:1px solid var(--line);border-radius:var(--r-btn);padding:6px 12px;cursor:pointer;font-size:14px}
+.vc label.pick{display:inline-flex;gap:6px;align-items:center;border:1px solid var(--line);border-radius:var(--r-btn);padding:6px 12px;cursor:pointer;font-size:var(--fs-body)}
 .vc label.pick:has(input:checked){border-color:var(--teal);background:var(--teal-soft)}
 .vc label.pick input{margin:0}
 .vc .st{font-size:var(--fs-aux);color:var(--muted)}

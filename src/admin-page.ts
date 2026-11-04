@@ -347,6 +347,12 @@ th{font-size:12px;color:var(--muted);font-weight:600}td.n{text-align:right}
 #v-project .two{gap:var(--s5)}#v-project .two>.card{display:flex;flex-direction:column}#v-project .two>.card>details.more{margin-top:auto}
 #v-project .two>.card>.mbody{flex:0 0 auto}
 #v-project .toolcard h3{font-size:var(--fs-body)}
+/* 批 B：字号收进阶梯（原来 14px 的表格、做完的、进度、步骤编号、提示），深色下步骤编号做完后的绿底用深色字（白字压亮绿 1.74:1 不够） */
+#v-project table{font-size:var(--fs-body)}#v-project .donelist li{font-size:var(--fs-body)}#v-project .progress{font-size:var(--fs-aux)}
+#v-project .step .no{font-size:var(--fs-aux)}#v-project .step.done .no{color:var(--bg)}
+:is(#v-project,#v-tools) .msg{font-size:var(--fs-aux)}
+#v-tools code{font-size:var(--fs-aux)}
+#tts-more:not([open]) #t-voice{display:none}
 /* 公共工具 */
 #v-tools .card{background:var(--surface);border:1px solid var(--line);border-radius:var(--r-card);box-shadow:var(--shadow);min-width:0;overflow:hidden}
 #v-tools .card .card{box-shadow:none}
@@ -1578,7 +1584,7 @@ function renderPack(p,now){const none='本周还没有周包';
   setLead('f-match-lead',ms.length?'gray':'gray',ms.length?'这周 '+ms.length+' 场焦点战，要导入官网名单页。':'这一包没有焦点战。',ms.length?'在操作指引里一键复制。':'');
   $('f-pack-body').replaceChildren((p.posts||[]).length?table(['第几条','写的什么','几点发','最晚'],p.posts.map((x)=>tr(td('第几条',String(x.n),'num'),td('写的什么',x.title),td('几点发',x.at_text||(x.at?dateL(x.at):'')),td('最晚',x.deadline||''))),['13%','40%','22%','25%']):emptyP('这一包没有帖子'));
   $('f-match-h').textContent='焦点战 · '+ms.length+' 场';$('f-match-aux').textContent='导入官网名单页';
-  $('f-match-body').replaceChildren((p.matches||[]).length?table(['联赛','对阵','开赛（台湾）'],p.matches.map((x)=>tr(td('联赛',x.league),td('对阵',[x.home+' vs '+x.away,x.note?pe('br'):null,x.note?pe('span','hint',x.note):null]),td('开赛',x.time,'num'))),['16%','52%','32%']):emptyP('这一包没有焦点战'));}
+  $('f-match-body').replaceChildren((p.matches||[]).length?table(['联赛','对阵','开赛（台湾）'],p.matches.map((x)=>tr(td('联赛',x.league),td('对阵',[x.home+' vs '+x.away,x.note?' ':null,x.note?pe('span','hint',x.note):null]),td('开赛',x.time,'num'))),['16%','52%','32%']):emptyP('这一包没有焦点战'));}
 function renderCard(pj){const b=okBlocks('status').find((x)=>x.key===pj);const B=$('f-card-body');$('f-card-at').textContent=b?'状态卡 '+stampOf(b):'';
   if(!b){B.replaceChildren(emptyP('还没收到 '+pj+' 的状态卡'));setLead('f-card-lead','gray','还没收到 '+pj+' 的状态卡。','状态卡推上来后，这里列出要看的数和在等你的事。');return;}const p=b.payload;
   let miss=0;const rows=(p.metrics||[]).map((m)=>{const v=metricNow(pj,m,b.source_at);if(v.src==='平台里还没有')miss++;return tr(td('看什么',m.name),td('现在',v.now),td('目标',m.target||'—'),td('从哪来',v.src));});
