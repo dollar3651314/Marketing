@@ -738,7 +738,7 @@ const P={x:'X',threads:'Threads'}, PROD={forecast:'Quick Come'};
 const tw=(ms)=>new Date(ms+8*3600e3).toISOString().replace('T',' ').slice(0,19);
 const twDay=(ms)=>tw(ms).slice(0,10);
 function toast(t,err){const e=$('toast');e.textContent=t;e.className='toast'+(err?' err':'');e.hidden=!t;}
-async function call(path,body){let r;try{r=await fetch(path,{method:body?'POST':'GET',headers:{'content-type':'application/json'},body:body?JSON.stringify(body):undefined,credentials:'same-origin'});}catch(e){throw new Error('网络断了或服务没回应');}const j=await r.json().catch(()=>({}));if(r.status===401&&path!=='/api/login'){showLogin('请重新登录');throw new Error('请重新登录');}if(!r.ok)throw new Error(j.error||('出错了（'+r.status+'）'));return j;}
+async function call(path,body){let r;try{r=await fetch(path,{method:body?'POST':'GET',headers:{'content-type':'application/json'},body:body?JSON.stringify(body):undefined,credentials:'same-origin'});}catch(e){throw new Error('网络断了或服务没回应');}const j=await r.json().catch(()=>({}));if(r.status===401&&path!=='/api/login'){showLogin('请重新登录');throw new Error('请重新登录');}if(!r.ok){const er=new Error(j.error||('出错了（'+r.status+'）'));er.status=r.status;throw er;}return j;}
 let authed=false;
 function showLogin(m){authed=false;$('more-menu').hidden=true;moreMenu(false);$('app').hidden=true;$('boot').hidden=true;$('subs').hidden=true;$('nav1').hidden=true;$('logout').hidden=true;$('nav').hidden=true;$('extnav').hidden=true;$('conav').hidden=true;$('login').hidden=false;$('count').textContent='';$('lmsg').textContent=m||'';$('pw').focus();try{platformStop();}catch(e){}}
 // #app 由 route() 决定什么时候显示：工作台、项目页等第一次读到数据再显示（免得看到空模块），工作台在这之前显示占位骨架 #boot（批 A）；清单、用量、插件下载、公司总览马上显示
@@ -872,7 +872,10 @@ function query(){const q=new URLSearchParams({status:filter});if($('f-prod').val
 let qOkAt=0;
 async function load(){
   $('bulk-confirm').hidden=true;
-  try{state=await call(query());}catch(e){if(e.message!=='请重新登录'){const hm=qOkAt?tw(qOkAt).slice(11,16):'';$('t-stale-t').textContent='跟帖评论清单读取失败：'+e.message+'。'+(qOkAt?'下面是 '+hm+' 读到的内容。':'还没读到过内容。')+'点"再读一次"重试。';$('t-stale').hidden=false;}return;}
+  try{state=await call(query());}catch(e){
+    // 筛的项目在清单里已经一条都没有了（例如刚把它的都删了）：服务端不再认这个名字（400"不认识的项目"），这里如实写"0 条"，不当成读取失败、也不退回"全部"
+    if(e.status===400&&$('f-prod').value&&/^不认识的项目/.test(e.message)){const pv=$('f-prod').value;state=Object.assign({},state,{items:[],total:0});qOkAt=Date.now();$('t-stale').hidden=true;showApp();render();$('total').textContent='共 0 条（'+(PROD[pv]||pv)+' 在清单里已经没有记录了）';subSpySoon();return;}
+    if(e.message!=='请重新登录'){const hm=qOkAt?tw(qOkAt).slice(11,16):'';$('t-stale-t').textContent='跟帖评论清单读取失败：'+e.message+'。'+(qOkAt?'下面是 '+hm+' 读到的内容。':'还没读到过内容。')+'点"再读一次"重试。';$('t-stale').hidden=false;}return;}
   qOkAt=Date.now();$('t-stale').hidden=true;showApp();render();subSpySoon();
 }
 $('t-retry').addEventListener('click',async()=>{const b=$('t-retry');b.setAttribute('aria-busy','true');b.textContent='正在读…';await load();b.removeAttribute('aria-busy');b.textContent='再读一次';if($('t-stale').hidden)toast('已重新读取，现在是最新的');});
