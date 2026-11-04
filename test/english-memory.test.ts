@@ -11,6 +11,9 @@
  *   6. **北极星只看跨轮**：到期被**真的考到**的才算分母；没考到的顺延、不算分母，也**不许**用 0 冒充"还没有数据"。
  *   7. **三步流程**端到端走一遍：测词汇线 → 开始这一轮（提示词带上线、回收句、新词）→ 贴回来入库 → 下一轮考到期的那几句。
  *   8. **不花钱、不碰密钥**：整个模块不调任何 AI、不出现密钥变量名；页面不让他打字（只有按钮和一个粘贴框）。
+ *   9. **v5 的四件**（2026-11-04 第 1 轮真实数据之后）：新词一轮只教 1 个；这一轮新教的词不许进帮扶句；
+ *      帮扶句不超过 5 个词；A / B / C 三个数 + 跨轮两个数 + 每轮一行的历史表摆在页面上（`/api/english/history`，
+ *      **不新建表、不新增迁移**）。两条新规则在测试里**逐字写死**，改一个字就红。
  */
 import { readdirSync, readFileSync } from 'node:fs';
 import path from 'node:path';
@@ -20,7 +23,7 @@ import type { Env } from '../src/env';
 import { handle } from '../src/index';
 import { ENGLISH_MOD } from '../src/english-page';
 import { EM_CSS, EM_JS, EM_MOD } from '../src/english-memory-page';
-import { buildPrompt, GAPS, nextDue, normSentence, parseLog, recallRate, segments, vocabLine, WORDLIST } from '../src/english-memory';
+import { buildPrompt, GAPS, NEW_PER_ROUND, NEW_WORD_NOT_IN_HELP, nextDue, normSentence, parseLog, recallRate, roundRows, segments, SHORT_HELP_SENTENCE, vocabLine, WORDLIST } from '../src/english-memory';
 import { ROOT, T0 } from './helpers';
 
 const PASS = 'ci_only_copilot_password_01';
@@ -308,7 +311,7 @@ describe('7. 三步流程端到端', () => {
     expect(r1.status).toBe(200);
     expect(r1.body.n).toBe(1);
     expect(r1.body.这轮要回收).toBe(0);
-    expect(r1.body.这轮要教.length).toBeGreaterThanOrEqual(3);
+    expect(r1.body.这轮要教.length).toBe(1); // v5：一轮只教 1 个（原来 3～5 个，第 1 轮真实数据 C=0）
     expect(r1.body.提示词).toContain('只用日常办公常用词');
     // 再点一次还是同一份（不会凭空多开一轮）
     expect((await api('start', {})).body.提示词).toBe(r1.body.提示词);
@@ -438,5 +441,131 @@ describe('8. 不花钱、不碰密钥、不让他打字', () => {
     // 授权结论写在源码注释里（NGSL 的 CC BY-SA 4.0、COCA 付费，为什么都没用）
     expect(SRC).toContain('CC BY-SA 4.0');
     expect(SRC).toContain('COCA');
+  });
+});
+
+
+// ======================================================================
+describe('9. v5：新词只教 1 个、不进帮扶句、帮扶句砍到 5 个词、三个数摆出来', () => {
+  // 这两句是 Amos 2026-11-04 给的**原话**，逐字写死在测试里：
+  // 源码里的常量改一个字（哪怕只是把「绝对不许」写成「不许」）这里就红。
+  const 新词不进帮扶句 = '- 今天要教的那个新词，你可以在你自己说的话里用一次让我听到，但**帮我造句子时绝对不许用它**。帮我的句子只许用我已经会的词。';
+  const 帮扶句五个词 = '- 你给我念的句子：**不超过 5 个词、只用最简单的结构**（像 "I need more time." "Can you help me?"），不许带从句、不许用我不认识的词。宁可说得幼稚，也不要说得地道。';
+
+  it('源码里的两条常量和 Amos 的原话一字不差', () => {
+    expect(NEW_WORD_NOT_IN_HELP).toBe(新词不进帮扶句);
+    expect(SHORT_HELP_SENTENCE).toBe(帮扶句五个词);
+    expect(NEW_PER_ROUND).toBe(1);
+  });
+
+  it('有新词时，提示词里**原文**带上「这一轮的新词不许进帮扶句」', () => {
+    const p = buildPrompt(segments(0), { line: 2, avoid: [], due: [], fresh: [{ word: 'estimate', zh: '估时 / 估算' }] });
+    expect(p).toContain(新词不进帮扶句);
+    expect(p).toContain('今天只教这 1 个新词：estimate（估时 / 估算）');
+  });
+
+  it('没有新词时不出现那条（不给 AI 空指令），但帮扶句那条照样在', () => {
+    const p = buildPrompt(segments(0), { line: 2, avoid: [], due: [], fresh: [] });
+    expect(p).not.toContain(新词不进帮扶句);
+    expect(p).toContain(帮扶句五个词);
+  });
+
+  it('帮扶句那条**每一条提示词里都在**，并且写明优先于 v4 的「不超过 8 个词」', () => {
+    for (let i = 0; i < 8; i++) {
+      const p = buildPrompt(segments(i), { line: 1, avoid: [], due: [], fresh: [] });
+      expect([i, p.includes(帮扶句五个词)]).toEqual([i, true]);
+      expect([i, p.includes('**优先于上面规则里「每句不超过 8 个词、不带从句」那一句**')]).toEqual([i, true]);
+      // v4 原文那一句**还在**（我们是追加覆盖，不是改掉它）
+      expect([i, p.includes('第 5 级 实在不行才给一整句让我念，每句不超过 8 个词、不带从句。')]).toEqual([i, true]);
+      // 覆盖的那条排在被覆盖的原文后面，AI 读到的最后一句才是 5 个词那条
+      expect([i, p.indexOf(帮扶句五个词) > p.indexOf('每句不超过 8 个词、不带从句。这是最后一招')]).toEqual([i, true]);
+    }
+  });
+
+  it('开一轮只派 1 个新词（反例：第 1 轮真实数据派了 5 个，C=0）', async () => {
+    await fillLine(2);
+    const r1 = await api('start', {});
+    expect(r1.body.这轮要教.length).toBe(1);
+    expect(r1.body.提示词).toContain('今天只教这 1 个新词：');
+    expect(r1.body.提示词).toContain(新词不进帮扶句);
+    // 入库的 new_json 也只有 1 个，而且教过的下一轮不会重复教
+    const row = await db.prepare('SELECT new_json FROM en_round WHERE n = 1').first<{ new_json: string }>();
+    expect(JSON.parse(row!.new_json)).toHaveLength(1);
+    const first = r1.body.这轮要教[0];
+    await api('log', { text: '#LOG\nstuck: \ncounts: A=1 B=1 C=0\n#END' });
+    const r2 = await api('start', {});
+    expect(r2.body.这轮要教).toHaveLength(1);
+    expect(r2.body.这轮要教[0]).not.toBe(first);
+  });
+
+  it('/api/english/history：每一轮一行，A / B / C 原样回，没报的是 null（不拿 0 冒充）', async () => {
+    await fillLine(2);
+    const S = 'I need more time.';
+    await api('start', {});
+    await api('log', { text: ['#LOG', `helped: "${S}"`, 'counts: A=3 B=5 C=0', '#END'].join('\n') });
+    await api('start', {});
+    await api('log', { text: ['#LOG', `recalled: "${S}" = yes`, 'counts: A=4', '#END'].join('\n') });
+
+    const h = await api('history');
+    expect(h.status).toBe(200);
+    expect(h.body.一共几轮).toBe(2);
+    expect(h.body.轮次表).toHaveLength(2);
+    expect(h.body.轮次表[0]).toMatchObject({ n: 1, A: 3, B: 5, C: 0, 到期考了: 0, 说对了: 0 });
+    // 第 2 轮只报了 A，B / C **是 null**，不是 0（底线 3：没报就说没报）
+    expect(h.body.轮次表[1]).toMatchObject({ n: 2, A: 4, B: null, C: null, 到期考了: 1, 说对了: 1 });
+    expect(h.body.最近一轮.n).toBe(2);
+    expect(h.body.跨轮回收成功率).toEqual({ asked: 1, passed: 1, rate: 1 });
+    // state 里也带最近一轮的三个数（页面一进来就能摆出来）
+    expect((await api('state')).body.最近一轮).toMatchObject({ n: 2, A: 4, B: null, C: null });
+  });
+
+  it('还开着、没贴回来的那一轮不进历史表（它一个数都没有，列出来会被当成 0）', async () => {
+    await fillLine(2);
+    await api('start', {});
+    expect((await api('history')).body.轮次表).toHaveLength(0);
+    expect((await api('history')).body.最近一轮).toBeNull();
+    expect((await api('state')).body.最近一轮).toBeNull();
+    await api('log', { text: '#LOG\ncounts: A=2 B=1 C=1\n#END' });
+    await api('start', {}); // 第 2 轮开着
+    const h = await api('history');
+    expect(h.body.轮次表).toHaveLength(1);
+    expect(h.body.轮次表[0].n).toBe(1);
+  });
+
+  it('history 和别的接口同一道门：没登录 401', async () => {
+    const r = await handle(req('/api/english/history'), env(), T0);
+    expect(r.status).toBe(401);
+  });
+
+  it('roundRows 只看已经贴回来的轮，顺序是从早到晚（趋势要能看出来）', () => {
+    const mk = (n: number, logged: number | null, a: number | null) =>
+      ({ n, started_at: 1, logged_at: logged, scene: 'C-1', due_json: '[]', new_json: '[]', prompt: '', a, b: null, c: null, recall_due: 0, recalled: 0 }) as any;
+    const rows = roundRows([mk(1, 10, 3), mk(2, null, null), mk(3, 30, 7)]);
+    expect(rows.map((r) => r.n)).toEqual([1, 3]);
+    expect(rows.map((r) => r.A)).toEqual([3, 7]);
+  });
+
+  it('页面：A / B / C 三个数和历史表都在，数字够大（390 宽一眼看得到）', () => {
+    for (const id of ['em-nums', 'em-a', 'em-b', 'em-c', 'em-nums-cap', 'em-histwrap', 'em-hist-b']) expect([id, EM_MOD.includes('id="' + id + '"')]).toEqual([id, true]);
+    // 三个数的名字写给小白看，不是光一个字母
+    for (const t of ['自己造的句子', '靠提示才说出来', '同一轮回收说对']) expect([t, EM_MOD.includes(t)]).toEqual([t, true]);
+    // 历史表七列：轮次 / 场景 / A / B / C / 跨轮考 / 说对
+    expect((EM_MOD.match(/<th>/g) ?? []).length).toBe(7);
+    for (const t of ['<th>轮次</th>', '<th>跨轮考</th>', '<th>说对</th>']) expect([t, EM_MOD.includes(t)]).toEqual([t, true]);
+    // 数字 34px（和首屏那个大数一个量级），窄屏放不下就横滑、不缩字
+    expect(EM_CSS).toContain('.em .em-big{display:block;font-size:34px');
+    expect(EM_CSS).toContain('.em .em-histwrap{margin:var(--s3) 0 0;overflow-x:auto');
+    // 还是只有一个粘贴框、没有 input（v5 没破这条）
+    expect((EM_MOD.match(/<textarea/g) ?? []).length).toBe(1);
+    expect(EM_MOD).not.toContain('<input');
+  });
+
+  it('页面脚本：没报的数写「—」而不是 0，历史表走 textContent（不拼 HTML）', () => {
+    expect(EM_JS).toContain("function eN(v){return (v===null||v===undefined)?'—':String(v)}");
+    expect(EM_JS).toContain("eJson('history')");
+    expect(EM_JS).toContain('td.textContent=String(v)');
+    expect(EM_JS).toContain("eq('em-hist-b')");
+    // 存完一轮之后立刻刷新三个数和历史表
+    expect(EM_JS).toContain("eRate(j['跨轮回收成功率']);eState();eHistory();");
   });
 });
