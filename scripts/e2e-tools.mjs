@@ -970,6 +970,12 @@ try {
     const page = await ctx.newPage();
     curPage = page;
     trackApi(page);
+    // 清单读取（/api/queue?…）在途数：装断网之前要等它归零（见下面"公共工具读取失败"的注释）
+    let qInflight = 0;
+    const isQ = (r) => /\/api\/queue\?/.test(r.url());
+    page.on('request', (r) => { if (isQ(r)) qInflight++; });
+    page.on('requestfinished', (r) => { if (isQ(r)) qInflight--; });
+    page.on('requestfailed', (r) => { if (isQ(r)) qInflight--; });
     page.on('pageerror', (e) => errs4.push(e.message));
     // 从工作台登录、再点一级菜单进 Practical（像用户一样）；"在 Practical 页刷新"单独测在下面
     //（2026-11-04 验收探索：改版前 staging 上带着 #/Practical 登录或刷新会落回 #/work，因为兜底名单里只有 forecast）
@@ -1022,6 +1028,12 @@ try {
     // 公共工具读取失败的红条：先读成功一次，再让清单读取断网（浏览器报英文 TypeError），点"待回"重读
     await page.goto(srv4.BASE + '/#/tools/queue');
     await page.waitForSelector('#list .item', { timeout: WAIT });
+    // 测试用例修正（2026-11-04 CI 5719956 第一次就红，C57）：切到公共工具时页面自己发一次清单读取 load()；#list 里登录时画的条目早就在，
+    // 上面那句等待马上就过了，那次读取还在路上。断网只挡之后的新请求——那次旧的读取在红条出现后才成功返回，load() 照样把红条收掉
+    //（页面的 load() 不分先后，晚到的旧结果会盖掉新的，另报研发），于是点 #t-retry 时它已经藏起来、等满 4 秒。
+    // 确定性复现：扣住切页那次读取，等断网那次失败后 5ms 再放行 → 3 遍 3 遍都是同一句 Timeout。现在：等清单读取在途数归零、页面跑完再断网。
+    { const t0 = Date.now(); while (qInflight > 0) { if (Date.now() - t0 > WAIT) throw new Error(`等清单读取回来等了 ${WAIT}ms（在途 ${qInflight}）`); await new Promise((ok) => setTimeout(ok, 20)); } }
+    await page.evaluate(() => new Promise((ok) => setTimeout(ok, 0)));
     const n0 = await page.locator('#list .item').count();
     // 断网一直持续到点"再读一次"那一刻：这期间别的重读（自动刷新等）也都失败，红条不会被别的读取先收掉（第一版在 unroute 和点按钮之间偶尔被别的读取收掉，8 遍撞 1 次）
     const QRE = /\/api\/queue\?/;
