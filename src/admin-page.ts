@@ -495,22 +495,32 @@ function route(){if(!authed)return;let h=hashOf();
   // 批 2：在公共工具、公司总览刷新时，一级菜单上的待办数量也马上读出来（以前要切到工作台才有）
   if(page==='work'||page==='project'){try{platformOpen(page,mod);}catch(e){}}else{try{platformStop();platformPeek();}catch(e){}}
   const el=mod&&$(mod);if(el&&!el.closest('[hidden]')){el.scrollIntoView({block:'start'});subPin={s:mod,y:scrollY};}else if(prev!==page||prevProj!==proj)window.scrollTo(0,0);
-  subSpy();}
+  subLast='';subSpy();}
 window.addEventListener('hashchange',route);
 // 二级菜单跟着滚动选中（2026-11-04）：只改 aria-current，不改地址（不碰 hash / pushState / replaceState）。
 // 选"顶端已经过了顶栏底边（+16px）"的最后一个模块；滑到页面最底选最后一个；都没过选第一个。模块按页面上的位置排，[hidden] 里的不算。
 // 点菜单跳过去以后、用户还没再滚之前，以点的那个为准（subPin）：页面底部的几个模块顶不到顶栏下面，不这样会和点的打架。
-let subPin=null,subRaf=0;
+// 第 2 轮（产品口径）：B. 并排的几块（顶端差 ≤4px）算一排：当前选中的在这一排里就不变，从别处滑进这一排选菜单里靠前的那个；
+// A. 选中项变了、子菜单 .sub .in 要横滑时，只改 .in 的 scrollLeft 把它滚进看得见的地方（尽量离开右边约 18% 的渐隐），不用 scrollIntoView、不动页面 scrollY。
+let subPin=null,subRaf=0,subLast='';
 function subSpy(){subRaf=0;const nav=[...document.querySelectorAll('nav.sub')].find((n)=>!n.closest('[hidden]'));if(!nav)return;
-  const links=[...nav.querySelectorAll('a[data-s]')];
-  const secs=links.map((a)=>$(a.dataset.s)).filter((e)=>e&&!e.closest('[hidden]')&&e.getClientRects().length).map((e)=>({id:e.id,top:e.getBoundingClientRect().top})).sort((a,b)=>a.top-b.top);
+  const links=[...nav.querySelectorAll('a[data-s]')],order=links.map((a)=>a.dataset.s);
+  const secs=links.map((a)=>$(a.dataset.s)).filter((e)=>e&&!e.closest('[hidden]')&&e.getClientRects().length).map((e)=>({id:e.id,top:e.getBoundingClientRect().top,n:order.indexOf(e.id)})).sort((a,b)=>a.top-b.top||a.n-b.n);
   if(!secs.length)return;
+  const was=(links.find((a)=>a.getAttribute('aria-current')==='true')||{dataset:{}}).dataset.s;
   let cur='';
   if(subPin&&Math.abs(scrollY-subPin.y)<=2&&secs.some((x)=>x.id===subPin.s))cur=subPin.s;
   else{subPin=null;const de=document.documentElement;
     if(scrollY>0&&innerHeight+scrollY>=de.scrollHeight-2)cur=secs[secs.length-1].id;
-    else{const line=$('bars').getBoundingClientRect().bottom+16;cur=secs[0].id;secs.forEach((x)=>{if(x.top<=line)cur=x.id;});}}
-  links.forEach((a)=>a.setAttribute('aria-current',String(a.dataset.s===cur)));}
+    else{const line=$('bars').getBoundingClientRect().bottom+16;let c=secs[0];secs.forEach((x)=>{if(x.top<=line)c=x;});
+      const row=secs.filter((x)=>Math.abs(x.top-c.top)<=4);
+      cur=row.length>1?(row.some((x)=>x.id===was)?was:row.reduce((m,x)=>x.n<m.n?x:m).id):c.id;}}
+  links.forEach((a)=>a.setAttribute('aria-current',String(a.dataset.s===cur)));
+  const key=nav.id+'/'+cur;if(key!==subLast){subLast=key;subShow(nav,links[order.indexOf(cur)]);}}
+/** A：选中项滚进横向子菜单的可见范围（只改 .sub .in 的 scrollLeft） */
+function subShow(nav,a){const box=nav.querySelector('.in');if(!a||!box||box.scrollWidth<=box.clientWidth+1)return;
+  const b=box.getBoundingClientRect(),r=a.getBoundingClientRect();const fade=Math.max(0,Math.min(b.width*0.18,b.width-r.width-16));
+  const d=r.left<b.left+8?r.left-b.left-8:r.right>b.right-fade?r.right-(b.right-fade):0;if(d)box.scrollLeft+=d;}
 function subSpySoon(){if(!subRaf)subRaf=requestAnimationFrame(subSpy);}
 window.addEventListener('scroll',subSpySoon,{passive:true});window.addEventListener('resize',subSpySoon);
 document.querySelectorAll('nav.sub a[data-s], #nav1 a[data-p]').forEach(a=>a.addEventListener('click',()=>{if(a.getAttribute('href')===location.hash)setTimeout(route,0);}));
@@ -538,7 +548,7 @@ function query(){const q=new URLSearchParams({status:filter});if($('f-prod').val
 async function load(){
   $('bulk-confirm').hidden=true;
   try{state=await call(query());}catch(e){if(e.message!=='请重新登录')toast(e.message,true);return;}
-  showApp();render();
+  showApp();render();subSpySoon();
 }
 function render(){
   // 每天回帖上限按项目（D-2）：每条看它所在项目的"今天已回 / 上限"（state.caps）；老接口没有 caps 时用整体的
@@ -602,7 +612,7 @@ $('bulk-yes').addEventListener('click',async()=>{const y=$('bulk-yes');y.disable
 let uTimer=null, uEditing=false;
 function uStamp(){$('u-at').textContent='更新于 '+tw(Date.now()).slice(11)+'（停在这一页时每 30 秒自动刷新）';}
 async function loadUsage(manual){const b=$('u-refresh');if(manual){b.disabled=true;b.textContent='正在刷新…';}
-  try{const j=await call('/api/usage');const rows=j.rows;if(!uEditing||manual){usage=rows;renderUsage();}renderByProject(j.byProject||[]);renderAcct(j.accountLimit);renderLeft(j.left||[]);renderPurpose(j.byPurpose||[]);uStamp();if(manual)$('u-msg').textContent='';}
+  try{const j=await call('/api/usage');const rows=j.rows;if(!uEditing||manual){usage=rows;renderUsage();}renderByProject(j.byProject||[]);renderAcct(j.accountLimit);renderLeft(j.left||[]);renderPurpose(j.byPurpose||[]);uStamp();subSpySoon();if(manual)$('u-msg').textContent='';}
   catch(e){$('u-at').textContent='刷新失败：'+e.message+'（30 秒后再试）';}
   finally{if(manual){b.disabled=false;b.textContent='立即刷新';}}}
 function usageTimer(on){clearInterval(uTimer);uTimer=on?setInterval(()=>{if(page==='tools'&&document.visibilityState==='visible')loadUsage(false);},30000):null;}
@@ -664,7 +674,7 @@ $('hook-toggle').addEventListener('click',async()=>{const b=$('hook-toggle'),m=$
   catch(e){b.disabled=false;m.className='msg';m.textContent=e.message;}});
 // 每天回帖上限按项目（工作平台批 2，D-2）：GET / POST /api/reply-cap；1～50 的整数，前后端同一个范围
 let replyRows=[];
-async function loadReply(){try{replyRows=(await call('/api/reply-cap')).rows;renderReply();}catch(e){if(e.message!=='请重新登录'){const m=$('rc-msg');m.className='msg';m.textContent='读不到上限：'+e.message;}}}
+async function loadReply(){try{replyRows=(await call('/api/reply-cap')).rows;renderReply();subSpySoon();}catch(e){if(e.message!=='请重新登录'){const m=$('rc-msg');m.className='msg';m.textContent='读不到上限：'+e.message;}}}
 function renderReply(){const T=$('rc-rows');T.replaceChildren();
   replyRows.forEach(r=>{const tr=document.createElement('tr');tr.append(Object.assign(document.createElement('td'),{textContent:PROD[r.project]?r.project+'（'+PROD[r.project]+'）':r.project}));
     const c=document.createElement('td');c.dataset.label='每天上限';const inp=Object.assign(document.createElement('input'),{className:'cap-in',id:'rc-'+r.project,value:String(r.cap),inputMode:'numeric'});inp.setAttribute('aria-label',r.project+' 每天上限');c.append(inp,' 条');tr.append(c);
