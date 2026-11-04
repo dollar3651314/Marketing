@@ -484,7 +484,7 @@ function route(){if(!authed)return;let h=hashOf();
   $('app').hidden=(page==='work'||page==='project')&&!ready;
   ['work','project','tools','company'].forEach(x=>{$('v-'+x).hidden=x!==page;const sb=$('sub-'+x);if(sb)sb.hidden=x!==page;});
   document.querySelectorAll('#nav1 a[data-p]').forEach(a=>{const on=a.dataset.p===page&&(!a.dataset.proj||a.dataset.proj===proj);if(on)a.setAttribute('aria-current','page');else a.removeAttribute('aria-current');});
-  document.querySelectorAll('nav.sub a[data-s]').forEach(a=>a.setAttribute('aria-current',String(a.dataset.s===mod)));
+  document.querySelectorAll('nav.sub a[data-s]').forEach(a=>a.setAttribute('aria-current',String(a.dataset.s===mod)));subPin=null;
   const t=page==='project'?proj:(TITLES[view]||TITLES[page]);$('title').textContent=t;document.title=t+' · 工作平台';frameButtons();
   usageTimer(page==='tools');
   if(page==='tools'){if(prev!==''&&prev!=='tools')load();else if(prev==='tools'&&view==='list')load();if(view==='usage'||prev!=='tools'){uEditing=false;loadUsage(true);}if(view==='reply'||prev!=='tools')loadReply();if(view==='hook'||prev!=='tools')loadHook();}
@@ -494,8 +494,25 @@ function route(){if(!authed)return;let h=hashOf();
   if(page==='company'){try{companyOpen(prev==='company');}catch(e){$('co-at').textContent='这一页出错了：'+e.message;}}
   // 批 2：在公共工具、公司总览刷新时，一级菜单上的待办数量也马上读出来（以前要切到工作台才有）
   if(page==='work'||page==='project'){try{platformOpen(page,mod);}catch(e){}}else{try{platformStop();platformPeek();}catch(e){}}
-  const el=mod&&$(mod);if(el&&!el.closest('[hidden]'))el.scrollIntoView({block:'start'});else if(prev!==page||prevProj!==proj)window.scrollTo(0,0);}
+  const el=mod&&$(mod);if(el&&!el.closest('[hidden]')){el.scrollIntoView({block:'start'});subPin={s:mod,y:scrollY};}else if(prev!==page||prevProj!==proj)window.scrollTo(0,0);
+  subSpy();}
 window.addEventListener('hashchange',route);
+// 二级菜单跟着滚动选中（2026-11-04）：只改 aria-current，不改地址（不碰 hash / pushState / replaceState）。
+// 选"顶端已经过了顶栏底边（+16px）"的最后一个模块；滑到页面最底选最后一个；都没过选第一个。模块按页面上的位置排，[hidden] 里的不算。
+// 点菜单跳过去以后、用户还没再滚之前，以点的那个为准（subPin）：页面底部的几个模块顶不到顶栏下面，不这样会和点的打架。
+let subPin=null,subRaf=0;
+function subSpy(){subRaf=0;const nav=[...document.querySelectorAll('nav.sub')].find((n)=>!n.closest('[hidden]'));if(!nav)return;
+  const links=[...nav.querySelectorAll('a[data-s]')];
+  const secs=links.map((a)=>$(a.dataset.s)).filter((e)=>e&&!e.closest('[hidden]')&&e.getClientRects().length).map((e)=>({id:e.id,top:e.getBoundingClientRect().top})).sort((a,b)=>a.top-b.top);
+  if(!secs.length)return;
+  let cur='';
+  if(subPin&&Math.abs(scrollY-subPin.y)<=2&&secs.some((x)=>x.id===subPin.s))cur=subPin.s;
+  else{subPin=null;const de=document.documentElement;
+    if(scrollY>0&&innerHeight+scrollY>=de.scrollHeight-2)cur=secs[secs.length-1].id;
+    else{const line=$('bars').getBoundingClientRect().bottom+16;cur=secs[0].id;secs.forEach((x)=>{if(x.top<=line)cur=x.id;});}}
+  links.forEach((a)=>a.setAttribute('aria-current',String(a.dataset.s===cur)));}
+function subSpySoon(){if(!subRaf)subRaf=requestAnimationFrame(subSpy);}
+window.addEventListener('scroll',subSpySoon,{passive:true});window.addEventListener('resize',subSpySoon);
 document.querySelectorAll('nav.sub a[data-s], #nav1 a[data-p]').forEach(a=>a.addEventListener('click',()=>{if(a.getAttribute('href')===location.hash)setTimeout(route,0);}));
 /** 旧的三个按钮（用量和限额、插件下载、公司总览）：跳到公共工具里的模块或公司总览 */
 function go(v){const h=v==='company'?'#/company':'#/tools/'+({list:'queue',usage:'usage',ext:'ext'}[v]||'queue');if(location.hash===h)route();else location.hash=h;}
@@ -1118,7 +1135,8 @@ function renderAll(){if(!PL.data)return;const now=Date.now();const all=sorted(it
   try{renderProject(curProj(),all,now);}catch(e){$('f-err').hidden=false;$('f-err').textContent='项目页出错了：'+e.message;}
   try{renderLive(now);}catch(e){$('w-err').hidden=false;$('w-err').textContent='团队在做什么出错了：'+e.message;}
   if(PL.page){$('app').hidden=false;}
-  if(PL.scroll){const el=$(PL.scroll);PL.scroll='';if(el)el.scrollIntoView({block:'start'});}}
+  if(PL.scroll){const el=$(PL.scroll);PL.scroll='';if(el){el.scrollIntoView({block:'start'});subPin={s:el.id,y:scrollY};}}
+  subSpySoon();}
 async function getJ(u){const r=await fetch(u,{credentials:'same-origin'});if(r.status===401){showLogin('请重新登录');throw new Error('请重新登录');}if(!r.ok){const j=await r.json().catch(()=>({}));throw new Error(j.error||'出错了（'+r.status+'）');}return r.json();}
 async function refresh(){if(PL.busy){PL.again=true;return;}PL.busy=true;
   const want=curProj();

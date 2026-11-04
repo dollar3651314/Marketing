@@ -26,6 +26,7 @@
  *      自己在代码仓库开的 PR 也只显示标题和链接；代码仓库推上来的正文一个字都不显示。
  *   H.（2026-11-03 追加，Practical 新方向 N-4）语音对话实测台 #t-voice：不占二级菜单位子（T-4 上限 8 项）但从「语音生成」那一块点得到；
  *      打开时 VOICE_JS 真的跑起来（场景按钮和一轮 10 分钟的算术表是现读 /api/voice/plan 填的）；操作手册印在页面上、页面上不出现命令行；没录音时「跑一轮」是灰的。375、1440 宽。
+*   I.（2026-11-04）二级菜单跟着滚动选中：不点菜单直接滑页面，子菜单 aria-current 跟着变（滑到第 2 个模块、最底、回顶端；点菜单后不被滚动计算改掉）。375、1440 宽。
 *   C. 按项目看用量（D-3）：#t-byproj 每个项目一行，Gemini 次数加起来 = 用量总额度里 Gemini 的请求数；写着以前没分项目、"测试 AI"那行是平台自己。
  *
  * 页面约定（照原型 v2；研发要改名就同一个 PR 改这里并在 PR 描述写明）：
@@ -122,6 +123,43 @@ const apiGet = (page, p) => page.evaluate(async (u) => { const r = await fetch(u
 const same = (a, b) => JSON.stringify(a) === JSON.stringify(b);
 async function section(name, fn) {
   try { await fn(); } catch (e) { check(`${name}：没跑完`, false, String(e && e.message || e).split('\n')[0]); }
+}
+/**
+ * 子菜单跟着滚动选中（2026-11-04，Amos："点子菜单能跳，自己滑的时候子菜单的选中不跟着变"）：
+ * 不点菜单，直接 window.scrollTo 滑页面，看二级菜单里 aria-current="true" 的是不是滑到的那个模块。
+ * 模块按页面上的位置排（不按菜单顺序），只算不在 [hidden] 里的。
+ */
+async function scrollSpyCase(page, sub, tag) {
+  const mods = await page.evaluate((s) => [...document.querySelectorAll(s + ' a[data-s]')].map((a) => document.getElementById(a.dataset.s))
+    .filter((e) => e && !e.closest('[hidden]') && e.getClientRects().length)
+    .map((e) => ({ id: e.id, y: Math.round(e.getBoundingClientRect().top + scrollY) })).sort((a, b) => a.y - b.y), sub);
+  check(`${tag}：页面上至少有 2 个看得见的模块`, mods.length >= 2, mods);
+  if (mods.length < 2) return;
+  const cur = () => page.evaluate((s) => [...document.querySelectorAll(s + ' a[data-s]')].map((a) => [a.dataset.s, a.getAttribute('aria-current')]), sub);
+  const only = (list, id) => list.length > 0 && list.every(([s, v]) => v === String(s === id));
+  const onNow = (list) => list.filter(([, v]) => v === 'true').map(([s]) => s);
+  const scroll = async (y) => { const at = await page.evaluate((t) => { window.scrollTo(0, t === 'end' ? document.documentElement.scrollHeight : t); return Math.round(scrollY); }, y); await page.waitForTimeout(150); return at; };
+  // ① 滑到第 2 个模块（和点菜单跳过去的位置一样：模块顶端在顶栏下面 8px）
+  const barsH = await page.evaluate(() => document.getElementById('bars').getBoundingClientRect().height);
+  const want = Math.round(mods[1].y - barsH - 8);
+  const at = await scroll(want);
+  const c1 = await cur();
+  check(`${tag}：滑到第 2 个模块 ${mods[1].id}（没点菜单）→ 子菜单选中 ${mods[1].id}、其余不选`, Math.abs(at - want) <= 2 && only(c1, mods[1].id), { scrollY: at, want, on: onNow(c1) });
+  // ② 滑到最底 → 最后一个看得见的模块
+  await scroll('end');
+  const c2 = await cur();
+  const last = mods[mods.length - 1].id;
+  check(`${tag}：滑到页面最底 → 子菜单选中最后一个模块 ${last}`, only(c2, last), { on: onNow(c2) });
+  // ③ 滑回最上面 → 第一个
+  await scroll(0);
+  const c3 = await cur();
+  check(`${tag}：滑回最上面 → 子菜单选中第一个模块 ${mods[0].id}`, only(c3, mods[0].id), { on: onNow(c3) });
+  // ④ 点菜单跳过去的结果和滚动算的不打架：点倒数第 2 个（多半顶不到顶栏下面），选中的还是点的那个
+  const pick = mods[mods.length - 2].id;
+  await page.click(`${sub} a[data-s="${pick}"]`, { timeout: 4000 });
+  await page.waitForTimeout(400);
+  const c4 = await cur();
+  check(`${tag}：点子菜单 ${pick} 跳过去之后，选中的就是 ${pick}（不被滚动计算改掉）`, only(c4, pick), { on: onNow(c4) });
 }
 /** 一级菜单上的红色数量：{work, forecast}（没显示的是 null） */
 const badges = (page) => page.evaluate(() => {
@@ -538,6 +576,18 @@ try {
     check('G 代码仓库推上来的正文、问题表一个字都不显示（正文只认 agents）', !all.includes('marketing 推上来的正文') && !all.includes('代码仓库的问题') && (await own.locator('.detail').count()) === 0, null);
     check('G 整段没开新窗口', popups === 0, popups);
     await page.context().close();
+  });
+
+  // ---------- I.（2026-11-04）子菜单跟着滚动选中：公共工具页 ----------
+  await section('I 子菜单跟着滚动', async () => {
+    for (const width of [1440, 375]) {
+      const page = await open({ width, height: width === 375 ? 740 : 900 });
+      await login(page, '/#/tools');
+      await waitFor(page, '#sub-tools');
+      await page.waitForTimeout(500);
+      await scrollSpyCase(page, '#sub-tools', `I ${width} 宽 公共工具`);
+      await page.context().close();
+    }
   });
 
   check('A、B、D、E、F、G 段没有脚本错误', errors.length === 0, errors);
