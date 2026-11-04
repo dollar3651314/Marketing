@@ -2,6 +2,7 @@ import { ASSETS_CSS, ASSETS_JS, ASSETS_MOD } from './assets-page';
 import { TTS_CSS, TTS_JS, TTS_MOD } from './tts-page';
 import { VOICE_CSS, VOICE_JS } from './voice-page';
 import { ENGLISH_CSS, ENGLISH_JS, ENGLISH_MOD } from './english-page';
+import { EM_CSS, EM_JS, EM_MOD } from './english-memory-page';
 import { EXTENSION_VERSION } from './extension-download';
 import { MAX_PROJECT_PAGES, PLATFORM_CONFIG, PROJECT_PAGES_FALLBACK, PROJECT_SITE } from './projects';
 
@@ -478,7 +479,7 @@ th{font-size:12px;color:var(--muted);font-weight:600}td.n{text-align:right}
 .plat details.recent>summary{border-top:1px solid var(--line)}
 @media (max-width:600px){.act-item{grid-template-columns:minmax(0,1fr)}.act-item .go{flex-direction:row;flex-wrap:wrap;align-items:flex-start}}
 /* 收编进来的工具的样式：素材生成器（选择器都带 .ag）、语音生成（都带 .tv）、语音对话实测（都带 .vc），不串到别的模块 */
-${ASSETS_CSS}${TTS_CSS}${VOICE_CSS}${ENGLISH_CSS}
+${ASSETS_CSS}${TTS_CSS}${VOICE_CSS}${ENGLISH_CSS}${EM_CSS}
 </style></head><body>
 <div class="bars" id="bars"><header class="top" id="top"><span class="logo" aria-hidden="true"><i style="height:16px;background:#2DD4BF"></i><i style="height:10px;background:#FBBF24"></i></span><span class="brand">工作平台</span><b class="sr" id="title">工作台</b>
   <nav class="nav1" id="nav1" aria-label="一级菜单" hidden><a href="#/work" data-p="work">工作台<span class="cnt" id="c-work" hidden></span></a><span class="sep" id="nav1-sep0" aria-hidden="true" hidden></span><span class="grp-l" id="nav1-grp" hidden>项目</span><span class="sep" id="nav1-sep" aria-hidden="true"></span><a href="#/tools" data-p="tools" id="nav1-tools">公共工具</a></nav>
@@ -553,6 +554,7 @@ ${ASSETS_CSS}${TTS_CSS}${VOICE_CSS}${ENGLISH_CSS}
       <div class="mbody" id="w-meet-body"></div>
     </section>
     ${ENGLISH_MOD}
+    ${EM_MOD}
     <p class="foot">停在这一页时每 30 秒自动刷新；切到别的窗口时暂停，切回来马上刷新。</p>
   </section>
   <!-- 项目页（PR 2）：一套 DOM 轮流显示每个项目（#/<项目>/<模块>），模块 id 还是 f-* -->
@@ -801,6 +803,8 @@ function route(){if(!authed)return;let h=hashOf();
   if(page==='company'){try{companyOpen(prev==='company');}catch(e){$('co-at').textContent='这一页出错了：'+e.message;}}
   // 批 2：在公共工具、公司总览刷新时，一级菜单上的待办数量也马上读出来（以前要切到工作台才有）
   if(page==='work'||page==='project'){try{platformOpen(page,mod);}catch(e){}}else{try{platformStop();platformPeek();}catch(e){}}
+  // 工作台最下面的"它记得住你"（跨轮记忆，english-memory-page.ts）：进工作台时读一次（没登录时 route() 根本不往下走）
+  if(page==='work'){try{window.engmemOpen();}catch(e){}}
   // 批 B：语音对话实测台在"语音生成"的折叠 #tts-more 里：打开 #/tools/voice 先把折叠打开再滚过去
   if(page==='tools'&&view==='voice'){const f=$('tts-more');if(f)f.open=true;}
   const el=mod&&$(mod);if(el&&!el.closest('[hidden]')){el.scrollIntoView({block:'start'});subPin={s:mod,y:scrollY};}else if(prev!==page||prevProj!==proj)window.scrollTo(0,0);
@@ -1663,9 +1667,10 @@ var platformPeek=function(){PL.peek=true;if(!PL.timer)tickTimer();if(!PL.data&&!
 var platformReady=function(){return !!PL.data;};
 }catch(e){var platformReady=function(){return true;};var platformOpen=function(){['w-err','f-err'].forEach((id)=>{const x=document.getElementById(id);if(x){x.hidden=false;x.textContent='这一页出错了：'+e.message;}});};var platformStop=function(){};var platformPeek=function(){};}
 </script>
-<script>window.__assetsBase='/api/assets/';window.__ttsBase='/api/tts/';window.__voiceBase='/api/voice/';</script>
+<script>window.__assetsBase='/api/assets/';window.__ttsBase='/api/tts/';window.__voiceBase='/api/voice/';window.__engmemBase='/api/english/';</script>
 <script>${ASSETS_JS}</script>
 <script>${TTS_JS}</script>
 <script>${VOICE_JS}</script>
 <script>${ENGLISH_JS}</script>
+<script>${EM_JS}</script>
 </body></html>`;
