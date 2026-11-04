@@ -26,6 +26,7 @@
  *      自己在代码仓库开的 PR 也只显示标题和链接；代码仓库推上来的正文一个字都不显示。
  *   H.（2026-11-03 追加，Practical 新方向 N-4）语音对话实测台 #t-voice：不占二级菜单位子（T-4 上限 8 项）但从「语音生成」那一块点得到；
  *      打开时 VOICE_JS 真的跑起来（场景按钮和一轮 10 分钟的算术表是现读 /api/voice/plan 填的）；操作手册印在页面上、页面上不出现命令行；没录音时「跑一轮」是灰的。375、1440 宽。
+*   I-2.（2026-11-04 第 2 轮，测试会话写）375 宽选中项滚进横向子菜单的可见范围、页面 scrollY 不跟着动；滑动不改 hash（"点到不了顶的模块"那条在 e2e-platform 的 8.6 段：公共工具页窗口拉多高，t-tts 都还能滑到顶，构造不出来）。
 *   I.（2026-11-04）二级菜单跟着滚动选中：不点菜单直接滑页面，子菜单 aria-current 跟着变（滑到第 2 个模块、最底、回顶端；点菜单后不被滚动计算改掉）。375、1440 宽。
 *   C. 按项目看用量（D-3）：#t-byproj 每个项目一行，Gemini 次数加起来 = 用量总额度里 Gemini 的请求数；写着以前没分项目、"测试 AI"那行是平台自己。
  *
@@ -160,6 +161,52 @@ async function scrollSpyCase(page, sub, tag) {
   await page.waitForTimeout(400);
   const c4 = await cur();
   check(`${tag}：点子菜单 ${pick} 跳过去之后，选中的就是 ${pick}（不被滚动计算改掉）`, only(c4, pick), { on: onNow(c4) });
+}
+/*
+ * 子菜单跟着滚动选中·第 2 轮（2026-11-04，测试会话写，研发不改断言；产品口径）：
+ *   A. 选中项变化时，子菜单 .sub .in 横向滚动的，要把选中项滚进可见范围；只改 .sub .in 的 scrollLeft，页面 scrollY 不能变。
+ *   B. 并排的几块（顶端高度差 ≤4px）：当前选中的在这一排里就保持不变（点过哪个保持哪个）；从别处滑进这一排时选菜单里靠前的那个。
+ *   另：滑动不改地址 hash。（"点到不了顶的模块也选它"那条在 scripts/e2e-platform.mjs 8.6 段）
+ */
+const spyWait = (page) => page.waitForTimeout(150);
+/** 当前子菜单里 aria-current="true" 的模块 id */
+const spyOn = (page, sub) => page.evaluate((s) => [...document.querySelectorAll(s + ' a[data-s]')].filter((a) => a.getAttribute('aria-current') === 'true').map((a) => a.dataset.s), sub);
+/** 看得见的模块，按页面上的位置排：{id, top(相对文档), h} */
+const spyMods = (page, sub) => page.evaluate((s) => [...document.querySelectorAll(s + ' a[data-s]')].map((a) => document.getElementById(a.dataset.s))
+  .filter((e) => e && !e.closest('[hidden]') && e.getClientRects().length)
+  .map((e) => ({ id: e.id, top: Math.round(e.getBoundingClientRect().top + scrollY), h: Math.round(e.getBoundingClientRect().height) })).sort((a, b) => a.top - b.top), sub);
+const spyPos = (page) => page.evaluate(() => ({ y: Math.round(scrollY), max: Math.round(document.documentElement.scrollHeight - innerHeight), hash: location.hash, bars: Math.round(document.getElementById('bars').getBoundingClientRect().height) }));
+const spyTo = async (page, y) => { await page.evaluate((t) => window.scrollTo(0, t === 'end' ? document.documentElement.scrollHeight : t), y); await spyWait(page); return spyPos(page); };
+/** 选中项在横向子菜单 .sub .in 里是否完整看得见（左右各容 1px） */
+const spyInView = (page, sub) => page.evaluate((s) => {
+  const box = document.querySelector(s + ' .in'), a = document.querySelector(s + ' a[data-s][aria-current="true"]');
+  if (!box || !a) return { ok: false, why: '没有选中项' };
+  const r = a.getBoundingClientRect(), b = box.getBoundingClientRect();
+  return { ok: r.left >= b.left - 1 && r.right <= b.right + 1, s: a.dataset.s, left: Math.round(r.left), right: Math.round(r.right), boxLeft: Math.round(b.left), boxRight: Math.round(b.right), scrollLeft: Math.round(box.scrollLeft) };
+}, sub);
+/** A：窄屏子菜单横向滚动时，选中项要滚进可见范围、页面 scrollY 不因此改变 */
+async function subInViewCase(page, sub, tag, { mustScroll = true } = {}) {
+  const mods = await spyMods(page, sub);
+  const scrollable = await page.evaluate((s) => { const b = document.querySelector(s + ' .in'); return { sw: b.scrollWidth, cw: b.clientWidth }; }, sub);
+  // mustScroll=false：这一页的子菜单现在不用横滑（例如 375 宽公共工具，2026-11-04 实测 scrollWidth = clientWidth = 375），只守住"选中项看得见、页面不动、hash 不变"
+  if (mustScroll) check(`${tag}：前提——子菜单比屏幕宽、要横滑（不然这条测不到东西）`, scrollable.sw > scrollable.cw + 1 && mods.length >= 2, scrollable);
+  const hash0 = (await spyPos(page)).hash;
+  // ① 滑到最底：选中最后一个模块，它在子菜单里看得见；页面停在最底，没被横滚带着动
+  const p1 = await spyTo(page, 'end');
+  await page.waitForTimeout(300);
+  const p1b = await spyPos(page), v1 = await spyInView(page, sub), on1 = await spyOn(page, sub);
+  check(`${tag}：滑到最底 → 选中 ${mods.at(-1).id}，且它在横向子菜单里完整看得见`, JSON.stringify(on1) === JSON.stringify([mods.at(-1).id]) && v1.ok, { on: on1, ...v1 });
+  check(`${tag}：滑到最底后页面 scrollY 没被横滚改掉（仍是 ${p1.max}）`, p1.y === p1.max && p1b.y === p1.y, { 刚滑完: p1.y, 等300ms后: p1b.y, max: p1.max });
+  // ② 先把子菜单横滑到最右，再竖着滑回顶：选中第一个模块，且它被滚回可见范围；scrollY 是 0
+  await page.evaluate((s) => { const b = document.querySelector(s + ' .in'); b.scrollLeft = b.scrollWidth; }, sub);
+  await spyWait(page);
+  const left0 = await page.evaluate((s) => Math.round(document.querySelector(s + ' .in').scrollLeft), sub);
+  const p2 = await spyTo(page, 0);
+  await page.waitForTimeout(300);
+  const p2b = await spyPos(page), v2 = await spyInView(page, sub), on2 = await spyOn(page, sub);
+  check(`${tag}：子菜单先横滑到最右（scrollLeft ${left0}）再竖着滑回顶 → 选中 ${mods[0].id}，且它被滚回看得见`, JSON.stringify(on2) === JSON.stringify([mods[0].id]) && v2.ok, { on: on2, ...v2 });
+  check(`${tag}：滑回顶后页面 scrollY 仍是 0（横滚不带动页面）`, p2.y === 0 && p2b.y === 0, { 刚滑完: p2.y, 等300ms后: p2b.y });
+  check(`${tag}：A 段滑来滑去，地址 hash 没变（仍是 ${hash0}）`, p2b.hash === hash0, p2b.hash);
 }
 /** 一级菜单上的红色数量：{work, forecast}（没显示的是 null） */
 const badges = (page) => page.evaluate(() => {
@@ -588,6 +635,16 @@ try {
       await scrollSpyCase(page, '#sub-tools', `I ${width} 宽 公共工具`);
       await page.context().close();
     }
+  });
+
+  // ---------- I-2.（2026-11-04 第 2 轮，测试会话写，产品口径 A；研发不改这里的断言）公共工具页 ----------
+  await section('I-2 子菜单跟着滚动·第 2 轮', async () => {
+    let page = await open({ width: 375, height: 740 });
+    await login(page, '/#/tools');
+    await waitFor(page, '#sub-tools');
+    await page.waitForTimeout(500);
+    await subInViewCase(page, '#sub-tools', 'I-2 375 宽 公共工具（A 选中项看得见）', { mustScroll: false });
+    await page.context().close();
   });
 
   check('A、B、D、E、F、G 段没有脚本错误', errors.length === 0, errors);
