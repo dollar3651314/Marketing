@@ -38,6 +38,20 @@ export const EM_CSS = `
 .em .em-err{border:1px solid var(--err);background:var(--err-soft);color:var(--err);border-radius:8px;padding:var(--s3);margin:var(--s3) 0 0;font-size:var(--fs-aux);white-space:pre-wrap}
 .em .em-ok{border:1px solid var(--ok);background:var(--ok-soft);color:var(--ok);border-radius:8px;padding:var(--s3);margin:var(--s3) 0 0;font-size:var(--fs-aux);white-space:pre-wrap}
 .em .em-tip{font-size:var(--fs-aux);color:var(--muted);margin:var(--s2) 0 0}
+/* v5：三个数（A / B / C）。**数字要大、要显眼**，390 宽一眼看得到，所以 34px、三等分、不折叠 */
+.em .em-nums{display:grid;grid-template-columns:1fr 1fr 1fr;gap:var(--s2);margin:0 0 var(--s2)}
+.em .em-cell{border:1px solid var(--line);border-radius:12px;background:var(--surface-2);padding:var(--s3) 4px;text-align:center}
+.em .em-big{display:block;font-size:34px;font-weight:700;line-height:1.1;color:var(--ink)}
+.em .em-big.none{font-size:22px;color:var(--muted)}
+.em .em-cl{font-size:12px;line-height:1.35;color:var(--muted);margin:var(--s1) 0 0}
+/* v5：每轮一行的历史表。窄屏放不下就横着滑，**不缩字**（缩到看不清等于没有） */
+.em .em-histwrap{margin:var(--s3) 0 0;overflow-x:auto;max-width:100%}
+.em .em-hist{width:100%;border-collapse:collapse;font-size:13px;margin:var(--s2) 0 0}
+.em .em-hist th,.em .em-hist td{border-bottom:1px solid var(--line);padding:7px 4px;text-align:center;white-space:nowrap}
+.em .em-hist th{font-size:12px;font-weight:600;color:var(--muted)}
+.em .em-hist td{font-variant-numeric:tabular-nums}
+.em .em-hist tr:last-child td{border-bottom:0}
+.em .em-hist tr.now td{font-weight:700;color:var(--ink)}
 .em .em-fmt{font-family:var(--mono);font-size:12px;line-height:1.6;white-space:pre-wrap;background:var(--surface-2);border:1px solid var(--line);border-radius:8px;padding:var(--s3);margin:var(--s2) 0 0;overflow-wrap:anywhere}
 @media (max-width:420px){.em .em-two{grid-template-columns:1fr}}
 `;
@@ -49,6 +63,17 @@ export const EM_MOD = `<section class="card mod em" id="w-engmem"><header class=
   <div class="em-hero">
     <div class="em-num none" id="em-rate">读取中…</div>
     <p class="em-cap" id="em-rate-cap">跨轮回收成功率 · 到期被考、而且不给提示自己说对了的比例</p>
+  </div>
+
+  <div class="em-nums" id="em-nums" hidden>
+    <div class="em-cell"><b class="em-big none" id="em-a">—</b><p class="em-cl">A<br>自己造的句子</p></div>
+    <div class="em-cell"><b class="em-big none" id="em-b">—</b><p class="em-cl">B<br>靠提示才说出来</p></div>
+    <div class="em-cell"><b class="em-big none" id="em-c">—</b><p class="em-cl">C<br>同一轮回收说对</p></div>
+  </div>
+  <p class="em-cap" id="em-nums-cap" hidden></p>
+  <div class="em-histwrap" id="em-histwrap" hidden>
+    <p class="em-cap">每一轮一行 · 看的是这几个数<b>在不在涨</b>——只看一轮看不出来</p>
+    <table class="em-hist"><thead><tr><th>轮次</th><th>场景</th><th>A</th><th>B</th><th>C</th><th>跨轮考</th><th>说对</th></tr></thead><tbody id="em-hist-b"></tbody></table>
   </div>
 
   <div class="em-step" id="em-s1">
@@ -69,7 +94,7 @@ export const EM_MOD = `<section class="card mod em" id="w-engmem"><header class=
 
   <div class="em-step" id="em-s2">
     <div class="em-sh"><span class="em-n">2</span><span class="em-t">开始这一轮</span><span class="sp"></span><span class="em-sub" id="em-s2-sub"></span></div>
-    <p class="em-tip">点一下，生成一段<b>带着你的记忆</b>的提示词：你的词汇线、今天该回收的句子、今天要教的 3～5 个新词，再加上原来那套规则。复制走，粘进 Gemini Live。</p>
+    <p class="em-tip">点一下，生成一段<b>带着你的记忆</b>的提示词：你的词汇线、今天该回收的句子、<b>今天要教的那 1 个新词</b>，再加上原来那套规则。复制走，粘进 Gemini Live。</p>
     <div class="em-row">
       <button class="btn primary" type="button" id="em-start">开始这一轮</button>
       <button class="btn small primary" type="button" id="em-copy" data-for="em-prompt" hidden>复制</button>
@@ -101,6 +126,9 @@ counts: A=12 B=9 C=4
   <p>这里<b>不做语音、不做对话引擎</b>，对话仍然在 Gemini Live 里进行。我们只做两件事：把你的词汇线和"欠考的句子"<b>留在轮与轮之间</b>，再把它们写进下一轮的提示词。</p>
   <p>你靠提示才说出来的句子，<b>第 1 次隔 1 轮、再隔 3 轮、再隔 7 轮</b>各考一次，三次都不给提示说对了才算学会。说不出来就退回第一档，下一轮重来。</p>
   <p>上面那个数只看<b>跨轮</b>：同一轮之内回收说对了，只能证明你刚才记住了，证明不了你学会了。</p>
+  <p><b>一轮只教 1 个新词</b>（2026-11-04 改的）：第 1 轮真实数据 A=3 B=5 <b>C=0</b>——教的 5 个新词、你卡住的词、它给你念的帮扶句<b>是同一批</b>，等于拿你不会的词来帮你。所以现在新词一次只派 1 个，而且<b>这一轮新教的词不许进帮扶句</b>。</p>
+  <p>它给你念的句子也砍到<b>不超过 5 个词</b>：你真正垮掉的是"Today is I think today's good"这种基本句子在实时压力下组织不起来，不是词不够多。先把简单结构练到不用想。</p>
+  <p>上面 A / B / C 三个数和下面那张表，就是用来看<b>在不在涨</b>的：A 越多越好（自己造得出来），B 和 C 看的是趋势，一轮看不出来。</p>
   <p>全程不花钱：这一块不调任何 AI，只是存和拼字符串。</p></div></details></section>`;
 
 /** 跨轮记忆那一块的脚本（整段 try/catch，出错只影响这一块）。宿主页面先设 window.__engmemBase，例如 '/api/english/' */
@@ -163,6 +191,39 @@ function eRate(r){
   eText('em-rate-cap','跨轮回收成功率 · 到期被考 '+r.asked+' 句，不给提示说对 '+r.passed+' 句');
 }
 
+/* ---- 三个数 + 每轮一行的历史表（v5）---- */
+/* 没报的数写「—」，**不拿 0 冒充**（底线 3） */
+function eN(v){return (v===null||v===undefined)?'—':String(v)}
+function eBig(id,v){var e=eq(id);if(!e)return;e.textContent=eN(v);e.className='em-big'+((v===null||v===undefined)?' none':'');}
+function eNums(r){
+  if(!r){eShow('em-nums',false);eShow('em-nums-cap',false);return;}
+  eShow('em-nums',true);
+  eBig('em-a',r.A);eBig('em-b',r.B);eBig('em-c',r.C);
+  var 考=r['到期考了']||0,对=r['说对了']||0;
+  eText('em-nums-cap','最近一轮是第 '+r.n+' 轮（场景 '+(r['场景']||'')+'）· 跨轮到期被考 '+考+' 句、说对 '+对+' 句'+(考?'':'（这一轮没有到期的句子）'));
+  eShow('em-nums-cap',true);
+}
+function eHist(rows){
+  var b=eq('em-hist-b');if(!b)return;
+  while(b.firstChild)b.removeChild(b.firstChild);
+  if(!rows||!rows.length){eShow('em-histwrap',false);return;}
+  rows.forEach(function(r,i){
+    var tr=document.createElement('tr');
+    if(i===rows.length-1)tr.className='now';
+    [r.n,(r['场景']||''),eN(r.A),eN(r.B),eN(r.C),String(r['到期考了']||0),String(r['说对了']||0)].forEach(function(v){
+      var td=document.createElement('td');td.textContent=String(v);tr.appendChild(td);
+    });
+    b.appendChild(tr);
+  });
+  eShow('em-histwrap',true);
+}
+function eHistory(){
+  return eJson('history').then(function(j){
+    var rows=j['轮次表']||[];
+    eNums(j['最近一轮']);eHist(rows);eRate(j['跨轮回收成功率']);
+  },function(){/* 历史读不到不挡住三步流程，上面那个数照旧 */});
+}
+
 /* ---- 第 2 步 ---- */
 function eStart(){
   if(EM.busy)return;EM.busy=true;
@@ -186,7 +247,7 @@ function eSave(){
     var lines=['第 '+j['轮次']+' 轮存好了：新句子 '+(s['新句子']||0)+' 句，生词 '+(s['生词']||0)+' 个，到期考了 '+(s['到期考了']||0)+' 句、说对 '+(s['说对了']||0)+' 句。'];
     (j['提醒']||[]).forEach(function(w){lines.push('· '+w)});
     var e=eq('em-s3-ok');if(e){e.textContent=lines.join('\\n');e.hidden=false;}
-    t.value='';eRate(j['跨轮回收成功率']);eState();
+    t.value='';eRate(j['跨轮回收成功率']);eState();eHistory();
   },function(e){EM.busy=false;eText('em-s3-msg','');eErr('em-s3-err',e.j||{'出错':e.message});});
 }
 
@@ -237,6 +298,7 @@ function eState(){
     }else{
       eText('em-s2-sub',v['测完了']?('下一轮是第 '+r['这一轮']+' 轮 · 到期要考 '+(j['到期要考']||0)+' 句'):'先把上面的词汇线测完');
     }
+    eNums(j['最近一轮']);
     eText('em-mini','已经跑过 '+(r['已经跑过']||0)+' 轮 · 库里 '+((j['句子']||{})['一共']||0)+' 句（毕业 '+((j['句子']||{})['毕业']||0)+' 句） · 还不认识 '+(j['不认识的词']||0)+' 个词');
   },function(e){eErr('em-s2-err',e.j||{'出错':e.message});});
 }
@@ -246,7 +308,7 @@ var n=eq('em-no');if(n)n.addEventListener('click',function(){eAnswer(false)});
 var st=eq('em-start');if(st)st.addEventListener('click',eStart);
 var sv=eq('em-save');if(sv)sv.addEventListener('click',eSave);
 var cp=eq('em-copy');if(cp)cp.addEventListener('click',function(){emCopy(cp)});
-window.engmemOpen=function(){if(EM.loaded)return;EM.loaded=true;eState();};
+window.engmemOpen=function(){if(EM.loaded)return;EM.loaded=true;eState();eHistory();};
 }catch(e){}
 })();
 `;

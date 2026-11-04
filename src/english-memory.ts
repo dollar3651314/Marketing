@@ -275,6 +275,12 @@ export function parseLog(input: string): LogResult {
 // 四、跨轮回收的间隔
 // ======================================================================
 
+/**
+ * 一轮教几个新词。**1**，不是 3～5（v5，2026-11-04）：第 1 轮真实数据 counts A=3 B=5 **C=0**，
+ * 教的 5 个新词 estimate/reschedule/bandwidth/clarify/constraint 和他 stuck 的词、帮扶句用的词**是同一批**。
+ */
+export const NEW_PER_ROUND = 1;
+
 /** 间隔：第 1 次隔 1 轮、再隔 3 轮、再隔 7 轮；第 3 档再说对就毕业，不再考 */
 export const GAPS = [1, 3, 7] as const;
 /**
@@ -296,6 +302,15 @@ export function nextDue(step: number, round: number, ok: boolean): { step: numbe
 export interface Memory { line: number; avoid: string[]; due: string[]; fresh: { word: string; zh: string }[] }
 
 /**
+ * v5 新加的两条死规则，**原文照抄**（Amos 2026-11-04 第 1 轮真实数据后定的原话，一个字不许改写）。
+ * 单独拎成常量，是为了让测试能逐字比对——改一个字测试就红。
+ */
+export const NEW_WORD_NOT_IN_HELP =
+  '- 今天要教的那个新词，你可以在你自己说的话里用一次让我听到，但**帮我造句子时绝对不许用它**。帮我的句子只许用我已经会的词。';
+export const SHORT_HELP_SENTENCE =
+  '- 你给我念的句子：**不超过 5 个词、只用最简单的结构**（像 "I need more time." "Can you help me?"），不许带从句、不许用我不认识的词。宁可说得幼稚，也不要说得地道。';
+
+/**
  * 拼出完整的一段提示词。结构：
  *   场景（原文）→ 规则（v4 原文）+ 追加的 4 条 → 开始之前（原文）→ 我说 done 的时候（原文）+ #LOG 块要求。
  * **v4 原文一个字没动**，新东西全是追加的。
@@ -304,7 +319,17 @@ export function buildPrompt(seg: Segments, m: Memory): string {
   const 线 = BAND_SAY[Math.max(0, Math.min(4, m.line))];
   const 追加: string[] = [`- 用词范围（这一条优先于其他规则）：${线}。超出这个范围的词一律换成范围内的说法；实在要用，先用一句话解释它。`];
   if (m.avoid.length) 追加.push(`- 下面这些词我明确说过不认识，整场**一个都不要用**：${m.avoid.join('、')}。`);
-  if (m.fresh.length) 追加.push(`- 今天只教这 ${m.fresh.length} 个新词：${m.fresh.map((f) => `${f.word}（${f.zh}）`).join('、')}。每个都要造机会让我**自己说出来**一次，不是你说给我听。别教别的新词。`);
+  if (m.fresh.length) {
+    追加.push(`- 今天只教这 ${m.fresh.length} 个新词：${m.fresh.map((f) => `${f.word}（${f.zh}）`).join('、')}。每个都要造机会让我**自己说出来**一次，不是你说给我听。别教别的新词。`);
+    // v5（2026-11-04，第 1 轮真实数据）：第 1 轮教的 5 个新词、他 stuck 的词、给他念的帮扶句**是同一批**，
+    // 等于拿他不会的词去帮他 → C=0，5 句一句都没回收出来。这条是**原文照抄**的死规则，不许改写。
+    追加.push(NEW_WORD_NOT_IN_HELP);
+  }
+  // v5：他真实说出来的是 "Today is I think today's good" / "it is has it has a small issues"——
+  // **基本句子在实时压力下就垮**，不是词汇不够。帮扶句因此从「不超过 8 个词」收到「不超过 5 个词」，
+  // 这条**优先于** v4 规则段里第 5 级那句（v4 原文一个字不动，用追加覆盖）。原文照抄，不许改写。
+  追加.push('- 下面这一条**优先于上面规则里「每句不超过 8 个词、不带从句」那一句**（两边冲突时以这一条为准）：');
+  追加.push(SHORT_HELP_SENTENCE);
   if (m.due.length) {
     追加.push(
       `- 跨轮回收（这一轮最重要的事）：下面这 ${m.due.length} 句是我**前几轮靠提示才说出来的**，今天到期要考。` +
@@ -364,6 +389,18 @@ export function recallRate(rounds: { recall_due: number; recalled: number }[]): 
   return { asked, passed, rate: asked ? passed / asked : null };
 }
 
+/**
+ * 每一轮一行（v5）：**数据已经在 en_round 里，不新建表、不新增迁移**。
+ * A / B / C 是他贴回来的 #LOG 里 counts 那一行报的数，**没报就是 null**，页面写「—」，
+ * **不拿 0 冒充**（底线 3）。到期考了 / 说对了 是跨轮那两个数（北极星的分母和分子）。
+ * 只列已经贴回来的轮（还开着的轮一个数都没有，列出来只会让人以为是 0）。
+ */
+export function roundRows(rounds: RoundRow[]) {
+  return rounds
+    .filter((r) => r.logged_at !== null)
+    .map((r) => ({ n: r.n, 场景: r.scene, A: r.a, B: r.b, C: r.c, 到期考了: r.recall_due, 说对了: r.recalled, 贴回来的时间: r.logged_at }));
+}
+
 export async function englishApi(env: Env, req: Request, now: number, sub: string): Promise<Response | null> {
   // ---- 看一眼现在是什么情况（页面每次打开都读这个） ----
   if (sub === 'state' && req.method === 'GET') {
@@ -381,7 +418,20 @@ export async function englishApi(env: Env, req: Request, now: number, sub: strin
       到期要考: due.length,
       句子: { 一共: sents.length, 毕业: sents.filter((s) => s.step >= GAPS.length).length },
       不认识的词: words.filter((w) => !w.known).length,
+      最近一轮: (() => { const rows = roundRows(rounds); return rows.length ? rows[rows.length - 1] : null; })(),
       最近几轮: rounds.slice(-8).reverse().map((r) => ({ n: r.n, 场景: r.scene, 贴回来了: r.logged_at !== null, A: r.a, B: r.b, C: r.c, 到期考了: r.recall_due, 说对了: r.recalled })),
+    });
+  }
+
+  // ---- 每一轮一行的历史（v5）：一个数在不在涨，看一轮看不出来 ----
+  if (sub === 'history' && req.method === 'GET') {
+    const { rounds } = await readState(env, now);
+    const rows = roundRows(rounds);
+    return json({
+      轮次表: rows,
+      最近一轮: rows.length ? rows[rows.length - 1] : null,
+      跨轮回收成功率: recallRate(rounds),
+      一共几轮: rows.length,
     });
   }
 
@@ -413,12 +463,14 @@ export async function englishApi(env: Env, req: Request, now: number, sub: strin
 
     const n = (rounds.length ? rounds[rounds.length - 1].n : 0) + 1;
     const dueRows = sents.filter((s) => s.step < GAPS.length && s.due_round > 0 && s.due_round <= n).slice(0, 6);
-    // 今天要教的 3～5 个新词：他说"不认识"、而且还没教过的，最常用的先教（band 小的在前）。
+    // v5：今天只教 **1 个**新词（原来是 3～5 个）。第 1 轮真实数据：一次教 5 个，C=0——
+    // 教的词、他 stuck 的词、帮他造句子用的词是同一批，等于拿他不会的词去帮他。
+    // 他说"不认识"、而且还没教过的，最常用的先教（band 小的在前）。
     // 词表里的词带中文解释；对话里 stuck 报上来的生词没有解释，就照实说它是哪来的（不编一个中文意思，底线 3）
     const freshRows = words
       .filter((w) => !w.known && !w.taught_round)
       .sort((a, b) => a.band - b.band || a.word.localeCompare(b.word))
-      .slice(0, 5)
+      .slice(0, NEW_PER_ROUND)
       .map((w) => ({ word: w.word, zh: BY_WORD.get(w.word)?.zh ?? '上一轮你卡住的词' }));
     // "整场一个都不要用"的黑名单：不认识、而且今天也不教的词（太长会把提示词撑爆，取最靠前的 30 个）
     const freshSet = new Set(freshRows.map((f) => f.word));
