@@ -238,6 +238,33 @@ try {
   await page.locator('#co-need li.done button').click();
   await page.waitForSelector('#co-msg.ok');
   check('取消：变回未做，红数字回到 9', (await page.locator('#co-need li.done').count()) === 0 && (await text(page, '.tile.need .n')) === '9', await text(page, '#co-msg'));
+  // 上面这条 2026-11-03 在 main 飘红过（等 #co-msg.ok 等满 30 秒）。根因不是机器慢：页面每收到一次 GET /api/company 就整块重画 #co-body，
+  // 迟到的那次赶上点按钮就把这一下点击吞掉（谁也没发请求），落在点完之后就把提示抹掉、还用旧快照把这一条变回"已做"。
+  // 下面这条守住改法（《项目地图》第 5 节第 11 条）：把一次读的响应先扣在手里，期间点"我做了"，再放它落地——旧快照必须被丢掉。
+  {
+    let hold = true, release = null;
+    await page.route('**/api/company', async (route) => {
+      if (!hold || route.request().method() !== 'GET') return route.continue();
+      hold = false;
+      const r = await route.fetch();          // 此刻库里 T3 还是"没做"：这就是那份会迟到的旧快照
+      await new Promise((x) => { release = x; });
+      await route.fulfill({ response: r });
+    });
+    await page.click('#co-refresh');
+    for (let i = 0; !release && i < 500; i++) await new Promise((x) => setTimeout(x, 20));
+    if (!release) throw new Error('点"刷新"之后没等到 GET /api/company');
+    await page.locator('#co-need li', { hasText: 'T3' }).locator('button').click();
+    await page.waitForSelector('#co-msg.ok');
+    release();                                 // 旧快照现在才落地
+    await page.waitForFunction(() => document.getElementById('co-refresh').textContent === '刷新');
+    check('迟到的读不能盖掉刚点的"我做了"：提示还在、这条还是灰的、红数字还是 8',
+      (await text(page, '#co-msg')).startsWith('✓ 已记下：T3') && (await page.locator('#co-need li.done').count()) === 1 && (await text(page, '.tile.need .n')) === '8',
+      [await text(page, '#co-msg'), await page.locator('#co-need li.done').count(), await text(page, '.tile.need .n')]);
+    await page.unroute('**/api/company');
+    await page.locator('#co-need li.done button').click();   // 还原成"没做"，后面几条仍按 9 条算
+    await page.waitForSelector('#co-msg.ok');
+    check('还原：再取消一次，红数字回到 9', (await page.locator('#co-need li.done').count()) === 0 && (await text(page, '.tile.need .n')) === '9', await text(page, '.tile.need .n'));
+  }
 
   // 4. 超过 7 天变灰、解析失败、要你决定的 PR、切换周报
   await ingest('agents', [

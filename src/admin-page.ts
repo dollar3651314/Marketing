@@ -491,7 +491,7 @@ function route(){if(!authed)return;let h=hashOf();
   if(page==='tools'&&view==='assets'){try{window.assetsOpen();}catch(e){}}
   if(page==='tools'&&view==='tts'){try{window.ttsOpen();}catch(e){}}
   if(page==='tools'&&view==='voice'){try{window.voiceOpen();}catch(e){}}
-  if(page==='company'){try{companyOpen();}catch(e){$('co-at').textContent='这一页出错了：'+e.message;}}
+  if(page==='company'){try{companyOpen(prev==='company');}catch(e){$('co-at').textContent='这一页出错了：'+e.message;}}
   // 批 2：在公共工具、公司总览刷新时，一级菜单上的待办数量也马上读出来（以前要切到工作台才有）
   if(page==='work'||page==='project'){try{platformOpen(page,mod);}catch(e){}}else{try{platformStop();platformPeek();}catch(e){}}
   const el=mod&&$(mod);if(el&&!el.closest('[hidden]'))el.scrollIntoView({block:'start'});else if(prev!==page||prevProj!==proj)window.scrollTo(0,0);}
@@ -732,7 +732,8 @@ function coDetail(it){const D=it.detail;const d=el('div','detail');
   if(D.href){const a=el('a','gh',/^https:\\/\\/github\\.com\\//.test(D.href)?'在 GitHub 打开':'打开原文');a.href=D.href;a.target='_blank';a.rel='noopener';d.append(a);}
   return d;}
 async function markDone(it,done,b){const label=b.textContent;b.disabled=true;b.textContent='处理中…';const m=$('co-msg');m.className='msg';m.textContent='';
-  try{const r=await call('/api/company/done',{key:it.key,done});if(done)CO.done.set(it.key,r.at);else CO.done.delete(it.key);renderCompany();
+  try{const r=await call('/api/company/done',{key:it.key,done});CO_SEQ++;// 这之前发出的读拿的是旧状态，别让它盖掉这一下
+    if(done)CO.done.set(it.key,r.at);else CO.done.delete(it.key);renderCompany();
     const m2=$('co-msg');m2.className='msg ok';m2.textContent=done?'✓ 已记下：'+(it.id?it.id+' ':'')+'做完了（'+tw(r.at)+'）':'已取消"我做了"：'+(it.id||it.text||'');}
   catch(e){b.disabled=false;b.textContent=label;m.className='msg';m.textContent='没记上：'+e.message+'，请再点一次';}}
 function projectsCard(){const pj=blocks('projects')[0];const sts=blocks('status');const ver=pj&&pj.payload&&pj.payload.version;
@@ -794,13 +795,21 @@ function renderCompany(){const B=$('co-body');B.replaceChildren();
   if(!CO.data.configured&&!CO.data.blocks.length&&!CO.data.weekly){const c=card('co-off','还没开通',null);c.sec.append(el('p','co-empty','公司数据还没接上：等 Amos 填好连接各仓库的令牌后，各仓库合并或开、关 PR 时会自动把最新情况送来。'));B.append(c.sec);return;}
   const need=needItems();const two=el('div','two');two.append(peopleCard(),learnCard());
   B.append(heroTiles(need),needCard(need),projectsCard(),two,nextCard(),healthCard());fitWeek();}
-async function loadCompany(week){const b=$('co-refresh');b.disabled=true;b.textContent='正在刷新…';
-  try{const j=await call('/api/company'+(week?'?week='+encodeURIComponent(week):''));CO.data=j;CO.week=week||'';if(!week)CO.latest=j.weekly;CO.done=new Map(j.done.map(x=>[x.key,x.at]));
+/* 读取的序号和在飞数量：同一时刻可能有好几次读（进页、切回这一页、点刷新、换周报），每次读回来都会整块重画 #co-body。
+   不管顺序的话，先发后到的那次会用旧快照盖掉刚点的"我做了 / 取消"：提示被抹掉、那一条又变回原样；
+   正赶上点按钮时重画，按下和松开之间整棵子树被换掉，这一下点击直接丢了（谁也没发请求）。
+   所以：只认最新一次读的结果（CO_SEQ），改过状态就把更早的读作废；刷新按钮等所有读都回来了再恢复（CO_N）。 */
+let CO_SEQ=0,CO_N=0;
+async function loadCompany(week){const seq=++CO_SEQ;const b=$('co-refresh');CO_N++;b.disabled=true;b.textContent='正在刷新…';
+  try{const j=await call('/api/company'+(week?'?week='+encodeURIComponent(week):''));
+    if(seq!==CO_SEQ)return;// 这次读已经过期（有更新的读，或页面上刚改过状态）：丢掉，别盖掉新的
+    CO.data=j;CO.week=week||'';if(!week)CO.latest=j.weekly;CO.done=new Map(j.done.map(x=>[x.key,x.at]));
     $('co-at').textContent='读取于 '+tw(j.now).slice(11)+(j.configured?'':'（还没开通，显示的是以前收到的）');renderCompany();}
-  catch(e){if(e.message==='请重新登录')return;$('co-at').textContent='暂时读不到：'+e.message+'，点"刷新"再试';
+  catch(e){if(e.message==='请重新登录'||seq!==CO_SEQ)return;$('co-at').textContent='暂时读不到：'+e.message+'，点"刷新"再试';
     if(!CO.data){const B=$('co-body');B.replaceChildren();const c=card('co-fail','暂时读不到',null);c.sec.append(el('p','co-empty','暂时读不到：'+e.message));const r=el('button','btn','重试');r.type='button';r.addEventListener('click',()=>loadCompany(''));const p=el('p','co-empty');p.append(r);c.sec.append(p);B.append(c.sec);}}
-  finally{b.disabled=false;b.textContent='刷新';}}
-var companyOpen=function(){if(!CO.data)$('co-body').replaceChildren(el('p','co-empty','正在读取…'));loadCompany(CO.week);};
+  finally{if(!--CO_N){b.disabled=false;b.textContent='刷新';}}}
+/** 打开"公司"页。already = 本来就停在这一页（route() 可能因为别的原因再跑一遍，比如项目名单变了）：已经读到或正在读就不再读一遍 */
+var companyOpen=function(already){if(already&&(CO.data||CO_N))return;if(!CO.data)$('co-body').replaceChildren(el('p','co-empty','正在读取…'));loadCompany(CO.week);};
 $('co-refresh').addEventListener('click',()=>loadCompany(CO.week));
 }catch(e){var companyOpen=function(){$('co-at').textContent='这一页出错了：'+e.message;};}
 </script>
