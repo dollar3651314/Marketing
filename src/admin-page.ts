@@ -1638,7 +1638,8 @@ function renderAll(){if(!PL.data)return;const now=Date.now();const all=sorted(it
   subSpySoon();}
 async function getJ(u){const r=await fetch(u,{credentials:'same-origin'});if(r.status===401){showLogin('请重新登录');throw new Error('请重新登录');}if(!r.ok){const j=await r.json().catch(()=>({}));throw new Error(j.error||'出错了（'+r.status+'）');}return r.json();}
 async function refresh(){if(PL.busy){PL.again=true;return;}PL.busy=true;
-  const want=curProj();
+  // 批 B：只有停在项目页时才读「这个项目的清单条数」；停在公共工具、公司总览（PL.peek）时不读，免得和清单自己那次 product=forecast 的读取一模一样、重复发两次
+  const want=PL.page==='project'?curProj():'';
   try{const [c,qa,qp,ac]=await Promise.all([getJ('/api/company'),getJ('/api/queue?status=pending').catch(()=>null),want?getJ('/api/queue?status=pending&product='+encodeURIComponent(want)).catch(()=>null):Promise.resolve(null),getJ('/api/active').catch(()=>undefined)]);
     PL.data=c;PL.done=new Map((c.done||[]).map((x)=>[x.key,x.at]));PL.reports=c.reports||[];PL.qAll=qa;if(want)PL.qProj[want]=qp;if(ac!==undefined)PL.active=ac;PL.err='';PL.errWhy='';PL.at=PL.okAt=Date.now();
     // 项目名单来自 projects 块：变了就重画一级菜单（setProjects 内部会在需要时重新路由）
