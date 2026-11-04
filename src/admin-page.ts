@@ -53,7 +53,7 @@ body{margin:0;background:var(--bg);color:var(--ink);font:var(--fs-body)/1.6 "Not
 .top button{font:inherit;font-size:13px;background:none;border:1px solid #33425F;color:#C3CEE0;border-radius:99px;padding:4px 12px;cursor:pointer;white-space:nowrap;flex:0 0 auto}
 .top button:hover{border-color:#5B6B8C;color:#fff}
 .more-menu{position:relative;flex:0 0 auto}.more-menu>summary{display:none;list-style:none;cursor:pointer}.more-menu>summary::-webkit-details-marker{display:none}
-.tacts{display:flex;gap:var(--s3);align-items:center}
+.tacts{display:flex;gap:var(--s3);align-items:center}.more-menu:not([open]) .tacts{display:none}
 .tacts button:focus-visible,.more-menu>summary:focus-visible{outline:2px solid var(--amber);outline-offset:2px}
 .sub{position:relative;background:var(--surface);border-bottom:1px solid var(--line)}
 .sub .in{max-width:1120px;margin:0 auto;display:flex;gap:var(--s1);overflow-x:auto;scrollbar-width:none;padding:0 max(var(--s5),env(safe-area-inset-left))}
