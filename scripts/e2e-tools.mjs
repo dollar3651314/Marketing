@@ -33,6 +33,7 @@
  *      #t-voice 在 #t-tts 的一个 details 里、默认收起；跟帖筛选收进 details#q-filters（#f-prod、#f-plat、#f-sort、[data-rg]、#f-from、#f-to 在里面，[data-f] 在外面）；
  *      每条跟帖一个主按钮（一键回复 / 今天已到上限）；删除按两次；字号阶梯、不横滚、底部空白 ≤160px、深色对比度 ≥4.5。1280 / 375 × 明暗。量法在 scripts/e2e-look.mjs。
  *   K.（2026-11-04 批 B 验收补）/api/queue 的 product 原样匹配已知项目、不认识的（含大小写不对）400；Practical 项目页"用到的工具"只算 Practical（0 条、上限 10）；公共工具读取失败红条 #t-stale + #t-retry。
+ *   L.（2026-11-04 批 B 验收补，🔴）清单读取只认最新一次：扣住旧读取、改选别的项目再放行，列表 / 条数 / 下拉仍是最新选的；批量删除只删最新选的；旧的成功结果不收掉新的失败红条。
 *   C. 按项目看用量（D-3）：#t-byproj 每个项目一行，Gemini 次数加起来 = 用量总额度里 Gemini 的请求数；写着以前没分项目、"测试 AI"那行是平台自己。
  *
  * 页面约定（照原型 v2；研发要改名就同一个 PR 改这里并在 PR 描述写明）：
@@ -1054,6 +1055,114 @@ try {
     check('K 段没有脚本错误', errs4.length === 0, errs4);
   });
   if (srv4) srv4.stop();
+}
+
+// ======================================================================
+// L 段（2026-11-04 批 B 验收补，测试会话写，研发不改断言；主会话判 🔴）：清单读取只认最新一次，慢的旧结果不能盖掉新的
+// 来由：src/admin-page.ts load() 不分先后——先选 forecast（读取慢）、马上改选 demo2，慢的那次晚到就把列表换成 forecast 的，
+//   下拉却还是 demo2；这时"删除筛选出的这些"按列表删，确认框写"待回 · demo2"，删掉的却是 forecast 的。另外旧的成功结果会收掉新的失败红条。
+// 做法（确定性）：扣住第一次读取（product=forecast）→ 改选 demo2、等它的结果画完 → 再放行旧的、等它回来、页面跑完 → 看页面。
+// 样例：forecast 2 条待回（@la、@lb），demo2 2 条待回（@lc、@ld）。
+// ======================================================================
+{
+  const LQ = [['@la', 'forecast', 90], ['@lb', 'forecast', 80], ['@lc', 'demo2', 70], ['@ld', 'demo2', 60]];
+  const LSQL = LQ.map(([a, p, s], i) => `INSERT INTO queue (at, updated_at, product, platform, post_id, author, snippet, post_at, score, draft, source, status, done_day, engine, reasons) VALUES (${[T + 1000 * (9 - i), T + 1000 * (9 - i), p, 'x', '195000000000000000' + i, a, a + ' 的原帖', null, s, a + ' 的草稿', '', 'pending', null, 'gemini', '[]'].map(q).join(', ')});`).join('\n');
+  let srv5 = null;
+  const errs5 = [];
+  await section('L 清单读取只认最新一次', async () => {
+    srv5 = await startServer({ name: 'e2e-tools-l', vars: { DAILY_REPLY_CAP: '10' }, seedSql: LSQL });
+    const ctx = await browser.newContext({ viewport: { width: 1280, height: 900 } });
+    const page = await ctx.newPage();
+    curPage = page;
+    page.on('pageerror', (e) => errs5.push(e.message));
+    let qIn = 0;
+    const isQ = (r) => /\/api\/queue\?/.test(r.url());
+    page.on('request', (r) => { if (isQ(r)) qIn++; });
+    page.on('requestfinished', (r) => { if (isQ(r)) qIn--; });
+    page.on('requestfailed', (r) => { if (isQ(r)) qIn--; });
+    const qSettled = async () => { const t0 = Date.now(); while (qIn > 0) { if (Date.now() - t0 > WAIT) throw new Error(`等清单读取回来等了 ${WAIT}ms（在途 ${qIn}）`); await new Promise((ok) => setTimeout(ok, 20)); } await page.evaluate(() => new Promise((ok) => setTimeout(ok, 0))); };
+    const view = () => page.evaluate(() => ({ prod: document.getElementById('f-prod').value, who: [...document.querySelectorAll('#list .item .who a')].map((a) => a.textContent).sort(), total: (document.getElementById('total')?.textContent || '').trim(), stale: !document.getElementById('t-stale')?.hidden }));
+    const get = (u) => page.evaluate(async (x) => { const r = await fetch(x, { credentials: 'same-origin' }); return r.json().catch(() => null); }, u);
+    const enter = async () => {
+      await page.goto(srv5.BASE + '/#/tools/queue');
+      if (await page.locator('#pw').isVisible().catch(() => false)) { await page.fill('#pw', PASS); await page.click('#go'); }
+      await page.waitForSelector('#list .item', { timeout: WAIT });
+      await qSettled();
+      await reveal(page, '#f-prod');
+    };
+    /**
+     * 扣住接下来所有 product=forecast 的读取（选一次下拉页面会发两次同样的读取，两次都扣），放行后一起送回；
+     * 返回 { seen: 第一次已经发出, release: 放行并取消扣留 }。浏览器自己把重复请求合并掉时 continue 会报"已处理"，那一次本来就不会回到页面，忽略
+     */
+    const holdForecast = async () => {
+      let open, seenOk;
+      const gate = new Promise((ok) => { open = ok; });
+      const seen = new Promise((ok) => { seenOk = ok; });
+      const RE = /\/api\/queue\?.*product=forecast/;
+      const fn = async (r) => { seenOk(); await gate; await r.continue().catch(() => {}); };
+      await page.route(RE, fn);
+      return { seen, release: async () => { open(); await page.unroute(RE, fn); } };
+    };
+
+    // ③ 先测红条：旧的（forecast）成功结果晚到，不能收掉新的（demo2）失败红条
+    await enter();
+    {
+      const h = await holdForecast();
+      await page.selectOption('#f-prod', 'forecast');
+      await h.seen;
+      await page.route(/\/api\/queue\?.*product=demo2/, (r) => r.abort('failed'), { times: 1 });
+      const failed = page.waitForEvent('requestfailed', { predicate: (r) => /product=demo2/.test(r.url()), timeout: WAIT });
+      await page.selectOption('#f-prod', 'demo2');
+      await failed;
+      await page.evaluate(() => new Promise((ok) => setTimeout(ok, 0))); // forecast 那次还扣着、在途数不会归零：只让页面画完 demo2 的失败
+      await page.waitForSelector('#t-stale', { state: 'visible', timeout: WAIT }).catch(() => {});
+      const before = await view();
+      const back = page.waitForResponse((r) => /product=forecast/.test(r.url()), { timeout: WAIT });
+      await h.release();
+      await back;
+      await qSettled();
+      const after = await view();
+      check('L ③ 先选 forecast（读取被扣住）、改选 demo2 读取失败 → 红条出现；再放行旧的 forecast 成功结果：红条还在、列表没被换成 forecast 的', before.stale && after.stale && after.prod === 'demo2' && !same(after.who, ['@la', '@lb']), { before, after });
+    }
+    await page.unrouteAll({ behavior: 'ignoreErrors' });
+
+    // ① ② 列表、条数、下拉始终是最新选的项目；这时批量删除只删最新选的项目
+    await page.reload();
+    await page.waitForSelector('#app:not([hidden])', { timeout: WAIT });
+    await enter();
+    {
+      const h = await holdForecast();
+      await page.selectOption('#f-prod', 'forecast');
+      await h.seen;
+      const dr = page.waitForResponse((r) => /product=demo2/.test(r.url()), { timeout: WAIT });
+      await page.selectOption('#f-prod', 'demo2');
+      await dr;
+      await page.waitForFunction(() => document.getElementById('f-prod').value === 'demo2' && /共\s*2\s*条/.test(document.getElementById('total')?.textContent || ''), null, { timeout: WAIT }).catch(() => {});
+      const mid = await view();
+      const back = page.waitForResponse((r) => /product=forecast/.test(r.url()), { timeout: WAIT });
+      await h.release();
+      await back;
+      await qSettled();
+      const v = await view();
+      check('L ① 先选 forecast（读取被扣住）、改选 demo2、再放行旧的：下拉、列表、条数都还是 demo2 的（@lc、@ld，共 2 条）', v.prod === 'demo2' && same(v.who, ['@lc', '@ld']) && /共\s*2\s*条/.test(v.total), { 放行前: mid, 放行后: v });
+      // ② 批量删除：只删 demo2 的，forecast 一条没少
+      await reveal(page, '#bulk');
+      const bt = (await page.locator('#bulk').innerText().catch(() => '')).trim();
+      await page.click('#bulk', { timeout: WAIT });
+      const ct = (await page.locator('#bulk-text').innerText().catch(() => '')).trim();
+      const del = page.waitForResponse((r) => /\/api\/queue\/delete/.test(r.url()), { timeout: WAIT });
+      await page.click('#bulk-yes', { timeout: WAIT });
+      const body = await (await del).json().catch(() => null);
+      await qSettled();
+      const fc = await get('/api/queue?status=pending&product=forecast');
+      const all = await get('/api/queue?status=pending');
+      const left = (all?.items || []).map((x) => x.author).sort();
+      check('L ② 这时"删除筛选出的这些"→ 确认：按钮和确认框写 2 条、demo2；删掉的只是 demo2 的 2 条，forecast 的 2 条一条没少（查 /api/queue）', /2\s*条/.test(bt) && /2\s*条/.test(ct) && /demo2/.test(ct) && body?.deleted === 2 && fc?.total === 2 && same(left, ['@la', '@lb']), { 按钮: bt, 确认框: ct, 删了: body, forecast剩: fc?.total, 全部剩: left });
+    }
+    await ctx.close();
+    check('L 段没有脚本错误', errs5.length === 0, errs5);
+  });
+  if (srv5) srv5.stop();
 }
 
 await Promise.all(pendingShots);
