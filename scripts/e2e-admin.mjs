@@ -236,7 +236,17 @@ try {
   }
 
   // 6. 切回旧三页
-  await page.click('#nav');
+  // 批 C（已批准口径：公司总览顶栏去掉"← 跟帖评论清单""插件下载"）：停在公司总览时顶栏只剩"公司总览"（选中）和"登出"
+  {
+    const top = await page.evaluate(() => {
+      const shown = (e) => !!e && !e.closest('[hidden]') && !!e.getClientRects().length && getComputedStyle(e).visibility !== 'hidden';
+      const btns = [...document.querySelectorAll('#top button, #top a')].filter(shown).map((b) => b.textContent.trim());
+      return { loose: btns.filter((t) => /跟帖评论清单|插件下载/.test(t)), nav: shown(document.getElementById('nav')), extnav: shown(document.getElementById('extnav')), cur: document.getElementById('conav')?.getAttribute('aria-current') ?? null };
+    });
+    check('批 C：公司总览页顶栏没有"← 跟帖评论清单"和"插件下载"，"公司总览"按钮 aria-current="page"', top.loose.length === 0 && !top.nav && !top.extnav && top.cur === 'page', top);
+  }
+  // 批 C 改：改前 page.click('#nav')（公司总览顶栏的"← 跟帖评论清单"，批 C 起公司总览上不显示）；改后点一级菜单"公共工具"#nav1-tools（用户也是这样点），默认就是跟帖评论清单
+  await page.click('#nav1-tools');
   await page.waitForSelector('#v-list:not([hidden]) .empty');
   check('切回清单：清单页正常（空清单的提示）', (await text(page, '#title')) === '跟帖评论清单' && !(await visible(page, '#v-company')) && (await text(page, '#list')).includes('没有待回的帖子'), await text(page, '#list'));
   await page.click('#nav');
