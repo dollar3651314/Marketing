@@ -31,12 +31,12 @@ export const ADMIN_PAGE = `<!doctype html>
    字号只用 5 级：页面标题 --fs-page、模块标题 --fs-mod、正文 --fs-body、辅助 --fs-aux、大数字 --fs-num（12px 只给角标标签）；间距 4/8/12/16/24/32/48。
    --muted、--ok 比原型深一点点：原型的值在 --bg、--gray-soft 上对比度不到 4.5:1（WCAG AA）。 */
 :root{--bg:#F3F5F8;--surface:#fff;--surface-2:#F7F9FB;--ink:#13203A;--ink-2:#3D4A60;--muted:#616D80;--line:#E4E8EF;--navy:#0F1B33;--hero-bg:#0F1B33;--hero-line:transparent;
-  --teal:#14B8A6;--teal-ink:#0B7A6E;--teal-soft:#E2F6F3;--amber:#B45309;--amber-soft:#FEF3E2;--ok:#147A3A;--ok-soft:#E5F5EA;--err:#C0262D;--err-strong:#C0262D;--err-soft:#FDECEC;--gray-soft:#EEF1F5;--th:#6B3FA0;--stale:#8A94A6;
+  --teal:#14B8A6;--teal-ink:#0B7A6E;--teal-soft:#E2F6F3;--amber:#B45309;--amber-soft:#FEF3E2;--ok:#147A3A;--ok-soft:#E5F5EA;--err:#C0262D;--err-strong:#C0262D;--amber-strong:#B45309;--err-soft:#FDECEC;--gray-soft:#EEF1F5;--th:#6B3FA0;--stale:#8A94A6;
   --mono:ui-monospace,"SF Mono",Menlo,Consolas,monospace;--shadow:0 1px 2px rgba(15,27,51,.04),0 4px 14px rgba(15,27,51,.05);
   --fs-page:24px;--fs-mod:18px;--fs-body:15px;--fs-aux:13px;--fs-num:30px;
   --s1:4px;--s2:8px;--s3:12px;--s4:16px;--s5:24px;--s6:32px;--s7:48px;--r-card:14px;--r-btn:10px;color-scheme:light}
 @media (prefers-color-scheme: dark){:root{--bg:#0B1220;--surface:#121B2C;--surface-2:#172238;--ink:#E7ECF4;--ink-2:#BAC4D6;--muted:#8D99AE;--line:#223049;--navy:#08101F;--hero-bg:#15233F;--hero-line:#3A5285;
-  --teal:#2DD4BF;--teal-ink:#5EEAD4;--teal-soft:#0F3632;--amber:#F5A524;--amber-soft:#382912;--ok:#4ADE80;--ok-soft:#12301E;--err:#F87171;--err-strong:#DC2626;--err-soft:#3A181B;--gray-soft:#1C2740;--th:#B993E6;--stale:#6B7689;--shadow:none;color-scheme:dark}}
+  --teal:#2DD4BF;--teal-ink:#5EEAD4;--teal-soft:#0F3632;--amber:#F5A524;--amber-soft:#382912;--ok:#4ADE80;--ok-soft:#12301E;--err:#F87171;--err-strong:#DC2626;--amber-strong:#B45309;--err-soft:#3A181B;--gray-soft:#1C2740;--th:#B993E6;--stale:#6B7689;--shadow:none;color-scheme:dark}}
 *{box-sizing:border-box}[hidden]{display:none!important}
 body{margin:0;background:var(--bg);color:var(--ink);font:var(--fs-body)/1.6 "Noto Sans TC","PingFang TC","Microsoft JhengHei",sans-serif;-webkit-font-smoothing:antialiased}
 /* 外框：顶栏（一级菜单：工作台 · 项目 · 公共工具）+ 二级菜单（直通模块），两层一起固定在屏幕顶部；地址用 #/work/todo 这类锚点 */
@@ -55,6 +55,7 @@ body{margin:0;background:var(--bg);color:var(--ink);font:var(--fs-body)/1.6 "Not
 .top .sp{flex:1}
 .top button{font:inherit;font-size:13px;background:none;border:1px solid #33425F;color:#C3CEE0;border-radius:99px;padding:4px 12px;cursor:pointer;white-space:nowrap;flex:0 0 auto}
 .top button:hover{border-color:#5B6B8C;color:#fff}
+.top button[aria-current="page"]{background:#fff;border-color:#fff;color:#0F1B33;font-weight:700}
 .more-menu{position:relative;flex:0 0 auto}.more-menu>summary{display:none;list-style:none;cursor:pointer}.more-menu>summary::-webkit-details-marker{display:none}
 .tacts{display:flex;gap:var(--s3);align-items:center}.more-menu:not([open]) .tacts{display:none}
 .tacts button:focus-visible,.more-menu>summary:focus-visible{outline:2px solid var(--amber);outline-offset:2px}
@@ -80,6 +81,7 @@ h3.mh{font-size:var(--fs-body)}
   .more-menu>summary{display:block;font-size:14px;line-height:1;color:#C3CEE0;border:1px solid #33425F;border-radius:99px;padding:5px 10px}
   .tacts{position:absolute;right:0;top:calc(100% + 10px);flex-direction:column;align-items:stretch;gap:2px;padding:6px;min-width:150px;background:var(--surface);border:1px solid var(--line);border-radius:12px;box-shadow:0 8px 24px rgba(0,0,0,.18);z-index:40}
   .tacts button{color:var(--ink);border:0;border-radius:8px;padding:8px 12px;text-align:left;font-size:14px}.tacts button:hover{background:var(--gray-soft);color:var(--ink)}
+  .tacts button[aria-current="page"]{background:var(--gray-soft);color:var(--ink)}
   .sub .in{padding:0 var(--s2)}.sub a{height:42px;padding:0 10px}
   main{padding:var(--s4) max(var(--s4),env(safe-area-inset-right)) var(--s7) max(var(--s4),env(safe-area-inset-left))}}
 .sub .in.more,.nav1.more{-webkit-mask-image:linear-gradient(90deg,#000 84%,transparent);mask-image:linear-gradient(90deg,#000 84%,transparent)}
@@ -117,6 +119,7 @@ input[aria-invalid="true"]{border-color:var(--err);background:var(--err-soft)}
 .empty{padding:32px 12px;text-align:center;color:var(--muted)}
 .login{max-width:360px;margin:12vh auto 0;background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:20px;display:grid;gap:10px}
 .login input{padding:10px 12px;background:var(--bg)}
+.l-fail{display:flex;gap:8px;align-items:center;flex-wrap:wrap;padding:8px 10px;border-radius:8px;background:var(--err-soft);color:var(--err);font-size:var(--fs-aux)}.l-fail span{flex:1 1 12em}
 .msg{margin:0;font-size:14px;color:var(--err)}.msg:empty{display:none}.msg.ok{color:var(--ok)}
 /* 用量监控：Cloudflare 自己说"账号额度用完了"那条红字（置顶、到下一个 UTC 日自动不显示）和"这个数靠不靠得住"的说明 */
 .acct{margin:0 0 10px;padding:12px 14px;border-radius:10px;background:var(--err-soft);color:var(--err);border:1px solid var(--err);font-size:14px;font-weight:700;line-height:1.6}
@@ -141,7 +144,7 @@ th{font-size:12px;color:var(--muted);font-weight:600}td.n{text-align:right}
 #v-company .list li{display:grid;grid-template-columns:72px minmax(0,1fr);gap:var(--s1) var(--s3);padding:var(--s3) var(--s5);border-top:1px solid var(--line);align-items:baseline}#v-company .list li:first-child{border-top:0}
 #v-company .list .who{font-size:var(--fs-aux);color:var(--muted)}#v-company .list .what{min-width:0;overflow-wrap:anywhere}#v-company .list a{color:var(--ink)}
 #co-body{gap:var(--s6)}#v-company .crumb .sp{flex:1}#v-company #co-at{font-size:var(--fs-aux);color:var(--muted)}
-#v-company table td.num{white-space:nowrap}#v-company table :is(th,td):first-child{padding-left:var(--s5)}#v-company table :is(th,td):last-child{padding-right:var(--s5)}
+#v-company table{font-size:var(--fs-body)}#v-company table td.num{white-space:nowrap}#v-company table :is(th,td):first-child{padding-left:var(--s5)}#v-company table :is(th,td):last-child{padding-right:var(--s5)}
 @media (max-width:640px){#co-body{gap:var(--s5)}#v-company table.stack td{padding-left:var(--s4);padding-right:var(--s4)}#v-company .co-err{margin:var(--s3) var(--s4) 0}#v-company .list li{padding:var(--s3) var(--s4);grid-template-columns:minmax(0,1fr)}}
 /* 工作台、项目页（工作平台批 1，原型 v2）：样式都限定在 .plat 里，不影响清单、用量、插件下载和"公司总览" */
 .plat .card{background:var(--surface);border:1px solid var(--line);border-radius:var(--r-card);box-shadow:var(--shadow);min-width:0;overflow:hidden}
@@ -215,7 +218,7 @@ th{font-size:12px;color:var(--muted);font-weight:600}td.n{text-align:right}
 .plat .hero .one{margin:var(--s2) 0 var(--s3);font-size:28px;font-weight:700;line-height:1.3;overflow-wrap:anywhere}
 .plat .hero .when{display:flex;gap:var(--s2) var(--s3);flex-wrap:wrap;align-items:center;font-size:var(--fs-aux);color:#C3CEE0}
 .plat .hero .when .badge{color:#fff;font-size:13px;border-radius:99px;padding:2px 10px;background:rgba(255,255,255,.12)}
-.plat .hero .when .b-over{background:var(--err-strong)}.plat .hero .when .b-soon{background:#D97706}
+.plat .hero .when .b-over{background:var(--err-strong)}.plat .hero .when .b-soon{background:var(--amber-strong)}
 .plat .hero .ptag{background:rgba(255,255,255,.1);color:#DCE4F2}
 .plat .hero .why{margin:var(--s3) 0 0;font-size:var(--fs-aux);color:#C3CEE0;overflow-wrap:anywhere;padding:0;background:none}
 .plat .hero .act{display:grid;gap:var(--s3);justify-items:end}
@@ -313,18 +316,19 @@ th{font-size:12px;color:var(--muted);font-weight:600}td.n{text-align:right}
 #v-project .two>.card>.mbody{flex:0 0 auto}
 #v-project .toolcard h3{font-size:var(--fs-body)}
 /* 批 C：本周帖子 / 焦点战在手机上（≤640px）是列表，每条一行（以前是表格拆成"第几条：/ 写的什么：/ 几点发：/ 最晚："四行一组）。
-   帖子：序号 · 写的什么 · 几点发 · 最晚（放不下时"最晚"折到第二行，仍在同一条里）；焦点战：联赛 · 对阵 · 开赛。1280 宽仍是表格、两张卡并排等高 */
+   帖子：序号 · 写的什么 · 几点发，下面一行小字是最晚（表头才有"最晚"两个字）；焦点战：联赛 · 对阵 · 开赛。标题放不下时省略号，全文在 1280 宽的表格里。1280 宽仍是表格、两张卡并排等高 */
 @media (max-width:640px){
-  #v-project table.plist tr{display:grid;grid-template-columns:auto minmax(0,1fr) auto;align-items:baseline;gap:2px var(--s3);padding:var(--s3) var(--s4);border-bottom:1px solid var(--line)}
+  #v-project table.plist tr{display:grid;grid-template-columns:auto minmax(0,1fr) auto;align-items:baseline;gap:0 var(--s3);padding:var(--s2) var(--s4);border-bottom:1px solid var(--line);line-height:1.45}
   #v-project table.plist tr:last-child{border-bottom:0}
   #v-project table.plist td{display:block;padding:0;border:0;min-width:0}
   #v-project table.plist td[data-label]::before{content:none}
-  #v-project table.plist td:nth-child(2){font-weight:600;overflow-wrap:anywhere}
+  #v-project table.plist td:nth-child(2){font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  #v-project table.plist td:nth-child(2) .hint{font-weight:400}
   #v-project table.plist td:nth-child(n+3){font-size:var(--fs-aux);color:var(--muted);white-space:nowrap;text-align:right}
   #v-project table.posts td:first-child{font-weight:700;color:var(--muted);font-family:inherit}
   #v-project table.posts td:first-child::after{content:"."}
-  #v-project table.posts td:nth-child(4){grid-column:2/-1;white-space:normal;overflow-wrap:anywhere;text-align:left}#v-project table.posts td:nth-child(4)::before{content:"最晚 "}
-  #v-project table.matches td:first-child{font-size:12px;border-radius:6px;padding:1px 8px;background:var(--gray-soft);color:var(--ink-2);white-space:nowrap}
+  #v-project table.posts td:nth-child(4){grid-column:2/-1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;text-align:left}
+  #v-project table.matches td:first-child{font-size:12px;border-radius:6px;padding:0 8px;background:var(--gray-soft);color:var(--ink-2);white-space:nowrap}
 }
 /* 批 B：字号收进阶梯（原来 14px 的表格、做完的、进度、步骤编号、提示），深色下步骤编号做完后的绿底用深色字（白字压亮绿 1.74:1 不够） */
 #v-project table{font-size:var(--fs-body)}#v-project .donelist li{font-size:var(--fs-body)}#v-project .progress{font-size:var(--fs-aux)}
@@ -481,6 +485,8 @@ ${ASSETS_CSS}${TTS_CSS}${VOICE_CSS}${ENGLISH_CSS}${EM_CSS}
 <form class="login" id="login" hidden>
   <b>登录</b><label for="pw">密码</label><input id="pw" type="password" autocomplete="current-password" required>
   <button class="btn primary" id="go" type="submit">登录</button><p class="msg" id="lmsg" role="alert"></p>
+  <!-- 批 C：打开页面时读清单就失败、随后又要登录时，登录框上也写明读取失败和"再读一次"（boot() 重新读） -->
+  <div class="l-fail" id="l-fail" role="alert" hidden><span id="l-fail-t"></span><button class="btn small" id="l-retry" type="button">再读一次</button></div>
 </form>
 <main id="app" hidden>
   <!-- 工作台（P-9 默认页）：内容由第三段脚本读 /api/company 后渲染 -->
@@ -725,11 +731,14 @@ const twDay=(ms)=>tw(ms).slice(0,10);
 function toast(t,err){const e=$('toast');e.textContent=t;e.className='toast'+(err?' err':'');e.hidden=!t;}
 async function call(path,body){let r;try{r=await fetch(path,{method:body?'POST':'GET',headers:{'content-type':'application/json'},body:body?JSON.stringify(body):undefined,credentials:'same-origin'});}catch(e){throw new Error('网络断了或服务没回应');}const j=await r.json().catch(()=>({}));if(r.status===401&&path!=='/api/login'){showLogin('请重新登录');throw new Error('请重新登录');}if(!r.ok){const er=new Error(j.error||('出错了（'+r.status+'）'));er.status=r.status;throw er;}return j;}
 let authed=false;
-function showLogin(m){authed=false;$('more-menu').hidden=true;moreMenu(false);$('app').hidden=true;$('boot').hidden=true;$('subs').hidden=true;$('nav1').hidden=true;$('logout').hidden=true;$('nav').hidden=true;$('extnav').hidden=true;$('conav').hidden=true;$('login').hidden=false;$('count').textContent='';$('lmsg').textContent=m||'';$('pw').focus();try{platformStop();}catch(e){}}
+function showLogin(m){authed=false;$('more-menu').hidden=true;moreMenu(false);$('app').hidden=true;$('boot').hidden=true;$('subs').hidden=true;$('nav1').hidden=true;$('logout').hidden=true;$('nav').hidden=true;$('extnav').hidden=true;$('conav').hidden=true;$('login').hidden=false;$('count').textContent='';$('lmsg').textContent=m||'';try{$('l-fail').hidden=!bootErr;}catch(e){}$('pw').focus();try{platformStop();}catch(e){}}
 // #app 由 route() 决定什么时候显示：工作台、项目页等第一次读到数据再显示（免得看到空模块），工作台在这之前显示占位骨架 #boot（批 A）；清单、用量、插件下载、公司总览马上显示
 function showApp(){authed=true;$('subs').hidden=false;$('nav1').hidden=false;$('logout').hidden=false;$('more-menu').hidden=false;frameButtons();setTimeout(()=>{try{subHint();}catch(e){}},0);}
 $('login').addEventListener('submit',async(e)=>{e.preventDefault();const b=$('go');b.disabled=true;b.textContent='正在登录…';$('lmsg').textContent='';
-  try{await call('/api/login',{password:$('pw').value});$('pw').value='';$('login').hidden=true;await load();route();}catch(err){$('lmsg').textContent=err.message;}finally{b.disabled=false;b.textContent='登录';}});
+  try{await call('/api/login',{password:$('pw').value});$('pw').value='';$('login').hidden=true;}catch(err){$('lmsg').textContent=err.message;return;}finally{b.disabled=false;b.textContent='登录';}
+  // 批 C：登录成功后不管清单读没读到都照常进页面；清单读失败时由 load() → qFail() 在公共工具上写红条和"再读一次"（以前 load() 一出错就跳过 route()，整页只剩顶栏）
+  try{await load();}catch(e){}if(!$('login').hidden)return;// 读清单时又要求重新登录：停在登录框
+  if(!authed)showApp();route();});
 $('logout').addEventListener('click',async()=>{moreMenu(false);await call('/api/logout',{}).catch(()=>{});showLogin('已登出');});
 const TITLES={hook:'Webhook 开关',list:'跟帖评论清单',usage:'用量和限额',reply:'每天回帖上限',ext:'插件下载',assets:'素材生成器',tts:'语音生成',voice:'语音对话实测',company:'公司总览',work:'工作台'};
 // 外框路由（工作平台批 1）：#/<页>/<模块>；页 = work / <项目> / tools / company；模块 id = 页的前缀 + 模块名（#/work/todo → w-todo）
@@ -760,7 +769,8 @@ function setProject(p){proj=p;$('f-title').textContent=p;
   const site=PCFG.PROJECT_SITE[p],e=$('f-site');e.replaceChildren();
   if(site){e.append(site.text+' ');const a=document.createElement('a');a.href=site.url;a.target='_blank';a.rel='noopener';a.textContent=site.url.replace(/^https:\\/\\/(www\\.)?/,'');e.append(a);}}
 renderNav1();
-function frameButtons(){const t=page==='tools'||page==='company';$('nav').hidden=!t;$('extnav').hidden=!t||view==='ext';$('conav').hidden=false;$('nav').textContent=view==='list'?'用量和限额 →':'← 跟帖评论清单';}
+// 批 C：公司总览页上不再显示"← 跟帖评论清单""插件下载"两个旧按钮（别的页只有"公司总览 / 登出"），"公司总览"按钮标成当前页
+function frameButtons(){const t=page==='tools';$('nav').hidden=!t;$('extnav').hidden=!t||view==='ext';$('conav').hidden=false;if(page==='company')$('conav').setAttribute('aria-current','page');else $('conav').removeAttribute('aria-current');$('nav').textContent=view==='list'?'用量和限额 →':'← 跟帖评论清单';}
 function hashOf(){const m=/^#\\/([^\\/?#]+)(?:\\/([a-z0-9-]+))?/.exec(location.hash);if(!m)return null;
   let seg=m[1];try{seg=decodeURIComponent(m[1]);}catch(e){}
   if(Object.hasOwn(FIXED,seg))return {p:seg,m:m[2]||'',proj:''};
@@ -793,7 +803,7 @@ function route(){if(!authed)return;let h=hashOf();
   // 批 C：公司总览的模块是读到数据才画出来的，这时还没有就记下 coMod，第二段脚本画完再滚过去（同样 subPin）
   if(page==='company')coMod=mod&&!$(mod)?mod:'';
   // 批 C：模块不在二级菜单里时（#/tools/voice 的 #t-voice 在"语音生成"#t-tts 里面），选中它所在的那一项，不能按滚动位置算成别的
-  const el=mod&&$(mod);if(el&&!el.closest('[hidden]')){el.scrollIntoView({block:'start'});subPin={s:subHost(el)||mod,y:scrollY};}else if(prev!==page||prevProj!==proj)window.scrollTo(0,0);
+  const el=mod&&$(mod);if(el&&!el.closest('[hidden]')){el.scrollIntoView({block:'start'});subPinTo(subHost(el)||mod,el);}else if(prev!==page||prevProj!==proj)window.scrollTo(0,0);
   subLast='';subSpy();}
 window.addEventListener('hashchange',route);
 // 二级菜单跟着滚动选中（2026-11-04）：只改 aria-current，不改地址（不碰 hash / pushState / replaceState）。
@@ -803,6 +813,8 @@ window.addEventListener('hashchange',route);
 // 第 2 轮（产品口径）：B. 并排的几块（顶端差 ≤4px）算一排：当前选中的在这一排里就不变，从别处滑进这一排选菜单里靠前的那个；
 // A. 选中项变了、子菜单 .sub .in 要横滑时，只改 .in 的 scrollLeft 把它滚进看得见的地方（尽量离开右边约 18% 的渐隐），不用 scrollIntoView、不动页面 scrollY。
 let subPin=null,subRaf=0,subLast='',coMod='';
+/** 跳到某个模块后记下 pin：选中哪一项（s）、当时的 scrollY、跳到的元素和它当时在屏幕上的位置 */
+function subPinTo(s,el){subPin={s,y:scrollY,el,top:el.getBoundingClientRect().top};}
 /** 元素在二级菜单的哪一项里：菜单项自己，或者包着它的那个模块（#t-voice → t-tts）；都不是回 '' */
 function subHost(el){const a=[...document.querySelectorAll('nav.sub a[data-s]')].find((x)=>{const m=$(x.dataset.s);return m&&!m.closest('[hidden]')&&m.contains(el);});return a?a.dataset.s:'';}
 function subSpy(){subRaf=0;const nav=[...document.querySelectorAll('nav.sub')].find((n)=>!n.closest('[hidden]'));if(!nav)return;
@@ -811,7 +823,10 @@ function subSpy(){subRaf=0;const nav=[...document.querySelectorAll('nav.sub')].f
   if(!secs.length)return;
   const was=(links.find((a)=>a.getAttribute('aria-current')==='true')||{dataset:{}}).dataset.s;
   let cur='';
-  if(subPin&&Math.abs(scrollY-subPin.y)<=2&&secs.some((x)=>x.id===subPin.s))cur=subPin.s;
+  // 批 C：pin 还算数 = scrollY 没变，或者跳过去的那个元素在屏幕上的位置没变（下面 / 上面的内容异步画完、浏览器的滚动锚定调了 scrollY，元素还在原处，
+  // 不算用户滚过；#/tools/voice 打开后实测台的内容读完就是这样，以前会按位置算成最后一块 Webhook 开关）。用户自己滚了，两样都会变
+  const pinOk=subPin&&(Math.abs(scrollY-subPin.y)<=2||(subPin.el&&subPin.el.isConnected&&subPin.el.getClientRects().length&&Math.abs(subPin.el.getBoundingClientRect().top-subPin.top)<=2));
+  if(pinOk&&secs.some((x)=>x.id===subPin.s))cur=subPin.s;
   else{subPin=null;const de=document.documentElement;
     if(scrollY>0&&innerHeight+scrollY>=de.scrollHeight-2)cur=secs[secs.length-1].id;
     else{// 批 A 去掉了页面底部 60vh 的空白：快到底时判定线往下移（剩下不到 0.6 屏时开始，到底时移到屏幕底边上面 60px），
@@ -876,7 +891,7 @@ async function load(){
     if(e.status===400&&$('f-prod').value&&/^不认识的项目/.test(e.message)){const pv=$('f-prod').value;state=Object.assign({},state,{items:[],total:0});qShown=qs;qShownSeq=my;qOkAt=Date.now();$('t-stale').hidden=true;showApp();render();$('total').textContent='共 0 条（'+(PROD[pv]||pv)+' 在清单里已经没有记录了）';subSpySoon();return;}
     if(e.message!=='请重新登录')qFail(e);return;}
   if(my!==qSeq)return;
-  state=got;qShown=qs;qShownSeq=my;qOkAt=Date.now();$('t-stale').hidden=true;showApp();render();subSpySoon();
+  state=got;qShown=qs;qShownSeq=my;qOkAt=Date.now();$('t-stale').hidden=true;try{bootErr='';$('l-fail').hidden=true;}catch(e){}showApp();render();subSpySoon();
 }
 /** 清单读取失败：公共工具顶上的红条写中文原因；还没读到过时清单那块的结论也写明（不写"0 条"冒充没有） */
 function qFail(e){const hm=qOkAt?tw(qOkAt).slice(11,16):'';$('t-stale-t').textContent='跟帖评论清单读取失败：'+e.message+'。'+(qOkAt?'下面是 '+hm+' 读到的内容。':'还没读到过内容。')+'点"再读一次"重试。';$('t-stale').hidden=false;
@@ -1040,7 +1055,9 @@ $('hook-toggle').addEventListener('click',async()=>{const b=$('hook-toggle'),m=$
   catch(e){b.disabled=false;showHook(!want);m.className='msg';m.textContent=e.message;}});
 // 每天回帖上限按项目（工作平台批 2，D-2）：GET / POST /api/reply-cap；1～50 的整数，前后端同一个范围
 let replyRows=[];
-async function loadReply(){try{replyRows=(await call('/api/reply-cap')).rows;renderReply();subSpySoon();}catch(e){if(e.message!=='请重新登录'){const m=$('rc-msg');m.className='msg';m.textContent='读不到上限：'+e.message;leadT('rc-lead','red','暂时读不到上限。','刷新页面再试。');}}}
+async function loadReply(){try{replyRows=(await call('/api/reply-cap')).rows;renderReply();subSpySoon();}catch(e){if(e.message!=='请重新登录'){const m=$('rc-msg');m.className='msg';m.textContent='读不到上限：'+e.message;leadT('rc-lead','red','暂时读不到上限。','刷新页面再试。');
+  // 批 C：还没读到过时表格也写读不到（以前结论写读不到、表格还是"正在读取…"）；读到过就保留上次的数
+  if(!replyRows.length){const tr=document.createElement('tr'),td=document.createElement('td');td.colSpan=3;td.textContent='暂时读不到上限：'+e.message+'。刷新页面再试。';tr.append(td);$('rc-rows').replaceChildren(tr);}}}}
 function renderReply(){const T=$('rc-rows');T.replaceChildren();
   replyRows.forEach(r=>{const tr=document.createElement('tr');tr.append(Object.assign(document.createElement('td'),{textContent:PROD[r.project]?r.project+'（'+PROD[r.project]+'）':r.project}));
     const c=document.createElement('td');c.dataset.label='每天上限';const inp=Object.assign(document.createElement('input'),{className:'cap-in',id:'rc-'+r.project,value:String(r.cap),inputMode:'numeric'});inp.setAttribute('aria-label',r.project+' 每天上限');c.append(inp,' 条');tr.append(c);
@@ -1070,7 +1087,12 @@ $('u-save').addEventListener('click',async()=>{const b=$('u-save'),m=$('u-msg');
   try{const j=await call('/api/usage',{caps});usage=j.rows;uEditing=false;renderUsage();renderAcct(j.accountLimit);renderLeft(j.left||[]);uStamp();m.className='msg ok';m.textContent='✓ 已保存，下一次请求开始生效';}catch(e){m.className='msg';m.textContent=e.message;}finally{b.disabled=false;b.textContent='保存上限';}});
 // 打开页面时先读一次清单，顺便判断登录了没有（没登录回 401 → 登录框）。
 // 批 C：以前别的失败（服务出错、断网）一律吞掉，页面只剩顶栏；现在照样显示页面框架，清单那块写中文原因 + "再读一次"（同 load() 的失败）
-{const my=++qSeq,qs=query();call(qs).then(j=>{if(my===qSeq){state=j;qShown=qs;qShownSeq=my;qOkAt=Date.now();}showApp();render();route();}).catch((e)=>{if(e.message==='请重新登录'||my!==qSeq)return;showApp();route();qFail(e);});}
+// 读失败时记在 bootErr：如果随后发现没登录（别的接口回 401 → showLogin），登录框上也写明读取失败 + "再读一次"
+let bootErr='';
+function boot(){const my=++qSeq,qs=query();return call(qs).then(j=>{bootErr='';$('l-fail').hidden=true;if(my===qSeq){state=j;qShown=qs;qShownSeq=my;qOkAt=Date.now();}showApp();render();route();})
+  .catch((e)=>{if(e.message==='请重新登录'||my!==qSeq)return;bootErr=e.message;$('l-fail-t').textContent='跟帖评论清单读取失败：'+e.message+'。登录后会再读一次，也可以点"再读一次"。';showApp();route();qFail(e);});}
+$('l-retry').addEventListener('click',async()=>{const b=$('l-retry');b.disabled=true;b.textContent='正在读…';await boot();b.disabled=false;b.textContent='再读一次';});
+boot();
 </script>
 <script>
 // 公司总览（原运营仪表盘"公司"页）：整段 try/catch；这里只定义函数，打开公司总览（go('company')）时才读数据、渲染，出错只影响这一页
@@ -1155,7 +1177,7 @@ function renderCompany(){const B=$('co-body');B.replaceChildren();
   if(!CO.data.configured&&!CO.data.blocks.length&&!CO.data.weekly){const c=card('co-off','还没开通',null);c.append(lead('gray','公司数据还没接上。','等 Amos 填好连接各仓库的令牌后，各仓库合并或开、关 PR 时会自动把最新情况送来。'));const b=body(true);b.append(empty('还没开通'));c.append(b);B.append(c);subSpySoon();return;}
   B.append(peopleCard(),learnCard(),healthCard());
   // 从 #/company/<模块> 打开时，模块要等数据画完才有：画完滚过去，并以它为二级菜单的选中项（同 route() 的 subPin）
-  if(coMod){const m=$(coMod);coMod='';if(m){m.scrollIntoView({block:'start'});subPin={s:m.id,y:scrollY};}}
+  if(coMod){const m=$(coMod);coMod='';if(m){m.scrollIntoView({block:'start'});subPinTo(m.id,m);}}
   subLast='';subSpySoon();}
 /* 读取的序号和在飞数量：同一时刻可能有好几次读（进页、切回这一页、点刷新），每次读回来都会整块重画 #co-body。
    只认最新一次读的结果（CO_SEQ），先发后到的旧结果丢掉；刷新按钮等所有读都回来了再恢复（CO_N）。 */
@@ -1182,7 +1204,7 @@ $('co-refresh').addEventListener('click',()=>loadCompany());
 try{
 const CFG=${JSON.stringify(PLATFORM_CONFIG)};
 // okAt = 上一次读成功的时间（读取失败时写"下面是 HH:MM 读到的"）；pf = 全部待办按哪个项目筛选（'' = 全部）；noneOpen = "没定截止时间"那组展开了没有（只记在这一页）
-const PL={active:null,data:null,qAll:null,qProj:{},done:new Map(),reports:[],page:'',proj:'',scroll:'',timer:null,busy:false,again:false,err:'',errWhy:'',at:0,okAt:0,want:new Map(),copy:null,open:new Set(),vals:{},det:new Set(),more:new Set(),peek:false,retry:0,pf:'',noneOpen:false};
+const PL={active:null,data:null,qAll:null,qProj:{},done:new Map(),reports:[],page:'',proj:'',scroll:'',timer:null,busy:false,again:false,err:'',errWhy:'',at:0,okAt:0,want:new Map(),copy:null,open:new Set(),vals:{},det:new Set(),more:new Set(),peek:false,retry:0,pf:'',noneOpen:false,ver:0,local:new Map()};
 /** 现在打开的是哪个项目（地址里的；地址没指就用第一个） */
 const curProj=()=>(typeof proj==='string'&&proj&&(PROJS.indexOf(proj)>=0||!projsReady))?proj:(PROJS[0]||'');
 /** projects 块 → 有项目页的项目名；和服务端 src/projects.ts projectPagesFrom 同一套规则（C108） */
@@ -1248,6 +1270,8 @@ async function setDone(key,done){const seen=PL.done.has(key)?PL.done.get(key):nu
   const r=await post('/api/company/done',{key,done,seen});PL.want.delete(key);
   if(r.status===409){toastP('已被另一处改过，已刷新',true);await refresh();return false;}
   if(!r.ok){toastP('没记上：'+(r.j.error||'出错了（'+r.status+'）')+'，请再点一次',true);renderAll();return false;}
+  // 批 C（测试会话查出，改版前就有）：打勾成功后记一个"本地已确认"的版本；在这之前发出的 GET /api/company 晚回来时，不许拿旧的 done 盖掉它（见 refresh()）
+  PL.ver++;PL.local.set(key,{ver:PL.ver,done,at:r.j.at});
   if(done)PL.done.set(key,r.j.at);else PL.done.delete(key);return true;}
 async function tick(x,b){b.disabled=true;if(await setDone(x.key,true)){toastP('已打勾，收进"做完的"。',false,{label:'撤销',fn:async()=>{if(await setDone(x.key,false)){toastP('已放回待办');renderAll();}}});renderAll();}}
 async function undo(x,b){b.disabled=true;b.textContent='处理中…';if(await setDone(x.key,false)){toastP('已放回待办');renderAll();}}
@@ -1592,14 +1616,16 @@ function renderAll(){if(!PL.data)return;const now=Date.now();const all=sorted(it
   try{renderProject(curProj(),all,now);}catch(e){$('f-err').hidden=false;$('f-err').textContent='项目页出错了：'+e.message;}
   try{renderLive(now);}catch(e){$('w-err').hidden=false;$('w-err').textContent='团队在做什么出错了：'+e.message;}
   if(PL.page){$('app').hidden=false;$('boot').hidden=true;}
-  if(PL.scroll){const el=$(PL.scroll);PL.scroll='';if(el){el.scrollIntoView({block:'start'});subPin={s:el.id,y:scrollY};}}
+  if(PL.scroll){const el=$(PL.scroll);PL.scroll='';if(el){el.scrollIntoView({block:'start'});subPinTo(el.id,el);}}
   subSpySoon();}
 async function getJ(u){const r=await fetch(u,{credentials:'same-origin'});if(r.status===401){showLogin('请重新登录');throw new Error('请重新登录');}if(!r.ok){const j=await r.json().catch(()=>({}));throw new Error(j.error||'出错了（'+r.status+'）');}return r.json();}
-async function refresh(){if(PL.busy){PL.again=true;return;}PL.busy=true;
+async function refresh(){if(PL.busy){PL.again=true;return;}PL.busy=true;const v0=PL.ver;// 这次读发出时本地已确认到哪个版本
   // 批 B：只有停在项目页时才读「这个项目的清单条数」；停在公共工具、公司总览（PL.peek）时不读，免得和清单自己那次 product=forecast 的读取一模一样、重复发两次
   const want=PL.page==='project'?curProj():'';
   try{const [c,qa,qp,ac]=await Promise.all([getJ('/api/company'),getJ('/api/queue?status=pending').catch(()=>null),want?getJ('/api/queue?status=pending&product='+encodeURIComponent(want)).catch(()=>null):Promise.resolve(null),getJ('/api/active').catch(()=>undefined)]);
-    PL.data=c;PL.done=new Map((c.done||[]).map((x)=>[x.key,x.at]));PL.reports=c.reports||[];PL.qAll=qa;if(want)PL.qProj[want]=qp;if(ac!==undefined)PL.active=ac;PL.err='';PL.errWhy='';PL.at=PL.okAt=Date.now();
+    PL.data=c;PL.done=new Map((c.done||[]).map((x)=>[x.key,x.at]));
+    // 读发出之后才打的勾 / 撤销（ver > v0）：服务器这次回的是旧状态，以本地确认的为准；读发出之前就确认的，这次读已经包含了，不用再记
+    PL.local.forEach((x,k)=>{if(x.ver>v0){if(x.done)PL.done.set(k,x.at);else PL.done.delete(k);}else PL.local.delete(k);});PL.reports=c.reports||[];PL.qAll=qa;if(want)PL.qProj[want]=qp;if(ac!==undefined)PL.active=ac;PL.err='';PL.errWhy='';PL.at=PL.okAt=Date.now();
     // 项目名单来自 projects 块：变了就重画一级菜单（setProjects 内部会在需要时重新路由）
     try{setProjects(pagesFrom(c));}catch(e){}}
   catch(e){if(e.message==='请重新登录'){PL.busy=false;return;}PL.errWhy=e instanceof TypeError?'网络断了或服务没回应':e.message;PL.err='暂时读不到最新情况：'+PL.errWhy+'（过一会儿自动再试）';if(!PL.data)PL.data={blocks:[],done:[],reports:[],weekly:null};
