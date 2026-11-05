@@ -3,9 +3,13 @@
  * 网页后台的浏览器级自动测试（agents C141）：本地用 wrangler dev 起真正的服务（本地 D1，跑全部迁移），在真浏览器里走一遍。
  *   node scripts/e2e-admin.mjs                 # CI 里跑这个
  *   node scripts/e2e-admin.mjs --shots <目录>   # 另外存公司页截图（深色 1920、1280、390 宽，浅色 1280 宽；样例数据是原型和 2026-11-01 Amos 截图里的真实文字）
- * 覆盖：登录 → 公司页"还没收到数据" → 用推送接口塞一份样例 → 各块渲染、更新于几小时前 → "我做了"的处理中 / 成功 / 失败 / 取消 →
- * 超过 7 天变灰、解析失败显示原因、要你决定的 PR、切换周报 → "还没开通"、读不到 → 切回清单、用量、插件下载三页正常；手机不横向滚动；全程没有脚本错误。
- * 项目表（2026-11-01 Amos 截图变形）：1920、1280 宽每列不小于下限、表格不超出卡片、"本周"展开前 ≤ 3 行、点击 / 回车 / 空格展开收起、没有状态卡的排最后。
+ * 覆盖：登录 → 公司页"还没收到数据" → 用推送接口塞一份样例 → 各块渲染、更新于几小时前 →
+ * 超过 7 天变灰 → "还没开通"、读不到 → 切回清单、用量、插件下载三页正常；手机不横向滚动；全程没有脚本错误。
+ * 改版批 C（2026-11-05，Amos"第三批选 a，开始吧"；测试会话按已批准口径改，研发不改断言）：公司总览只留工作台没有的三块——
+ *   #co-people（各岗位这周）→ #co-learn（这周学到了什么）→ #co-health（做得怎么样）；去掉"需要我的事"（#co-need、摘要格子 .tile、"我做了"）、
+ *   项目表 #co-projects、下周 #co-next（工作台有项目概况、经营会；待办只看工作台）。顶栏按钮和页面标题叫"公司总览"。
+ *   原来这里测的"我做了"处理中 / 成功 / 失败 / 取消 / 迟到的读、项目表版面（2026-11-01 截图变形）、解析失败、要你决定的 PR、切换周报，随模块一起去掉；
+ *   /api/company/done 接口本身仍由 test/company.test.ts 守。新样式（卡片、一句话结论、折叠说明、子菜单、字号、对比度……）的断言在 scripts/e2e-platform.mjs 第 12 段。
  * 任何一条不符就以非 0 退出。密码和令牌是只给这个测试用的假值，不是线上的。
  */
 import { spawn, execFileSync } from 'node:child_process';
@@ -139,74 +143,49 @@ async function clickTop(page, sel) {
   if (narrow && (await page.locator('#more-menu > summary').count()) && !(await page.evaluate(() => document.getElementById('more-menu').open))) await page.click('#more-menu > summary');
   await page.click(sel);
 }
-/** 项目表的版面：每列宽、表格和卡片的右边、"本周"高度和行高、页面宽 */
-const projLayout = (page) => page.evaluate(() => {
-  const card = document.getElementById('co-projects'), t = card.querySelector('table'), wrap = card.querySelector('.tablewrap');
-  const weeks = [...card.querySelectorAll('.co-week')].map((w) => ({ h: w.getBoundingClientRect().height, lh: parseFloat(getComputedStyle(w).lineHeight), can: w.classList.contains('can'), open: w.classList.contains('open') }));
-  return { cols: [...t.querySelectorAll('thead th')].map((th) => Math.round(th.getBoundingClientRect().width)), tableRight: t.getBoundingClientRect().right, cardRight: card.getBoundingClientRect().right,
-    overflow: wrap.scrollWidth - wrap.clientWidth, weeks, page: document.documentElement.scrollWidth, view: window.innerWidth };
-});
-const MIN_COLS = [100, 100, 220, 170, 60]; // 项目、阶段、数字 → 目标、本周、状态（main 最宽 960，表格约 926 宽）
-async function checkProjects(page, w) {
-  const L = await projLayout(page);
-  check(`项目表 ${w} 宽：每列不小于下限 ${MIN_COLS.join('/')}`, L.cols.length === 5 && L.cols.every((c, i) => c >= MIN_COLS[i]), L.cols);
-  check(`项目表 ${w} 宽：表格不超出卡片、不横向滚动`, L.tableRight <= L.cardRight + 0.5 && L.overflow <= 0 && L.page <= L.view, L);
-  check(`项目表 ${w} 宽："本周"展开前最多 3 行，长的可以点开`, L.weeks.length >= 2 && L.weeks.every((x) => !x.open && x.h <= x.lh * 3 + 1) && L.weeks[0].can, L.weeks);
-}
+// 批 C 去掉：项目表的版面量法 projLayout / MIN_COLS / checkProjects（#co-projects 随口径去掉）
+/** 一行：表格的 tbody tr，或列表的 li（批 C：手机上可以改成列表，条数口径不变） */
+const ROWS = ':is(tbody tr, li)';
 async function refresh(page) { await page.click('#co-refresh'); await page.waitForFunction(() => document.getElementById('co-refresh').textContent === '刷新'); }
 
 try {
   const page = await open({ width: 1280, height: 900 });
   await login(page);
-  // 公司平台批 1（P-9）起登录后默认是工作台（原来是清单页）；"公司"页（公司总览）入口还是顶栏的 #conav
-  check('登录后在工作台，顶栏有"公司"', (await visible(page, '#v-work')) && !(await visible(page, '#v-list')) && (await visible(page, '#conav')), null);
+  // 公司平台批 1（P-9）起登录后默认是工作台（原来是清单页）；公司总览入口还是顶栏的 #conav（批 C 起按钮文字是"公司总览"，文字的断言在 e2e-platform 第 12 段）
+  check('登录后在工作台，顶栏有"公司总览"入口 #conav', (await visible(page, '#v-work')) && !(await visible(page, '#v-list')) && (await visible(page, '#conav')), null);
 
   // 1. 还没有数据
+  // 批 C 改：改前 waitForSelector('#co-need')、标题 === '公司'；改后等 #co-people（"需要我的事"去掉了）、标题 === '公司总览'（和按钮同名）
   await page.click('#conav');
-  await page.waitForSelector('#co-need');
-  check('公司页：标题、其他三页隐藏', (await text(page, '#title')) === '公司' && !(await visible(page, '#v-list')) && !(await visible(page, '#v-usage')) && !(await visible(page, '#v-ext')), await text(page, '#title'));
-  check('没数据：各块显示"还没收到数据"', (await page.locator('#v-company .co-empty', { hasText: '还没收到数据' }).count()) === 6, await page.locator('#v-company .co-empty').allInnerTexts());
+  await page.waitForSelector('#co-people');
+  check('公司页：标题"公司总览"、其他三页隐藏', (await text(page, '#title')) === '公司总览' && !(await visible(page, '#v-list')) && !(await visible(page, '#v-usage')) && !(await visible(page, '#v-ext')), await text(page, '#title'));
+  // 批 C 改：改前 6 块（需要我的事、项目、岗位、学习、下周、做得怎么样）；改后只留 3 块（岗位、学习、做得怎么样）
+  check('没数据：3 块（岗位、学习、做得怎么样）都显示"还没收到数据"', (await page.locator('#v-company .co-empty', { hasText: '还没收到数据' }).count()) === 3, await page.locator('#v-company .co-empty').allInnerTexts());
 
   // 2. 塞样例 → 刷新 → 各块
   await ingest('agents', AGENTS);
   await ingest('marketing', [{ kind: 'ci', source_at: at, payload: { conclusion: 'success', sha: 'e161069', at: Date.parse('2026-10-30T20:00:00+08:00'), note: '正式版 /health ok' } }]);
   await ingest('new-forecast', [{ kind: 'ci', source_at: at, payload: { conclusion: 'success', sha: 'f534f23', at: Date.parse('2026-10-30T18:00:00+08:00'), note: '官网 v1.1' } }]);
   await refresh(page);
-  const tiles = await page.locator('#v-company .tile').allInnerTexts();
-  check('摘要：需要我的事 9（红）、项目 6、倒计时、本周合并、成本', tiles.length === 5 && tiles[0].startsWith('9') && (await page.locator('.tile.need').count()) === 1 && tiles[1].startsWith('6') && /天/.test(tiles[2]) && tiles[3].startsWith('88') && tiles[4].startsWith('0 元'), tiles);
-  check('需要我的事：9 条，决定在前', (await page.locator('#co-need li').count()) === 9 && (await text(page, '#co-need li .who')) === '决定 · L3', await page.locator('#co-need li .who').allInnerTexts());
-  check('更新于 2 小时前', (await text(page, '#co-need .stamp')).includes('更新于 2 小时前'), await text(page, '#co-need .stamp'));
-  const prow = await page.locator('#co-projects tbody tr').allInnerTexts();
-  check('项目：7 行、阶段、数字一条一行"名称 · 现在 → 目标"', prow.length === 7 && prow[0].includes('X + Threads 关注合计 · 3（X 2、Threads 1，Amos 2026-10-29 回报） → 原验证指标 ≥ 50') && (await page.locator('#co-projects tbody tr').first().locator('.co-m').count()) === 5 && (await text(page, '#co-projects .stamp')).includes('项目版图 v1.3.1'), prow);
-  const order = await page.locator('#co-projects tbody tr td:first-child b').allInnerTexts();
-  check('项目：有状态卡的在前，报价、支付等没有状态卡的排最后、次要色', JSON.stringify(order) === JSON.stringify(['forecast', 'Marketing', '公司（agents）', '报价', '支付', '交易（falconx-lite）', '代付（amospayment）']) && (await page.locator('#co-projects tr.co-plan').count()) === 4
-    && (await page.locator('#co-projects tr.co-plan td').first().evaluate((e) => getComputedStyle(e).color)) === (await page.locator('#co-projects .stamp').evaluate((e) => getComputedStyle(e).color)), order);
-  await checkProjects(page, 1280);
+  // 批 C 改：改前这里测摘要格子（需要我的事 9 红、项目 6、倒计时、本周合并、成本）、"需要我的事"9 条决定在前、#co-need 的"更新于 2 小时前"、
+  //   项目表 7 行 / 排序 / 列宽 / "本周"展开收起（1280、1920 宽）。改后：这些模块按口径去掉，守"去掉了"；"更新于 2 小时前"改看 #co-people。
   {
-    const wk = page.locator('#co-projects .co-week').first();
-    const h0 = (await wk.boundingBox()).height;
-    await wk.click();
-    const h1 = (await wk.boundingBox()).height;
-    check('本周：点一下展开（变高、aria-expanded=true），再点收起', h1 > h0 * 2 && (await wk.getAttribute('aria-expanded')) === 'true', [h0, h1]);
-    await wk.click();
-    check('本周：收起回到 3 行', Math.abs((await wk.boundingBox()).height - h0) < 1 && (await wk.getAttribute('aria-expanded')) === 'false', null);
-    await wk.focus();
-    await page.keyboard.press('Enter');
-    const k1 = await wk.getAttribute('aria-expanded');
-    await page.keyboard.press(' ');
-    check('本周：键盘可以操作（Tab 能停、回车展开、空格收起）', (await wk.getAttribute('tabindex')) === '0' && (await wk.getAttribute('role')) === 'button' && k1 === 'true' && (await wk.getAttribute('aria-expanded')) === 'false', k1);
+    const gone = await page.evaluate(() => ({ need: !!document.getElementById('co-need'), tiles: document.querySelectorAll('#v-company .tile').length, proj: !!document.getElementById('co-projects'), next: !!document.getElementById('co-next'),
+      text: /需要我的事/.test(document.getElementById('v-company').innerText), did: [...document.querySelectorAll('#v-company button, #v-company a')].filter((b) => /我做了/.test(b.textContent)).length }));
+    check('批 C：公司总览没有"需要我的事"（#co-need、摘要格子 .tile、"我做了"按钮都没有）、没有项目表 #co-projects、没有下周 #co-next', !gone.need && gone.tiles === 0 && !gone.text && gone.did === 0 && !gone.proj && !gone.next, gone);
   }
+  check('更新于 2 小时前（岗位那一块）', ((await text(page, '#co-people')) || '').includes('更新于 2 小时前'), await text(page, '#co-people'));
   {
     const big = await open({ width: 1920, height: 1080 }, 'dark');
     await login(big);
     await big.click('#conav');
-    await big.waitForSelector('#co-projects tbody tr');
-    await checkProjects(big, 1920);
+    await big.waitForSelector('#co-people');
+    check('1920 宽深色：公司总览不横向滚动', await big.evaluate(() => document.documentElement.scrollWidth <= innerWidth), await big.evaluate(() => [document.documentElement.scrollWidth, innerWidth]));
     if (SHOTS) { mkdirSync(SHOTS, { recursive: true }); await big.screenshot({ path: path.join(SHOTS, 'company-1920-dark.png'), fullPage: true }); }
   }
-  check('每个岗位这周：5 个岗位；学到了什么：5 条', (await page.locator('#co-people tbody tr').count()) === 5 && (await page.locator('#co-learn li').count()) === 5, null);
-  check('下周：6 件事，标题带日期范围', (await page.locator('#co-next tbody tr').count()) === 6 && (await text(page, '#co-next h2')).includes('11/2～11/8'), await text(page, '#co-next h2'));
-  check('做得怎么样：4 行（Marketing 在前），没有灰块', (await page.locator('#co-health tbody tr').count()) === 4 && (await text(page, '#co-health tbody tr')).startsWith('Marketing') && (await page.locator('#v-company .old').count()) === 0, await page.locator('#co-health tbody tr').allInnerTexts());
+  // 批 C 改：每一行改成"表格的 tbody tr 或列表的 li 都算一行"（ROWS），条数和顺序不变；手机上可以改成列表。"下周"那条随 #co-next 去掉
+  check('每个岗位这周：5 个岗位；学到了什么：5 条', (await page.locator(`#co-people ${ROWS}`).count()) === 5 && (await page.locator('#co-learn li').count()) === 5, [await page.locator(`#co-people ${ROWS}`).count(), await page.locator('#co-learn li').count()]);
+  check('做得怎么样：4 行（Marketing 在前），没有灰块', (await page.locator(`#co-health ${ROWS}`).count()) === 4 && (await text(page, `#co-health ${ROWS}`)).startsWith('Marketing') && (await page.locator('#v-company .old').count()) === 0, await page.locator(`#co-health ${ROWS}`).allInnerTexts());
   const fixedText = await page.locator('#v-company').innerText();
   check('页面不出现技术词（C128）', !/JSON|payload|token|undefined|null|NaN/i.test(fixedText), fixedText.match(/JSON|payload|token|undefined|null|NaN/i));
 
@@ -217,66 +196,17 @@ try {
       const m = await open({ width, height }, 'dark');
       await login(m);
       await clickTop(m, '#conav');
-      await m.waitForSelector('#co-projects tbody tr');
+      await m.waitForSelector('#co-people');
       await m.screenshot({ path: path.join(SHOTS, `company-${width}-dark.png`), fullPage: true });
-      await m.locator('#co-projects').screenshot({ path: path.join(SHOTS, `projects-${width}-dark.png`) });
     }
     console.log('  截图：' + SHOTS);
   }
 
-  // 3. "我做了"：处理中 → 成功；失败；取消
-  let release;
-  await page.route('**/api/company/done', async (route) => { await new Promise((r) => { release = r; }); await route.continue(); });
-  const t3 = page.locator('#co-need li', { hasText: 'T3' });
-  await t3.locator('button').click();
-  check('我做了：处理中…（按钮不能再点）', (await t3.locator('button').innerText()) === '处理中…' && (await t3.locator('button').isDisabled()), await t3.locator('button').innerText());
-  release();
-  await page.waitForSelector('#co-msg.ok');
-  const t3done = page.locator('#co-need li.done', { hasText: 'T3' });
-  check('我做了：成功提示、这条变灰、显示完成时间到秒、红数字减 1', (await text(page, '#co-msg')).startsWith('✓ 已记下：T3') && /已做 \d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}/.test(await t3done.innerText()) && (await text(page, '.tile.need .n')) === '8', [await text(page, '#co-msg'), await t3done.innerText()]);
-  await page.unroute('**/api/company/done');
-  await page.route('**/api/company/done', (route) => route.fulfill({ status: 500, contentType: 'application/json', body: JSON.stringify({ error: '测试用的失败' }) }));
-  const t4 = page.locator('#co-need li', { hasText: 'T4' });
-  await t4.locator('button').click();
-  await page.waitForFunction(() => document.getElementById('co-msg').textContent.startsWith('没记上'));
-  check('我做了：失败提示原因，按钮恢复', (await text(page, '#co-msg')) === '没记上：测试用的失败，请再点一次' && (await t4.locator('button').innerText()) === '我做了' && (await page.locator('#co-need li.done').count()) === 1, await text(page, '#co-msg'));
-  await page.unroute('**/api/company/done');
-  await page.reload();
-  await page.click('#conav');
-  await page.waitForSelector('#co-need li.done');
-  check('刷新页面后"我做了"还在', (await page.locator('#co-need li.done').count()) === 1, null);
-  await page.locator('#co-need li.done button').click();
-  await page.waitForSelector('#co-msg.ok');
-  check('取消：变回未做，红数字回到 9', (await page.locator('#co-need li.done').count()) === 0 && (await text(page, '.tile.need .n')) === '9', await text(page, '#co-msg'));
-  // 上面这条 2026-11-03 在 main 飘红过（等 #co-msg.ok 等满 30 秒）。根因不是机器慢：页面每收到一次 GET /api/company 就整块重画 #co-body，
-  // 迟到的那次赶上点按钮就把这一下点击吞掉（谁也没发请求），落在点完之后就把提示抹掉、还用旧快照把这一条变回"已做"。
-  // 下面这条守住改法（《项目地图》第 5 节第 11 条）：把一次读的响应先扣在手里，期间点"我做了"，再放它落地——旧快照必须被丢掉。
-  {
-    let hold = true, release = null;
-    await page.route('**/api/company', async (route) => {
-      if (!hold || route.request().method() !== 'GET') return route.continue();
-      hold = false;
-      const r = await route.fetch();          // 此刻库里 T3 还是"没做"：这就是那份会迟到的旧快照
-      await new Promise((x) => { release = x; });
-      await route.fulfill({ response: r });
-    });
-    await page.click('#co-refresh');
-    for (let i = 0; !release && i < 500; i++) await new Promise((x) => setTimeout(x, 20));
-    if (!release) throw new Error('点"刷新"之后没等到 GET /api/company');
-    await page.locator('#co-need li', { hasText: 'T3' }).locator('button').click();
-    await page.waitForSelector('#co-msg.ok');
-    release();                                 // 旧快照现在才落地
-    await page.waitForFunction(() => document.getElementById('co-refresh').textContent === '刷新');
-    check('迟到的读不能盖掉刚点的"我做了"：提示还在、这条还是灰的、红数字还是 8',
-      (await text(page, '#co-msg')).startsWith('✓ 已记下：T3') && (await page.locator('#co-need li.done').count()) === 1 && (await text(page, '.tile.need .n')) === '8',
-      [await text(page, '#co-msg'), await page.locator('#co-need li.done').count(), await text(page, '.tile.need .n')]);
-    await page.unroute('**/api/company');
-    await page.locator('#co-need li.done button').click();   // 还原成"没做"，后面几条仍按 9 条算
-    await page.waitForSelector('#co-msg.ok');
-    check('还原：再取消一次，红数字回到 9', (await page.locator('#co-need li.done').count()) === 0 && (await text(page, '.tile.need .n')) === '9', await text(page, '.tile.need .n'));
-  }
+  // 3.（批 C 去掉）"我做了"的处理中 / 成功 / 失败 / 取消 / 刷新后还在 / 迟到的读不能盖掉：随"需要我的事"一起去掉（待办只看工作台，工作台的打勾、撤销在 e2e-platform 第 3、4 段）。
+  //   改前 9 条断言（L227～277），改后守一条：公司总览上没有"我做了"按钮（见上面"批 C：公司总览没有'需要我的事'"那条）。
 
-  // 4. 超过 7 天变灰、解析失败、要你决定的 PR、切换周报
+  // 4. 超过 7 天变灰（批 C 改：解析失败那条看的是项目表、要你决定的 PR 看的是需要我的事、切换周报看的是下周，三个模块都去掉了，这三条随之去掉；
+  //    改后补一条：要你决定的 PR 不出现在公司总览）
   await ingest('agents', [
     ...['测试', '研发', '运维安全', '市场', '经营'].map((role) => ({ kind: 'learning', key: role, source_at: now - 8 * DAY, payload: { role, items: [{ title: '旧的一条' }] } })),
     { kind: 'handoff', key: '研发', source_at: now - 8 * DAY, payload: { role: '研发', done: '旧的交接', next: '—', mistakes: 2 } },
@@ -286,12 +216,8 @@ try {
   await ingest('marketing', [{ kind: 'prs', source_at: now, payload: { items: [{ number: 9, title: '【要你决定】公司运营仪表盘', url: 'https://github.com/dollar3651314/Marketing/pull/9', days: 1 }] } }]);
   await refresh(page);
   check('学到了什么全部超过 7 天：整块变灰，写明超过 7 天', (await page.locator('#co-learn.old').count()) === 1 && (await text(page, '#co-learn .stamp')).includes('超过 7 天没更新'), await text(page, '#co-learn .stamp'));
-  check('只有研发的交接超过 7 天：那一行变灰，整块不灰', (await page.locator('#co-people tr.old').count()) === 1 && (await page.locator('#co-people.old').count()) === 0, null);
-  check('解析失败：显示原因，保留上次的内容', (await text(page, '#co-projects .co-err')).startsWith("解析失败：状态卡：找不到'## 数字'表") && (await text(page, '#co-projects tbody tr')).includes('X + Threads 关注合计 · 3'), await text(page, '#co-projects'));
-  check('要你决定的 PR 算进需要我的事（10）', (await page.locator('#co-need li', { hasText: '#9' }).count()) === 1 && (await text(page, '.tile.need .n')) === '10', await text(page, '.tile.need .n'));
-  await page.selectOption('#co-week', '2026-10-25');
-  await page.waitForFunction(() => document.querySelector('#co-next h2').textContent.includes('10/26～11/1'));
-  check('切换到上一期周报：下周的事换成那一期，不因为是旧的一期变灰', (await page.locator('#co-next tbody tr').count()) === 1 && (await page.locator('#co-next.old').count()) === 0 && (await text(page, '.tile.need .n')) === '10', await text(page, '#co-next'));
+  check('只有研发的交接超过 7 天：那一行变灰，整块不灰', (await page.locator(`#co-people :is(tr, li).old`).count()) === 1 && (await page.locator('#co-people.old').count()) === 0, null);
+  check('批 C：要你决定的 PR（#9）不出现在公司总览（只在工作台的待办里）', !((await text(page, '#v-company')) || '').includes('公司运营仪表盘'), await text(page, '#v-company'));
 
   // 5. "还没开通"、读不到（替身回答）
   {
@@ -319,7 +245,7 @@ try {
   await page.click('#extnav');
   check('插件下载页正常', (await visible(page, '#v-ext')) && (await text(page, '#dl')).startsWith('下载插件') && (await visible(page, '#conav')), null);
   await page.click('#conav');
-  await page.waitForSelector('#co-need li');
+  await page.waitForSelector('#co-people');   // 批 C 改：改前等 #co-need li
   check('再回公司页正常', (await visible(page, '#v-company')) && !(await visible(page, '#v-ext')), null);
 
   // 7. 手机 390 宽：一列、不横向滚动
@@ -336,11 +262,12 @@ try {
         return { shown: !!c.getClientRects().length && b.width > 0, inScreen: b.left >= 0 && b.right <= innerWidth && b.top >= 0 && b.bottom <= innerHeight, hit: !!e && (e === c || c.contains(e)) }; });
     }
     check('手机 390 宽（≤640px）："公司总览" #conav 和"登出" #logout 在顶栏的"···"（details#more-menu）里，默认收起时看不见，点开后 #conav 可见可点', mm0.menu && mm0.open === false && mm0.conavIn && mm0.logoutIn && !mm0.conavShown && !!mm1 && mm1.shown && mm1.inScreen && mm1.hit, { before: mm0, after: mm1 });
+    // 批 C 改：改前等 #co-projects tbody tr、并量项目表不超出卡片；改后项目表去掉，等 #co-people，另量三块都不超出屏幕
     await clickTop(m, '#conav');
-    await m.waitForSelector('#co-projects tbody tr');
+    await m.waitForSelector('#co-people');
     const w = await m.evaluate(() => ({ page: document.documentElement.scrollWidth, people: document.getElementById('co-people').getBoundingClientRect().width, learn: document.getElementById('co-learn').getBoundingClientRect().left, people0: document.getElementById('co-people').getBoundingClientRect().left,
-      proj: (() => { const c = document.getElementById('co-projects'); const wr = c.querySelector('.tablewrap'); return { right: c.querySelector('table').getBoundingClientRect().right, card: c.getBoundingClientRect().right, over: wr.scrollWidth - wr.clientWidth }; })() }));
-    check('手机：不横向滚动，岗位和学习上下排一列，项目表不超出卡片', w.page <= 390 && w.learn === w.people0 && w.proj.right <= w.proj.card + 0.5 && w.proj.over <= 0, w);
+      right: Math.max(...['co-people', 'co-learn', 'co-health'].map((id) => document.getElementById(id).getBoundingClientRect().right)) }));
+    check('手机：不横向滚动，岗位和学习上下排一列，三块都不超出屏幕', w.page <= 390 && w.learn === w.people0 && w.right <= 390 + 0.5, w);
   }
   check('全程没有脚本错误', errors.length === 0, errors);
 } finally {
