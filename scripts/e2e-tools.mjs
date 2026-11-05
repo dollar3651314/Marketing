@@ -34,6 +34,11 @@
  *      每条跟帖一个主按钮（一键回复 / 今天已到上限）；删除按两次；字号阶梯、不横滚、底部空白 ≤160px、深色对比度 ≥4.5。1280 / 375 × 明暗。量法在 scripts/e2e-look.mjs。
  *   K.（2026-11-04 批 B 验收补）/api/queue 的 product 原样匹配已知项目、不认识的（含大小写不对）400；Practical 项目页"用到的工具"只算 Practical（0 条、上限 10）；公共工具读取失败红条 #t-stale + #t-retry。
  *   L.（2026-11-04 批 B 验收补，🔴）清单读取只认最新一次：扣住旧读取、改选别的项目再放行，列表 / 条数 / 下拉仍是最新选的；批量删除只删最新选的；旧的成功结果不收掉新的失败红条。
+ *   M.（2026-11-05 改版批 C，测试会话先写，研发不改断言）③ 打开公共工具时清单第一次读取就失败（500 / 网络断）：不能只剩顶栏——要么登录框，要么页面框架（一级菜单 + 两层菜单 #subs + #v-tools）
+ *      + 中文失败提示（框架这种就是 #t-stale，清单结论 #q-lead 写"还没读到"、不说条数）+"再读一次"（#t-retry）；点"再读一次"读回来清单出来、红条消失。
+ *      没登录就打开、登录后马上失败、带着登录状态重开（500 / 网络断）都测。1280 / 375 宽。
+ *      ⑤ 从链接打开语音实测台 #/tools/voice（直接打开、刷新、在"语音生成"里点链接）时，子菜单选中"语音生成"t-tts，不是"Webhook 开关"t-hook。
+ *      公司总览的批 C 断言在 scripts/e2e-platform.mjs 第 12 段；F 段 R5 按批 C 口径改成"公司总览不再列待办"。
 *   C. 按项目看用量（D-3）：#t-byproj 每个项目一行，Gemini 次数加起来 = 用量总额度里 Gemini 的请求数；写着以前没分项目、"测试 AI"那行是平台自己。
  *
  * 页面约定（照原型 v2；研发要改名就同一个 PR 改这里并在 PR 描述写明）：
@@ -535,28 +540,19 @@ try {
   }
 
   // ---------- F.（批 2 审查"改完再审"，测试先写）R5、R6、R8、R9、R10 ----------
-  // R5 公司总览页的待办：有正文的点了在当前页展开（同工作台），去 X 这类外部平台的照旧外链
-  await section('R5 公司总览的待办正文', async () => {
+  // R5（批 C 按口径改，2026-11-05 Amos"第三批选 a"：公司总览去掉"需要我的事"，待办只看工作台）
+  //   改前：公司总览列出带正文的 PR 和待办；点按钮正文在当前页展开、旁边"在 GitHub 打开"、HTML 只当文字、去 X 的照旧外链（共 6 条）。
+  //   改后：公司总览不再列这些 PR / 待办、没有展开正文的框；同样的展开行为在工作台、forecast 页由上面 D 段守（同一批样例、同样的判定）。
+  await section('R5 公司总览不再列待办', async () => {
     const page = await open();
-    let popups = 0;
-    page.context().on('page', () => { popups += 1; });
     await login(page, '/#/company');
-    await waitFor(page, '#v-company li');
-    const li = (t) => page.locator('#v-company li', { hasText: t }).first();
+    await waitFor(page, '#v-company');
+    await page.waitForFunction(() => /读取于/.test(document.getElementById('co-at')?.textContent || '') || !!document.querySelector('#co-people, #co-health'), null, { timeout: WAIT }).catch(() => {});
+    await page.waitForTimeout(300);
     const PR_T = '【要你决定】换首页文案（样例）', LOOK_T = '样例待办四：看待办里的说明', EXT_T = '样例待办六：去 X 发置顶帖';
-    check('R5 先确认：公司总览列出了带正文的 PR 和待办', (await li(PR_T).count()) === 1 && (await li(LOOK_T).count()) === 1, [await li(PR_T).count(), await li(LOOK_T).count()]);
-    for (const t of [PR_T, LOOK_T]) {
-      const url0 = page.url();
-      await li(t).locator('.act .btn').first().click();
-      const shown = await li(t).locator('.detail').first().waitFor({ state: 'visible', timeout: WAIT }).then(() => true, () => false);
-      await page.waitForTimeout(300);
-      check(`R5 公司总览点"${t.slice(0, 12)}…"的按钮：正文在当前页展开，没跳转、没开新窗口`, shown && page.url() === url0 && popups === 0 && ((await li(t).locator('.detail').innerText().catch(() => '')) || '').length > 10, { shown, url: page.url(), popups });
-      check(`R5 公司总览"${t.slice(0, 12)}…"：正文旁边留"在 GitHub 打开"`, (await li(t).locator('.detail a.gh').innerText().catch(() => null)) === '在 GitHub 打开', null);
-    }
-    const x = await page.evaluate(() => ({ xss: window.__xss ?? null, n: document.querySelectorAll('#v-company .detail script, #v-company .detail img').length }));
-    check('R5 公司总览：正文里的 HTML 只当文字，不执行', x.xss === null && x.n === 0, x);
-    const ext = li(EXT_T).locator('.act a.btn').first();
-    check('R5 公司总览：去 X 发帖的照旧是外链（新窗口），没有正文框', (await ext.getAttribute('href').catch(() => null)) === 'https://x.com/compose/post' && (await ext.getAttribute('target').catch(() => null)) === '_blank' && (await li(EXT_T).locator('.detail').count()) === 0, await ext.evaluate((a) => a.outerHTML).catch(() => null));
+    const t = (await txt(page, '#v-company')) ?? '';
+    const r = { pr: t.includes(PR_T), look: t.includes(LOOK_T), ext: t.includes(EXT_T), detail: await page.locator('#v-company .detail').count() };
+    check('R5（批 C）公司总览不再列带正文的 PR、待办、去 X 发帖的待办，也没有正文框（这些在工作台 D 段测）', !r.pr && !r.look && !r.ext && r.detail === 0, r);
     await page.context().close();
   });
 
@@ -1163,6 +1159,109 @@ try {
     check('L 段没有脚本错误', errs5.length === 0, errs5);
   });
   if (srv5) srv5.stop();
+}
+
+// ======================================================================
+// M. 改版批 C（2026-11-05，测试会话先写，研发不改这里的断言）：③ 公共工具第一次读清单就失败；⑤ #/tools/voice 子菜单选中"语音生成"
+// 另起一个本地服务（清单里有 QUEUE 那几条），不影响前面各段。
+// 页面约定：③ 走"页面框架"这条路时，提示就是公共工具已有的红条 #t-stale（role="alert"，中文原因）和按钮 #t-retry"再读一次"（K 段同一套）；
+//   走"登录框"这条路时，登录框 #login 上要有中文失败提示和一个"再读一次"按钮。两条路点"再读一次"后都要回到清单。
+// ======================================================================
+{
+  let srv6 = null;
+  const errs6 = [];
+  await section('M 批C', async () => {
+    srv6 = await startServer({ name: 'e2e-tools-m', vars: { DAILY_REPLY_CAP: '10' }, seedSql });
+    const QRE = /\/api\/queue(\?|$)/;
+    /** 现在页面上看得见什么：登录框、外框（一级菜单 + 公共工具页）、红条和它的文字、"再读一次"按钮；除了顶栏还有没有别的看得见的东西 */
+    const state = (page) => page.evaluate(() => {
+      const shown = (e) => !!e && !e.closest('[hidden]') && !!e.getClientRects().length && getComputedStyle(e).visibility !== 'hidden';
+      const st = document.getElementById('t-stale');
+      const retry = [...document.querySelectorAll('button, a')].filter((b) => shown(b) && b.textContent.trim() === '再读一次').map((b) => b.id || b.className || b.tagName);
+      const fail = [...document.querySelectorAll('body *')].filter((e) => shown(e) && !e.closest('#bars') && [...e.childNodes].some((n) => n.nodeType === 3 && /[一-龥]/.test(n.textContent) && /失败|读不到|没回应|网络断/.test(n.textContent))).map((e) => e.innerText.trim().slice(0, 60));
+      const other = [...document.body.children].filter((e) => e.id !== 'bars' && shown(e) && e.getBoundingClientRect().height > 20).map((e) => e.id || e.tagName);
+      return { subs: shown(document.getElementById('subs')), qlead: document.getElementById('q-lead')?.innerText.replace(/\s+/g, ' ').trim() ?? null, login: shown(document.getElementById('login')), app: shown(document.getElementById('app')), tools: shown(document.getElementById('v-tools')), nav1: shown(document.getElementById('nav1')),
+        stale: shown(st), staleText: st ? st.innerText.replace(/\s+/g, ' ').trim() : null, retry, fail: [...new Set(fail)].slice(0, 3), other };
+    });
+    for (const width of [1280, 375]) {
+      // 四种：没登录就打开、登录那一下之后、带着登录状态重开（500）、带着登录状态重开（网络断）
+      for (const [how, kind] of [['没登录打开时', 500], ['登录后马上', 500], ['带着登录状态重开', 500], ['带着登录状态重开', 'abort']]) {
+        const tag = `M ③ ${width} 宽 · ${how}读清单就${kind === 'abort' ? '网络断' : '失败（500）'}`;
+        const ctx = await browser.newContext({ viewport: { width, height: width < 600 ? 740 : 900 } });
+        const page = await ctx.newPage();
+        curPage = page;
+        page.setDefaultTimeout(WAIT);
+        page.on('pageerror', (e) => errs6.push(e.message));
+        let failing = how === '没登录打开时';
+        await page.route(QRE, (rt) => (!failing ? rt.continue() : kind === 'abort' ? rt.abort('failed') : rt.fulfill({ status: 500, contentType: 'application/json', body: '{"error":"样例：服务暂时出错"}' })));
+        await page.goto(srv6.BASE + '/#/tools');
+        if (how !== '没登录打开时') {
+          await page.waitForSelector('#pw', { state: 'visible', timeout: WAIT });
+          await page.fill('#pw', PASS);
+          if (how === '登录后马上') failing = true;
+          await page.click('#go');
+          if (how === '带着登录状态重开') {
+            await page.waitForSelector('#app:not([hidden])', { timeout: WAIT });
+            failing = true;
+            await page.reload(); // 同一地址只改 hash 的 goto 不会重新加载，要真的重开页面
+          }
+        }
+        // 先确认到了要检查的状态（C29）：等"再读一次"出现，等不到也接着量、照实报
+        await page.waitForFunction(() => [...document.querySelectorAll('button, a')].some((x) => x.textContent.trim() === '再读一次' && x.getClientRects().length && !x.closest('[hidden]')), null, { timeout: WAIT }).catch(() => {});
+        await page.waitForTimeout(800);
+        const s1 = await state(page);
+        const frame = s1.login || (s1.app && s1.nav1 && s1.tools);
+        check(`${tag}：不只剩顶栏——显示登录框，或页面框架（一级菜单 + 公共工具页）`, frame && s1.other.length > 0, s1);
+        check(`${tag}：有中文的失败提示、有"再读一次"按钮`, s1.fail.length > 0 && s1.retry.length > 0, { fail: s1.fail, retry: s1.retry, stale: s1.staleText });
+        if (!s1.login) check(`${tag}：页面框架这种，提示就是红条 #t-stale（中文原因、不露英文报错），按钮是 #t-retry`, s1.stale && /[一-龥]/.test(s1.staleText || '') && !/[A-Za-z]{5,}/.test(s1.staleText || '') && s1.retry.includes('t-retry'), s1);
+        if (!s1.login) check(`${tag}：页面框架这种，两层菜单（#subs）也在；清单那块的结论 #q-lead 不说条数、写"还没读到"`, s1.subs && /还没读到/.test(s1.qlead || '') && !/\d+\s*条/.test(s1.qlead || ''), { subs: s1.subs, qlead: s1.qlead });
+        failing = false;
+        const btn = page.locator('button, a', { hasText: /^再读一次$/ }).locator('visible=true').first();
+        if (await btn.count()) await btn.click({ timeout: WAIT }).catch(() => {});
+        if (how === '没登录打开时') {
+          // 没登录：读回来是"要登录"，出登录框；登录后进清单
+          const lg = await page.waitForSelector('#pw', { state: 'visible', timeout: WAIT }).then(() => true, () => false);
+          if (lg) { await page.fill('#pw', PASS); await page.click('#go'); }
+        }
+        const back = await page.waitForSelector('#v-tools #list .item', { state: 'visible', timeout: WAIT }).then(() => true, () => false);
+        await page.waitForTimeout(300);
+        const s2 = await state(page);
+        check(`${tag}：点"再读一次"（服务恢复后）→ ${how === '没登录打开时' ? '出登录框、登录后' : ''}清单读出来、红条消失`, back && !s2.stale && s2.app && s2.tools, s2);
+        await ctx.close();
+      }
+      // ⑤ 从链接打开语音实测台：子菜单选中"语音生成"
+      const tag = `M ⑤ ${width} 宽`;
+      const ctx = await browser.newContext({ viewport: { width, height: width < 600 ? 740 : 900 } });
+      const page = await ctx.newPage();
+      curPage = page;
+      page.setDefaultTimeout(WAIT);
+      page.on('pageerror', (e) => errs6.push(e.message));
+      const look = async (how) => {
+        await page.waitForSelector('#t-voice', { state: 'visible', timeout: WAIT }).catch(() => {});
+        await page.waitForTimeout(800);
+        const on = await spyOn(page, '#sub-tools');
+        const v = await page.evaluate(() => { const e = document.getElementById('t-voice'); if (!e) return null; const b = e.getBoundingClientRect(); return { top: Math.round(b.top), ih: innerHeight, hash: location.hash }; });
+        check(`${tag}：${how} #/tools/voice → 实测台在屏幕里，子菜单只选中"语音生成" t-tts（不是 t-hook）`, JSON.stringify(on) === '["t-tts"]' && !!v && v.top < v.ih, { on, ...v });
+      };
+      await page.goto(srv6.BASE + '/#/tools/voice');
+      await page.fill('#pw', PASS);
+      await page.click('#go');
+      await page.waitForSelector('#app:not([hidden])', { timeout: WAIT });
+      await look('登录后直接打开');
+      await page.reload();
+      await page.waitForSelector('#app:not([hidden])', { timeout: WAIT });
+      await look('刷新');
+      await page.goto(srv6.BASE + '/#/tools/tts');
+      await page.waitForTimeout(600);
+      // "语音对话实测台 ↓"链接可能在 #tts-more 折叠里：收着就先点开（用户也是这样点）
+      await reveal(page, '#t-tts a[href="#/tools/voice"]');
+      await page.locator('#t-tts a[href="#/tools/voice"]').locator('visible=true').first().click({ timeout: WAIT }).catch(() => {});
+      await look('在"语音生成"里点链接到');
+      await ctx.close();
+    }
+    check('M 段没有脚本错误', errs6.length === 0, errs6.slice(0, 5));
+  });
+  if (srv6) srv6.stop();
 }
 
 await Promise.all(pendingShots);

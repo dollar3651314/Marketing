@@ -26,6 +26,15 @@
  *     → 主内容 → （有说明的）details.more 默认收起；f-next 的说明必须进 details.more；折叠外没有 >60 字的 p / .hint；
  *     #f-todos 每条：有链接 / 要填数字的正好一个主按钮（.btn.primary，地址 = 链接），没有链接的不给主按钮、给正好一个次动作（.btn，不是打勾 .tick）；
  *     第一次就读取失败：#f-next 和它的 .lead 写"暂时读不到"，整页不出现"没事要做"；#f-pack / #f-match 并排时等高且底部空白 ≤48px，否则上下排。量法在 scripts/e2e-look.mjs。
+ *   改版批 C（2026-11-05，第 12 段；Amos"第三批选 a，开始吧"；测试会话先写，研发不改断言）：
+ *     公司总览 #v-company（地址 #/company、#/company/people|learn|health）只留三块，按这个顺序：#co-people（各岗位这周在做什么）→ #co-learn（这周学到了什么）→ #co-health（做得怎么样，CI 等）；
+ *       没有"需要我的事"（#co-need、摘要格子 .tile、"我做了"）、没有项目表 #co-projects、没有下周 #co-next；
+ *       每块和批 A/B 同一套结构：.card.mod → .mh（h2）→ .lead（.dot.red/.amber/.ok/.gray，结论由数据算）→ 主内容 → details.more（默认收起）；
+ *       固定子菜单 nav.sub#sub-company（和 #sub-work 同一套 .in / a[data-s] / aria-current / subSpy），a[data-s] 依次 co-people、co-learn、co-health，href #/company/people 这类；
+ *       顶栏按钮 #conav 文字"公司总览"，页面标题 #title、<title> 开头也是"公司总览"；"刷新"#co-refresh、"还没开通"#co-off、"暂时读不到"#co-fail 照旧（e2e-admin 测）。
+ *       一行 = 表格的 tbody tr 或列表的 li（手机上可以改成列表）。
+ *     forecast 本周帖子 #f-pack-body、焦点战 #f-match-body：每条是一个 tbody tr 或 li；375 宽每条一行（高 ≤ 64px，不再有"第几条：/写的什么：/几点发：/最晚：""联赛：/对阵：/开赛："的前缀）。
+ *     深色模式：一级菜单 .nav1 .cnt 角标、工作台"已超时"红标签 .b-over、"24 小时内"橙标签 .b-soon（含"最该做的事"#hero .when 里实心底的），文字色和它的底色对比度 ≥ 4.5。
  * 时间：页面时钟用 Playwright page.clock 固定在"现在"，拨时钟只拨浏览器（C106）；服务端的"现在"是真实时间，样例的截止时间都按真实时间算。
  * 每段单独 try：一段没做出来不影响别的段报结果；等待都有短超时，等不到就照实报"实际值"。任何一条不符就以非 0 退出。
  */
@@ -480,8 +489,10 @@ try {
     check('下一步做什么：只有 forecast 的待办（没有经营会那条）', L.length > 0 && which(L, T.meet) < 0 && which(L, T.over) >= 0, L.map((x) => x.text.split('\n')[0]));
     check('周包那件事（周二窗口）进待办，截止 = 第 1 条帖子的建议发出时间 → 还剩 3 小时（橙）', L.some((x) => x.cls === 'soon' && /还剩\s*(2|3) 小时/.test(x.text)), L.map((x) => [x.text.split('\n')[0].slice(0, 16), x.cls]));
     check('团队在做什么：批 1 先显示"还没接上"', /还没接上/.test((await txt(p, '#f-live')) ?? ''), await txt(p, '#f-live'));
-    check('本周帖子：6 条', (await p.locator('#f-pack tbody tr').count()) === 6, await p.locator('#f-pack tbody tr').count());
-    check('焦点战：10 场', (await p.locator('#f-match tbody tr').count()) === 10, await p.locator('#f-match tbody tr').count());
+    // 批 C 改：改前数 #f-pack / #f-match 的 tbody tr；改后"每条一个 tbody tr 或 li"（手机上改列表，电脑上可以还是表格），条数口径不变
+    const nRows = (sel) => p.locator(`${sel} :is(tbody tr, li)`).count();
+    check('本周帖子：6 条', (await nRows('#f-pack-body')) === 6, await nRows('#f-pack-body'));
+    check('焦点战：10 场', (await nRows('#f-match-body')) === 10, await nRows('#f-match-body'));
     const hand = (await txt(p, '#f-handoff')) ?? '';
     check('交接记录：只有 forecast 的（市场），没有工作平台的', hand.includes('forecast 周包写好了') && !hand.includes('工作平台技术方案'), hand.slice(0, 200));
     check('用到的工具：有跟帖评论清单的入口', (await p.locator('#f-tools a, #f-tools button', { hasText: '清单' }).count()) >= 1, await txt(p, '#f-tools'));
@@ -1033,6 +1044,272 @@ try {
       check(`批B 第一次就读取失败 ${at}：页面显示，${mod} 和它的结论写"暂时读不到"，整页没有"没事要做"`, shown && /暂时读不到/.test(m) && /暂时读不到/.test(ld) && !/没事要做/.test(all), { shown, lead: ld, mod: m.slice(0, 120), hit: (all.match(/.{0,12}没事要做.{0,8}/) || [''])[0] });
       await p.context().close();
     }
+  });
+
+  // ---------- 12. 改版批 C（2026-11-05，测试会话先写，研发不改这里的断言） ----------
+  // 依据：主会话转 Amos 11/5"第三批选 a，开始吧"的口径：
+  //   ① 公司总览按新样式重做：卡片 + 每块一句话结论 + 说明默认折叠 + 固定子菜单（顺序 = 页面顺序，滑动跟着选中，同一套 subSpy）；
+  //      去掉"需要我的事"（和工作台重复、件数对不上），只留工作台没有的三块：各岗位这周在做什么、这周学到了什么、做得怎么样（CI 等）；顶栏"公司"改名"公司总览"。
+  //   ② forecast 帖子表手机上改列表：375 宽"本周帖子 / 焦点战"每条一行。
+  //   ④ 深色模式红色角标（一级菜单 .cnt、工作台"已超时"）白字对比度 ≥ 4.5（现在 #E5484D 上 3.91）。
+  //   外加公司总览的字号、对比度、横向滚动、底部空白、菜单高度。③ 公共工具首次读取失败、⑤ #/tools/voice 子菜单选中在 scripts/e2e-tools.mjs 的 M 段。
+  const CO3 = ['co-people', 'co-learn', 'co-health'];
+  {
+    // 样例：交接记录前面已经有 2 个岗位（市场、研发）；这里补 3 条学习、3 个仓库 / 任务的 CI（1 个红）
+    const r1 = await srv.ingest('agents', [
+      ...['产品', '研发', '测试'].map((role) => ({ kind: 'learning', key: role, source_at: Date.now() - H, payload: { role, note: '批 C 样例', items: [{ title: `${role}：批 C 样例学习一条` }] } })),
+      { kind: 'ci', key: '', source_at: Date.now() - H, payload: { conclusion: 'none', note: '批 C 样例：agents 没有 CI' } },
+    ]);
+    const r2 = await srv.ingest('marketing', [{ kind: 'ci', source_at: Date.now() - H, payload: { conclusion: 'success', sha: 'e161069', at: now - 2 * H, note: '批 C 样例：正式版 ok' } }]);
+    const r3 = await srv.ingest('new-forecast', [{ kind: 'ci', source_at: Date.now() - H, payload: { conclusion: 'failure', sha: 'f534f23', at: now - 3 * H, note: '批 C 样例：官网 CI 红' } }]);
+    check('批 C：推送学习 3 条、CI 3 条（marketing 绿、new-forecast 红、agents 无 CI）收得下', [r1, r2, r3].every((r) => r.status === 200), [r1, r2, r3]);
+  }
+  /** 子菜单里每一项 [data-s, aria-current]；一级 / 子菜单各几行；#bars 高 */
+  const barsOf = (p, sub) => p.evaluate((s) => {
+    const rows = (sel) => new Set([...document.querySelectorAll(sel)].filter((a) => a.getClientRects().length).map((a) => Math.round(a.getBoundingClientRect().top))).size;
+    return { nav1: rows('nav.nav1 a[data-p]'), sub: rows(s + ' a[data-s]'), h: Math.round(document.getElementById('bars').getBoundingClientRect().height), ih: innerHeight };
+  }, sub);
+  for (const [width, height] of [[1280, 900], [375, 740]]) {
+    for (const colorScheme of ['light', 'dark']) {
+      const tag = `批C 公司总览 ${width} 宽 · ${colorScheme === 'dark' ? '深色' : '浅色'}`;
+      await section(tag, async () => {
+        const p = await open({ width, height, colorScheme });
+        await login(p, '/#/company');
+        const shown = await waitFor(p, '#v-company');
+        await waitFor(p, '#co-health');
+        await LOOK.apiSettled(p).catch(() => {});
+        await p.waitForTimeout(500);
+        // ① 名字：顶栏按钮"公司总览"，页面标题也是
+        const nm = await p.evaluate(() => ({ btn: document.getElementById('conav')?.textContent.trim() ?? null, title: document.getElementById('title')?.textContent.trim() ?? null, doc: document.title }));
+        check(`${tag}：顶栏按钮 #conav 文字是"公司总览"，页面标题 #title 和 <title> 开头也是"公司总览"`, shown && nm.btn === '公司总览' && nm.title === '公司总览' && nm.doc.startsWith('公司总览'), nm);
+        // ② 只留三块，没有"需要我的事"
+        const kept = await p.evaluate(() => {
+          const v = document.getElementById('v-company');
+          const mods = [...v.querySelectorAll('.mod, section.card')].filter((e) => e.getClientRects().length && !e.parentElement.closest('.mod, section.card')).map((e) => e.id || e.className);
+          return { mods, need: !!document.getElementById('co-need'), tiles: v.querySelectorAll('.tile').length, proj: !!document.getElementById('co-projects'), next: !!document.getElementById('co-next'),
+            text: /需要我的事/.test(v.innerText), did: [...v.querySelectorAll('button, a')].filter((b) => /我做了/.test(b.textContent)).length };
+        });
+        check(`${tag}：公司总览只留三块 ${CO3.join(' → ')}（看得见的卡片就这三个，按这个顺序）`, JSON.stringify(kept.mods) === JSON.stringify(CO3), kept.mods);
+        check(`${tag}：没有"需要我的事"（#co-need、摘要格子 .tile、"我做了"按钮、"需要我的事"几个字都没有），没有项目表 #co-projects、下周 #co-next`, !kept.need && kept.tiles === 0 && !kept.text && kept.did === 0 && !kept.proj && !kept.next, kept);
+        // ③ 模块固定结构 + 一句话结论 + 说明默认折叠
+        const S = await LOOK.modShape(p, CO3);
+        for (const m of S) {
+          if (m.why) { check(`${tag}：${m.id} 模块在`, false, m.why); continue; }
+          check(`${tag}：${m.id} 是卡片（.card.mod），第一块标题行 .mh（有 h2），第二块一句话结论 .lead（前面一个红/橙/绿/灰圆点），后面至少一块主内容`, m.card && m.headOk && m.leadOk && !!m.dotCls && m.mains >= 1, { card: m.card, headOk: m.headOk, leadOk: m.leadOk, dot: m.dotCls, mains: m.mains, lead: m.lead.slice(0, 40) });
+          check(`${tag}：${m.id} 的一句话结论是结论（带数字或"没有 / 还没"之类、不是"正在读取"、6～80 字）`, m.leadOk && LOOK.isConclusion(m.lead), m.lead.slice(0, 90));
+          check(`${tag}：${m.id} 有说明的话收在最后一块 details.more、默认收起；折叠外没有超过 60 字的说明`, (m.mores === 0 || m.lastIsMore) && m.moreOpen === 0 && m.long.length === 0, { mores: m.mores, last: m.lastIsMore, open: m.moreOpen, long: m.long });
+        }
+        // ④ 结论由数据算：岗位 2 个、学习 3 条、CI 有 1 个红（圆点红）
+        const ld = Object.fromEntries(S.filter((m) => !m.why).map((m) => [m.id, m]));
+        const num = (t, n) => new RegExp(`(^|\\D)${n}(\\D|$)`).test(t || '');
+        check(`${tag}：岗位这周的结论按交接记录算（2 个岗位 → 写出 2）`, num(ld['co-people']?.lead, 2), ld['co-people']?.lead);
+        check(`${tag}：学到了什么的结论按条数算（3 条 → 写出 3 条）`, /(^|\D)3\s*条/.test(ld['co-learn']?.lead || ''), ld['co-learn']?.lead);
+        check(`${tag}：做得怎么样：有 1 个 CI 是红的 → 结论写出 1、圆点是红的`, num(ld['co-health']?.lead, 1) && ld['co-health']?.dotCls === 'red', { lead: ld['co-health']?.lead, dot: ld['co-health']?.dotCls });
+        // ⑤ 固定子菜单：#sub-company 在、顺序 = 页面顺序 = 三块
+        const sub = await p.evaluate(() => { const n = document.getElementById('sub-company'); return { has: !!n, shown: !!n && !n.closest('[hidden]') && !!n.getClientRects().length, sub: !!n && n.matches('nav.sub'), in: !!n && !!n.querySelector('.in'), links: n ? [...n.querySelectorAll('a[data-s]')].map((a) => [a.dataset.s, a.getAttribute('href')]) : [] }; });
+        check(`${tag}：有固定子菜单 nav.sub#sub-company（里面 .in），看得见`, sub.has && sub.shown && sub.sub && sub.in, sub);
+        check(`${tag}：子菜单依次是 ${CO3.join('、')}，地址 #/company/people、#/company/learn、#/company/health`, JSON.stringify(sub.links) === JSON.stringify([['co-people', '#/company/people'], ['co-learn', '#/company/learn'], ['co-health', '#/company/health']]), sub.links);
+        const o = await LOOK.orderOf(p, '#sub-company');
+        check(`${tag}：子菜单顺序 == 页面上模块从上到下（同排从左到右）的顺序`, o.menu.length === 3 && JSON.stringify(o.menu) === JSON.stringify(o.page), o);
+        // ⑥ 两层菜单：各一行；375×740 合起来 ≤ 15% 屏幕高；滚到底还固定在顶上
+        const bars = await barsOf(p, '#sub-company');
+        check(`${tag}：一级菜单只有一行、子菜单只有一行`, bars.nav1 === 1 && bars.sub === 1, bars);
+        if (width === 375) check(`${tag}：375×740 两层菜单 #bars 高 ${bars.h}px ≤ 15% 屏幕高（${Math.floor(bars.ih * 0.15)}px）`, bars.h <= bars.ih * 0.15, bars);
+        await p.evaluate(() => window.scrollTo(0, document.documentElement.scrollHeight));
+        await p.waitForTimeout(200);
+        const stick = await p.evaluate(() => { const s = document.getElementById('sub-company'); if (!s) return null; const b = s.getBoundingClientRect(); return { top: Math.round(b.top), bottom: Math.round(b.bottom), y: Math.round(scrollY) }; });
+        check(`${tag}：滚到底后子菜单还固定在屏幕顶部`, !!stick && stick.top >= 0 && stick.bottom <= 200, stick);
+        await p.evaluate(() => window.scrollTo(0, 0));
+        // ⑦ 字号、横向滚动、底部空白、对比度
+        const fo = await LOOK.fontOutliers(p, ['#bars', '#v-company']);
+        check(`${tag}：顶栏、菜单、公司总览里看得见的文字字号只在 {${LOOK.FS.join(',')}}±0.5 里（控件可以 ${LOOK.FS_CTL}；.brand 16）`, fo.length === 0, fo);
+        check(`${tag}：页面没有横向滚动`, await noHScroll(p), await p.evaluate(() => [document.documentElement.scrollWidth, innerWidth]));
+        const t = await LOOK.tailOf(p, '#v-company');
+        check(`${tag}：最后一个模块底边到页面底 ${t.tail}px ≤ ${LOOK.TAIL_MAX}px（页面比屏幕矮的不算）`, t.sh <= t.ih + 1 || t.tail <= LOOK.TAIL_MAX, t);
+        const lc = await LOOK.lowContrast(p, ['#v-company', '#sub-company']);
+        check(`${tag}：公司总览文字对比度：正文 ≥ ${LOOK.CONTRAST_MIN}:1（大字 ≥ 3:1，禁用的不算）`, lc.bad.length === 0, lc);
+        if (SHOTS) { mkdirSync(SHOTS, { recursive: true }); await p.screenshot({ path: path.join(SHOTS, `company-C-${width}-${colorScheme}.png`), fullPage: true }); }
+        await p.context().close();
+      });
+    }
+  }
+  // 公司总览子菜单：从链接打开停在那一块、滑动跟着选中（同 forecast / 公共工具的量法）
+  for (const [width, height] of [[1280, 600], [375, 740]]) {
+    await section(`批C 公司总览 ${width} 宽：子菜单`, async () => {
+      const tg = `批C 公司总览 ${width} 宽`;
+      for (const m of ['health', 'learn']) {
+        const p = await open({ width, height });
+        await login(p, `/#/company/${m}`);
+        await waitFor(p, `#co-${m}`);
+        await p.waitForTimeout(600);
+        const st = await p.evaluate((id) => { const e = document.getElementById(id), s = document.getElementById('sub-company'); if (!e) return null; const b = e.getBoundingClientRect(); return { top: Math.round(b.top), menus: s ? Math.round(s.getBoundingClientRect().bottom) : null, ih: innerHeight, hash: location.hash }; }, `co-${m}`);
+        const on = await spyOn(p, '#sub-company');
+        check(`${tg}：从链接打开 #/company/${m} → 停在 co-${m}（顶端在固定菜单下面、在屏幕里），子菜单只选中 co-${m}`, !!st && st.menus != null && st.top >= st.menus - 1 && st.top < st.ih && JSON.stringify(on) === JSON.stringify([`co-${m}`]), { ...st, on });
+        await p.context().close();
+      }
+      const p = await open({ width, height });
+      await login(p, '/#/company');
+      await waitFor(p, '#co-health');
+      await p.waitForTimeout(600);
+      const mods = await spyMods(p, '#sub-company');
+      const pos = await spyPos(p);
+      check(`${tg}：前提——三块都看得见、页面能往下滑`, mods.length === 3 && pos.max > 0, { mods, max: pos.max });
+      const pair = mods.findIndex((x, i) => i > 0 && Math.abs(x.top - mods[i - 1].top) <= 4);
+      if (pair > 0) await subRowCase(p, '#sub-company', mods[pair - 1].id, mods[pair].id, `${tg}（并排）`);
+      else await scrollSpyCase(p, '#sub-company', tg);
+      await p.evaluate(() => window.scrollTo(0, 0));
+      await p.waitForTimeout(200);
+      if (width === 375 && (await p.locator('#sub-company .in').count())) await subInViewCase(p, '#sub-company', `${tg}（选中项看得见）`, { mustScroll: false });
+      // 别的页面不显示公司总览的子菜单
+      await p.goto(BASE + '/#/work');
+      await waitFor(p, '#v-work');
+      check(`${tg}：切到工作台后 #sub-company 不显示`, !(await vis(p, '#sub-company')), null);
+      await p.context().close();
+    });
+  }
+
+  // ② forecast 帖子表手机上改列表：375 宽每条一行；1280 宽条数照旧
+  const ROW_H_MAX = 64; // 约两行字（15px 字、1.5 行高 ≈ 45px，加上下内边距）；现在 375 宽拆成四行一组约 100px
+  const PREFIX = /第几条|写的什么|几点发|最晚|联赛|对阵|开赛/;
+  for (const [width, height] of [[375, 740], [1280, 900]]) {
+    for (const colorScheme of ['light', 'dark']) {
+      const tag = `批C forecast 帖子表 ${width} 宽 · ${colorScheme === 'dark' ? '深色' : '浅色'}`;
+      await section(tag, async () => {
+        const p = await open({ width, height, colorScheme });
+        await login(p, '/#/forecast/pack');
+        await waitFor(p, '#f-pack-body');
+        await p.waitForTimeout(400);
+        for (const [body, n, name] of [['f-pack-body', PACK.posts.length, '本周帖子'], ['f-match-body', PACK.matches.length, '焦点战']]) {
+          const R = await p.evaluate(({ b, re }) => {
+            const box = document.getElementById(b);
+            if (!box) return null;
+            const rows = [...box.querySelectorAll('tbody tr, li')].filter((e) => e.getClientRects().length);
+            const pseudo = [...box.querySelectorAll('*')].filter((e) => e.getClientRects().length).flatMap((e) => ['::before', '::after'].map((ps) => getComputedStyle(e, ps).content)).filter((c) => c && c !== 'none' && c !== 'normal' && new RegExp(re).test(c));
+            const own = /(第几条|写的什么|几点发|最晚|联赛|对阵|开赛)\s*[：:]/.test(box.innerText);
+            const tops = rows.map((r) => Math.round(r.getBoundingClientRect().top));
+            return { n: rows.length, h: rows.map((r) => Math.round(r.getBoundingClientRect().height)), stacked: tops.every((t, i) => i === 0 || t > tops[i - 1]), pre: [...new Set(pseudo)].slice(0, 6), own };
+          }, { b: body, re: PREFIX.source });
+          check(`${tag}：${name}有 ${n} 条，每条一个 tbody tr 或 li、一条一排`, !!R && R.n === n && R.stacked, R);
+          if (width === 375) {
+            check(`${tag}：${name}每条一行：每条高 ≤ ${ROW_H_MAX}px（不再拆成四行一组）`, !!R && R.n > 0 && R.h.every((h) => h <= ROW_H_MAX), R && R.h);
+            check(`${tag}：${name}不再有"第几条：/写的什么：/几点发：/最晚："这类每格前缀（::before 或文字都没有）`, !!R && R.pre.length === 0 && !R.own, R && { pre: R.pre, own: R.own });
+          }
+        }
+        check(`${tag}：页面没有横向滚动`, await noHScroll(p), await p.evaluate(() => [document.documentElement.scrollWidth, innerWidth]));
+        if (SHOTS && width === 375) { mkdirSync(SHOTS, { recursive: true }); await p.locator('#f-pack').screenshot({ path: path.join(SHOTS, `forecast-pack-C-${colorScheme}.png`) }).catch(() => {}); }
+        await p.context().close();
+      });
+    }
+  }
+
+  // ④ 红色角标：一级菜单 .cnt、工作台"已超时" .b-over、"24 小时内" .b-soon 的文字和它的底色对比度（深色 ≥ 4.5 计失败；浅色只报不计——口径只说了深色，白字配 #E5484D 两种模式都是 3.91）
+  const redContrast = (p) => p.evaluate(() => {
+    const parse = (c) => { const m = (c.match(/[\d.]+/g) || []).map(Number); return { r: m[0] ?? 0, g: m[1] ?? 0, b: m[2] ?? 0, a: m.length > 3 ? m[3] : 1 }; };
+    const lum = (c) => { const f = (v) => { v /= 255; return v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4; }; return 0.2126 * f(c.r) + 0.7152 * f(c.g) + 0.0722 * f(c.b); };
+    const ratio = (a, b) => { const [x, y] = [lum(a), lum(b)].sort((p2, q) => q - p2); return (x + 0.05) / (y + 0.05); };
+    const over = (t, b) => ({ r: t.r * t.a + b.r * (1 - t.a), g: t.g * t.a + b.g * (1 - t.a), b: t.b * t.a + b.b * (1 - t.a), a: 1 });
+    const bgOf = (e) => { const L = []; for (let x = e; x; x = x.parentElement) { const c = parse(getComputedStyle(x).backgroundColor); if (c.a > 0) { L.push(c); if (c.a >= 1) break; } } let bg = L.length && L.at(-1).a >= 1 ? L.pop() : { r: 255, g: 255, b: 255, a: 1 }; for (let i = L.length - 1; i >= 0; i--) bg = over(L[i], bg); return bg; };
+    // "最该做的事"里现在只有一个标签（样例里是红的）：照它的样子在 #hero .when 里临时放一个红的、一个橙的（.badge.b-over / .badge.b-soon），量完拿掉，两种颜色都量到
+    const when = document.querySelector('#hero .when');
+    const probes = when ? [['b-over', '已超时 1 天'], ['b-soon', '还剩 1 小时']].map(([c, t]) => { const e = document.createElement('span'); e.className = 'badge ' + c; e.dataset.e2eProbe = '1'; e.textContent = t; when.append(e); return e; }) : [];
+    const out = [...document.querySelectorAll('.nav1 .cnt, #v-work .b-over, #v-work .b-soon')].filter((e) => e.getClientRects().length && !e.hidden && e.textContent.trim()).map((e) => {
+      const bg = bgOf(e), fg = over(parse(getComputedStyle(e).color), bg);
+      return { el: (e.id ? '#' + e.id : '') + '.' + [...e.classList].join('.') + (e.dataset.e2eProbe ? '（#hero 里临时放的）' : ''), text: e.textContent.trim().slice(0, 10), c: +ratio(fg, bg).toFixed(2), fg: getComputedStyle(e).color, bg: `rgb(${Math.round(bg.r)},${Math.round(bg.g)},${Math.round(bg.b)})`, solid: parse(getComputedStyle(e).backgroundColor).a >= 1 };
+    });
+    probes.forEach((e) => e.remove());
+    return out;
+  });
+  for (const [width, height] of [[1280, 900], [375, 740]]) {
+    for (const colorScheme of ['dark', 'light']) {
+      const tag = `批C 红色角标 ${width} 宽 · ${colorScheme === 'dark' ? '深色' : '浅色'}`;
+      await section(tag, async () => {
+        const p = await open({ width, height, colorScheme });
+        await login(p, '/#/work');
+        await waitFor(p, '#w-todos li.todo');
+        await p.waitForFunction(() => [...document.querySelectorAll('.nav1 .cnt')].some((e) => !e.hidden && e.textContent.trim()), null, { timeout: WAIT }).catch(() => {});
+        await p.waitForTimeout(300);
+        const R = await redContrast(p);
+        const cnt = R.filter((x) => x.el.includes('.cnt')), ov = R.filter((x) => x.el.includes('b-over')), sn = R.filter((x) => x.el.includes('b-soon'));
+        // 前提：至少一个角标、"最该做的事"里实心底的红标签（"已超时 / 没通过"）和橙标签（"24 小时内"，主会话 11/5 补：白字压 #D97706 约 3.2，同一口径）各至少一个；
+        // 列表里只给文字着色的 .b-over / .b-soon 也一起量
+        const ok = cnt.length > 0 && ov.some((x) => x.solid) && sn.some((x) => x.solid) && R.every((x) => x.c >= 4.5);
+        const label = `${tag}：一级菜单 .cnt 角标（${cnt.length} 个）、工作台"已超时"红标签 .b-over（${ov.length} 个，实心底 ${ov.filter((x) => x.solid).length}）、"24 小时内"橙标签 .b-soon（${sn.length} 个，实心底 ${sn.filter((x) => x.solid).length}）的文字和底色对比度都 ≥ 4.5`;
+        if (colorScheme === 'dark') check(label, ok, R);
+        else console.log(`${ok ? '✓' : '·'} ${label}（浅色只报不计）${ok ? '' : '：实际 ' + JSON.stringify(R.filter((x) => x.c < 4.5))}`);
+        await p.context().close();
+      });
+    }
+  }
+
+  // ⑥ 工作台打勾：接住公司总览"我做了"那几条保护（批 C 去掉"需要我的事"时从 e2e-admin 第 3 段移过来，底线 6：功能去掉了、它守的保护还要有人守）
+  //   e2e-admin 改前守的是：处理中…（按钮不能再点）/ 成功提示、收起 / 失败提示原因、按钮恢复 / 刷新页面后还在 / 取消变回 / 迟到的读不能盖掉刚点的。
+  //   工作台已有的（第 4 段）：打勾收进"做完的"、跨设备同步、旧状态撤销提示"已被另一处改过"、新浏览器也看到。这里补其余几条，同一套判定。
+  await section('批C 工作台打勾（接住公司总览"我做了"的保护）', async () => {
+    const p = await open();
+    await login(p, '/#/work/todo');
+    await waitFor(p, '#w-todos li.todo');
+    await openGroups(p);
+    const ITEM = T.meet;
+    const li = () => p.locator('#w-todos li.todo', { hasText: ITEM });
+    const inDone = () => p.evaluate((t) => !![document.getElementById('w-donelist')].filter(Boolean).find((d) => d.textContent.includes(t)) && ![...document.querySelectorAll('#w-todos li.todo')].some((l) => l.innerText.includes(t)), ITEM);
+    const waitDone = (want) => p.waitForFunction(([t, w]) => { const d = !!document.getElementById('w-donelist')?.textContent.includes(t) && ![...document.querySelectorAll('#w-todos li.todo')].some((l) => l.innerText.includes(t)); return d === w; }, [ITEM, want], { timeout: WAIT }).then(() => true, () => false);
+    const toast = () => p.evaluate(() => { const e = document.getElementById('p-toast'); return e && !e.hidden && e.getClientRects().length ? e.innerText.replace(/\s+/g, ' ').trim() : ''; });
+    check('批C 打勾 先确认：经营会那条在待办里、没勾', (await li().count()) === 1 && !(await inDone()), await li().count());
+    // ① 处理中：按钮不能再点，再点也不多发
+    let release = null, posts = 0;
+    await p.route('**/api/company/done', async (rt) => { posts += 1; await new Promise((r) => { release = r; }); await rt.continue(); });
+    await li().locator('.tick').click({ timeout: WAIT });
+    for (let i = 0; !release && i < 200; i++) await p.waitForTimeout(20);
+    const busy = await li().locator('.tick').evaluate((b) => b.disabled || b.getAttribute('aria-busy') === 'true').catch(() => null);
+    await li().locator('.tick').click({ force: true, timeout: 1000 }).catch(() => {});
+    await p.waitForTimeout(200);
+    check('批C 打勾 处理中：打勾按钮变灰（disabled 或 aria-busy），再点一下也不多发请求', busy === true && posts === 1, { busy, posts });
+    if (release) release();
+    const ok1 = await waitDone(true);
+    check('批C 打勾 成功：收进"做完的"，提示"已打勾"', ok1 && /已打勾/.test(await toast()), { ok1, toast: await toast() });
+    await p.unroute('**/api/company/done');
+    // ② 提示里的"撤销"：放回待办
+    await p.locator('#p-toast button', { hasText: '撤销' }).click({ timeout: WAIT }).catch(() => {});
+    const back = await waitDone(false);
+    check('批C 打勾 点提示里的"撤销"：放回待办，提示"已放回待办"', back && /已放回待办/.test(await toast()), { back, toast: await toast() });
+    // ③ 失败：提示原因、按钮恢复、这条还在待办
+    await openGroups(p);
+    await p.route('**/api/company/done', (rt) => rt.fulfill({ status: 500, contentType: 'application/json', body: JSON.stringify({ error: '测试用的失败' }) }));
+    await li().locator('.tick').click({ timeout: WAIT });
+    await p.waitForFunction(() => /没记上/.test(document.getElementById('p-toast')?.innerText || ''), null, { timeout: WAIT }).catch(() => {});
+    const t3 = await toast();
+    const en = await li().locator('.tick').evaluate((b) => !b.disabled).catch(() => null);
+    check('批C 打勾 失败：提示"没记上：测试用的失败，请再点一次"，这条还在待办、打勾按钮能再点', t3.includes('没记上：测试用的失败，请再点一次') && en === true && !(await inDone()), { toast: t3, enabled: en });
+    await p.unroute('**/api/company/done');
+    // ④ 迟到的读不能盖掉刚点的：扣住一次 GET /api/company（拿到的是"没勾"的旧快照），期间打勾成功，再放它落地
+    await openGroups(p);
+    let hold = true, rel2 = null;
+    await p.route('**/api/company', async (rt) => {
+      if (!hold || rt.request().method() !== 'GET') return rt.continue();
+      hold = false;
+      const r = await rt.fetch();
+      await new Promise((x) => { rel2 = x; });
+      await rt.fulfill({ response: r }).catch(() => {});
+    });
+    await p.clock.fastForward(31_000); // 30 秒一次的自动重读
+    for (let i = 0; !rel2 && i < 300; i++) await p.waitForTimeout(20);
+    if (!rel2) throw new Error('拨了 31 秒没等到 GET /api/company');
+    await li().locator('.tick').click({ timeout: WAIT });
+    const ok4 = await waitDone(true);
+    rel2();
+    await p.waitForTimeout(800);
+    check('批C 打勾 迟到的读不能盖掉刚点的勾：旧快照落地后这条还在"做完的"、提示还在', ok4 && (await inDone()) && /已打勾/.test(await toast()), { ok4, now: await inDone(), toast: await toast() });
+    await p.unroute('**/api/company');
+    // ⑤ 刷新页面后还在
+    await p.reload();
+    await p.waitForSelector('#app:not([hidden])', { timeout: WAIT });
+    await waitFor(p, '#w-todos li.todo');
+    check('批C 打勾 刷新页面后还是勾着（存在服务器上）', await waitDone(true), await txt(p, '#w-donelist'));
+    // 还原：撤销，后面不受影响
+    await openDone(p);
+    await p.locator('#w-donelist li', { hasText: ITEM }).locator('[data-undo]').first().click({ timeout: WAIT }).catch(() => {});
+    check('批C 打勾 还原：从"做完的"撤销回待办', await waitDone(false), await txt(p, '#w-donelist'));
+    await p.context().close();
   });
 
   check('全程没有脚本错误', errors.length === 0, errors.slice(0, 5));

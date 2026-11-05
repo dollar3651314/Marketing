@@ -181,9 +181,10 @@ describe('后台读取 GET /api/company 和"我做了"', () => {
     expect((await db.prepare('SELECT COUNT(*) AS n FROM company_done').first<{ n: number }>())!.n).toBe(0);
   });
 
-  it('后台页面有第四页"公司"，旧三页还在；页面脚本里没有模板字符串残留', async () => {
+  // 改版批 C（2026-11-05，Amos"第三批选 a"）：顶栏按钮从"公司"改名"公司总览"。改前要 '>公司</button>'，改后要 '>公司总览</button>'
+  it('后台页面有第四页"公司总览"，旧三页还在；页面脚本里没有模板字符串残留', async () => {
     const html = await (await handle(page('/'), env(), T0)).text();
-    for (const s of ['id="v-list"', 'id="v-usage"', 'id="v-ext"', 'id="v-company"', 'id="conav"', '>公司</button>']) expect(html).toContain(s);
+    for (const s of ['id="v-list"', 'id="v-usage"', 'id="v-ext"', 'id="v-company"', 'id="conav"', '>公司总览</button>']) expect(html).toContain(s);
     expect(html).not.toContain('${');
     // 页面上不出现技术词（C128）：公司页的固定文字里没有 JSON、payload、token
     const co = html.slice(html.indexOf('<section id="v-company"'), html.indexOf('</main>'));
