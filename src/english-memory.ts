@@ -18,6 +18,15 @@
  *    一律从 src/english-page.ts 的 ENGLISH_MOD **现场抽出来**（segments()），不另抄一份——抄一份就会漂。
  *    新加的几条（词汇范围、跨轮回收、新词、#LOG）**追加在后面**，不改原文一个字。
  *
+ * **v6（2026-11-05，第 2 轮真实数据之后）**：回收主力从「帮扶句」换成「**纠正句**」。第 2 轮 `B=0`——
+ * 用词控制起作用了（他全程没用帮扶、自己造了 5 句），可 `helped` 一空，这一轮**什么都没存进去**，系统空转。
+ * 真正该回收的是他**说错、被纠正**的句子（`Do you help me?` → `Can you help me?`、`1 hours.` → `One hour.`）：
+ * 那是他自己想表达的话，学习价值高得多，而且只要他开口就不缺货。所以 `#LOG` 多一项 `fixed`，
+ * **正确说法**进 `en_sentence`（和 `helped` 同一张表、同一套间隔）。另外两件：**连续失败 2 次淘汰**（`due_round = 0`）、
+ * **含他还不认识的词的句子不入库**（第 1 轮那 5 句就是这么废掉的）。**不新增迁移**——
+ * 每轮的纠正句条数从 `en_round.raw`（`#LOG` 原文）现场数（`fixedCount`）。
+ * 解析也加了容错：`#LOG` **整块挤成一行**（第 2 轮实际就是这样）照样按键切得开（`lineEntries`）。
+ *
  * 入口只有 `/api/english/*` 一个，走后台登录（queue.ts 的 sessionOk）；后台密码没填时整个后台 404（queue.ts 的 adminEnabled）。
  * **不碰密钥**（底线 1）：这里读写的只有单词、句子、轮次计数和他粘回来的 #LOG 原文。
  */
@@ -188,9 +197,14 @@ function unquote(s: string): string {
 const splitList = (s: string) => s.split(/[,、;；]/).map((x) => unquote(x).toLowerCase()).filter(Boolean).filter((x) => x.length <= 40).slice(0, 40);
 const splitSentences = (s: string) => s.split('|').map(unquote).filter(Boolean).map((x) => x.slice(0, 200)).slice(0, 20);
 
+/** 一条纠正：他说错的原话 → 母语者会怎么说（v6 的回收主力） */
+export interface Fix { wrong: string; right: string }
+
 export interface ParsedLog {
   stuck: string[];
   helped: string[];
+  /** v6：他说错、AI 在复盘里纠正过的句子。**主力素材**（helped 是别人的话，这是他自己的话） */
+  fixed: Fix[];
   recalled: { text: string; ok: boolean }[];
   fresh: string[];
   counts: { a: number | null; b: number | null; c: number | null };
@@ -202,7 +216,38 @@ export interface LogError { 出错: string; 怎么办: string }
 export type LogResult = { ok: true; log: ParsedLog } | { ok: false; err: LogError };
 
 /** #LOG 块里认识的键，页面上的"格式长什么样"也用这一份 */
-export const LOG_KEYS = ['stuck', 'helped', 'recalled', 'new', 'counts'] as const;
+export const LOG_KEYS = ['stuck', 'helped', 'fixed', 'recalled', 'new', 'counts'] as const;
+
+/**
+ * 把一行拆成若干个 `键: 值`。**容错**：第 2 轮他贴回来的 #LOG **整块挤成一行、一个换行都没有**，
+ * 按行切的老写法会把 `stuck: propose helped: ... counts: A=5 B=0 C=0` 整串当成 stuck 的值，
+ * 后面几项全丢（不报错，但数据是错的，比报错更糟）。所以改成**按键切**：
+ * 一行里凡是出现 `stuck:` / `helped:` / `fixed:` / `recalled:` / `new:` / `counts:`（前面是行首或空白或 `|`）就是一个新项。
+ * 正常的一行一项（老格式）走这条路结果完全一样。
+ * 行首有不认识的东西（例如 `Mike: nice talking`）→ 回 null，调用方把整行记成"不认识的行"。
+ */
+function lineEntries(line: string): { key: string; val: string }[] | null {
+  const re = new RegExp('(?:^|[\\s|])(' + LOG_KEYS.join('|') + ')\\s*[:：]', 'gi');
+  const hits: { key: string; at: number; from: number }[] = [];
+  for (let m = re.exec(line); m; m = re.exec(line)) hits.push({ key: m[1].toLowerCase(), at: m.index, from: re.lastIndex });
+  if (!hits.length) return null;
+  if (line.slice(0, hits[0].at).trim()) return null;
+  return hits.map((h, i) => ({ key: h.key, val: line.slice(h.from, i + 1 < hits.length ? hits[i + 1].at : line.length).trim() }));
+}
+
+/** fixed 的值："原话" => "母语者会怎么说"，用 | 隔开。=> 、→ 、-> 都认 */
+export function parseFixed(val: string, warn: (s: string) => void): Fix[] {
+  const out: Fix[] = [];
+  for (const part of splitSentences(val)) {
+    const m = /^([\s\S]*?)\s*(?:=>|＝>|→|->)\s*([\s\S]*)$/.exec(part);
+    if (!m) { warn(`fixed 里这一条没写 =>（要的是 "我说的原话" => "母语者会怎么说"），跳过了：${part.slice(0, 60)}`); continue; }
+    const wrong = unquote(m[1]);
+    const right = unquote(m[2]);
+    if (!right) { warn(`fixed 里这一条 => 后面是空的，跳过了：${part.slice(0, 60)}`); continue; }
+    out.push({ wrong: wrong.slice(0, 200), right: right.slice(0, 200) });
+  }
+  return out;
+}
 
 /**
  * 从他粘回来的整段对话里 grep 出 `#LOG…#END` 并解析。**粘多粘少都不影响**，只看这一块。
@@ -226,37 +271,37 @@ export function parseLog(input: string): LogResult {
   const raw = text.slice(i, j + 4);
   const body = text.slice(i + 4, j);
 
-  const log: ParsedLog = { stuck: [], helped: [], recalled: [], fresh: [], counts: { a: null, b: null, c: null }, raw: raw.slice(0, 2000), warnings: [] };
+  const log: ParsedLog = { stuck: [], helped: [], fixed: [], recalled: [], fresh: [], counts: { a: null, b: null, c: null }, raw: raw.slice(0, 2000), warnings: [] };
   let hit = 0;
   const unknown: string[] = [];
   for (const line of body.split('\n')) {
     const t = line.trim();
     if (!t) continue;
-    const m = /^([A-Za-z_]+)\s*[:：]\s*([\s\S]*)$/.exec(t);
-    if (!m) { unknown.push(t.slice(0, 40)); continue; }
-    const key = m[1].toLowerCase();
-    const val = m[2].trim();
-    if (!(LOG_KEYS as readonly string[]).includes(key)) { unknown.push(t.slice(0, 40)); continue; }
-    hit++;
-    if (!val) continue;
-    if (key === 'stuck') log.stuck = splitList(val);
-    else if (key === 'new') log.fresh = splitList(val);
-    else if (key === 'helped') log.helped = splitSentences(val);
-    else if (key === 'recalled') {
-      for (const part of splitSentences(val)) {
-        const k = part.lastIndexOf('=');
-        if (k < 0) { log.warnings.push(`recalled 里这一条没写 = yes 还是 = no，没算进回收成功率：${part.slice(0, 60)}`); continue; }
-        const sent = unquote(part.slice(0, k));
-        const verdict = part.slice(k + 1).trim().toLowerCase();
-        if (!sent) { log.warnings.push(`recalled 里有一条只有 = 号、没有句子，跳过了：${part.slice(0, 60)}`); continue; }
-        if (/^(yes|y|ok|true|对|是|会)$/.test(verdict)) log.recalled.push({ text: sent, ok: true });
-        else if (/^(no|n|false|不对|不会|否)$/.test(verdict)) log.recalled.push({ text: sent, ok: false });
-        else log.warnings.push(`recalled 里这一条的结果写成了「${verdict.slice(0, 20)}」，只认 yes / no，没算进回收成功率：${sent.slice(0, 40)}`);
+    const entries = lineEntries(t);
+    if (!entries) { unknown.push(t.slice(0, 40)); continue; }
+    for (const { key, val } of entries) {
+      hit++;
+      if (!val) continue;
+      if (key === 'stuck') log.stuck = splitList(val);
+      else if (key === 'new') log.fresh = splitList(val);
+      else if (key === 'helped') log.helped = splitSentences(val);
+      else if (key === 'fixed') log.fixed = parseFixed(val, (s) => log.warnings.push(s));
+      else if (key === 'recalled') {
+        for (const part of splitSentences(val)) {
+          const k = part.lastIndexOf('=');
+          if (k < 0) { log.warnings.push(`recalled 里这一条没写 = yes 还是 = no，没算进回收成功率：${part.slice(0, 60)}`); continue; }
+          const sent = unquote(part.slice(0, k));
+          const verdict = part.slice(k + 1).trim().toLowerCase();
+          if (!sent) { log.warnings.push(`recalled 里有一条只有 = 号、没有句子，跳过了：${part.slice(0, 60)}`); continue; }
+          if (/^(yes|y|ok|true|对|是|会)$/.test(verdict)) log.recalled.push({ text: sent, ok: true });
+          else if (/^(no|n|false|不对|不会|否)$/.test(verdict)) log.recalled.push({ text: sent, ok: false });
+          else log.warnings.push(`recalled 里这一条的结果写成了「${verdict.slice(0, 20)}」，只认 yes / no，没算进回收成功率：${sent.slice(0, 40)}`);
+        }
+      } else if (key === 'counts') {
+        const num = (c: string) => { const x = new RegExp(c + '\\s*=\\s*(\\d{1,4})', 'i').exec(val); return x ? Number(x[1]) : null; };
+        log.counts = { a: num('A'), b: num('B'), c: num('C') };
+        if (log.counts.a === null && log.counts.b === null && log.counts.c === null) log.warnings.push(`counts 这一行看不懂（要的是 A=12 B=9 C=4 这个样子）：${val.slice(0, 60)}`);
       }
-    } else if (key === 'counts') {
-      const num = (c: string) => { const x = new RegExp(c + '\\s*=\\s*(\\d{1,4})', 'i').exec(val); return x ? Number(x[1]) : null; };
-      log.counts = { a: num('A'), b: num('B'), c: num('C') };
-      if (log.counts.a === null && log.counts.b === null && log.counts.c === null) log.warnings.push(`counts 这一行看不懂（要的是 A=12 B=9 C=4 这个样子）：${val.slice(0, 60)}`);
     }
   }
   if (unknown.length) log.warnings.push(`#LOG 里有 ${unknown.length} 行不认识、跳过了（只认 ${LOG_KEYS.join(' / ')}）：${unknown.slice(0, 3).join(' ／ ')}`);
@@ -284,14 +329,50 @@ export const NEW_PER_ROUND = 1;
 /** 间隔：第 1 次隔 1 轮、再隔 3 轮、再隔 7 轮；第 3 档再说对就毕业，不再考 */
 export const GAPS = [1, 3, 7] as const;
 /**
- * 考完一句之后，下一次该在第几轮考。
- * 说对 → 往上走一档（走完 GAPS 就毕业，step = GAPS.length，due_round = 0 表示不再派）；
- * 说不出来 → **退回第一档**，下一轮马上再考（间隔重排）。
+ * v6：**连续失败 2 次就淘汰**（2026-11-05）。原来一句说不出来就退回第一档、无限重考，
+ * 第 1 轮那 5 句（里面全是 constraints / bandwidth / clarify 这些他根本不认识的词）就会**永远占着到期名额**。
+ * 上一次是 `no`、这一次又是 `no` → 淘汰（due_round = 0，不再派），并在页面上说清楚为什么。
  */
-export function nextDue(step: number, round: number, ok: boolean): { step: number; due: number } {
-  if (!ok) return { step: 0, due: round + GAPS[0] };
+export function retiredNow(ok: boolean, last: string): boolean {
+  return !ok && last === 'no';
+}
+
+/**
+ * 考完一句之后，下一次该在第几轮考。`last` 是这一句**上一次**的结果（'yes' / 'no' / ''）。
+ * 说对 → 往上走一档（走完 GAPS 就毕业，step = GAPS.length，due_round = 0 表示不再派）；
+ * 说不出来 → **退回第一档**，下一轮马上再考（间隔重排）；
+ * **连着两次说不出来 → 淘汰**（due = 0，step 留在 0，和"毕业"靠 step 区分开）。
+ */
+export function nextDue(step: number, round: number, ok: boolean, last = ''): { step: number; due: number } {
+  if (!ok) return { step: 0, due: retiredNow(ok, last) ? 0 : round + GAPS[0] };
   const s = Math.min(step + 1, GAPS.length);
   return s >= GAPS.length ? { step: GAPS.length, due: 0 } : { step: s, due: round + GAPS[s] };
+}
+
+/**
+ * v6：**入库前过滤**——句子里只要有一个他还不认识的词，就不要存（存了也考不出来）。
+ * 第 1 轮那 5 句全是这么废掉的：`constraints` / `bandwidth` / `clarify` 他都不认识，
+ * 下一轮让他"重新说出同一个意思"，他当然说不出来，于是退回第一档、无限重考。
+ * 词形：`constraints` 认成 `constraint`（去掉结尾的 s / es / ed / d / ing 再比一次）；
+ * 词组（`test the waters`）按**整串**在归一化后的句子里找。
+ */
+export function unknownWordsIn(text: string, unknown: Iterable<string>): string[] {
+  const norm = normSentence(text);
+  if (!norm) return [];
+  const tokens = new Set<string>();
+  for (const t of norm.split(' ')) {
+    if (!t) continue;
+    tokens.add(t);
+    for (const suf of ['s', 'es', 'ed', 'd', 'ing']) if (t.length > suf.length + 2 && t.endsWith(suf)) tokens.add(t.slice(0, -suf.length));
+  }
+  const hit: string[] = [];
+  for (const w of unknown) {
+    const n = normSentence(w);
+    if (!n) continue;
+    const found = n.includes(' ') ? (' ' + norm + ' ').includes(' ' + n + ' ') : tokens.has(n);
+    if (found && !hit.includes(w)) hit.push(w);
+  }
+  return hit;
 }
 
 // ======================================================================
@@ -309,6 +390,19 @@ export const NEW_WORD_NOT_IN_HELP =
   '- 今天要教的那个新词，你可以在你自己说的话里用一次让我听到，但**帮我造句子时绝对不许用它**。帮我的句子只许用我已经会的词。';
 export const SHORT_HELP_SENTENCE =
   '- 你给我念的句子：**不超过 5 个词、只用最简单的结构**（像 "I need more time." "Can you help me?"），不许带从句、不许用我不认识的词。宁可说得幼稚，也不要说得地道。';
+
+/**
+ * v6（2026-11-05，第 2 轮真实数据后）：`#LOG` 里新加的那一项 `fixed`，和要求它"一条都别漏"的那句话。
+ * 为什么它比 `helped` 重要：第 2 轮 **B=0**（全程没用帮扶），`helped` 空着 → 这一轮什么都没存进去，系统空转；
+ * 可他这一轮**真的说错过**：`Do you help me?`（该说 `Can you help me?`）、`1 hours.`（该说 `One hour.`）。
+ * 帮扶句是**别人的话**，纠正句是**他自己想表达、说了、说错了、被纠正**的话——学习价值高得多，
+ * 而且**只要他开口就永远不缺货**。所以 v6 起 `fixed` 是回收主力，`helped` 变成补充。
+ * 这两条是写进提示词的原文，测试逐字比对，改一个字就红。
+ */
+export const FIXED_LINE =
+  'fixed: 这一轮我说错、你纠正过的句子，写成 "我说的原话" => "母语者会怎么说"，每一边都用英文双引号括起来，句子之间用 | 隔开';
+export const FIXED_ASK =
+  '**fixed 这一项最重要，一条都别漏**：凡是我说错、你在复盘里纠正过的句子（语法、时态、单复数、用词、说法不地道，都算），全部列进 fixed，哪怕只错一个词也要列。例如我说 "Do you help me?" 就写 "Do you help me?" => "Can you help me?"，我说 "1 hours." 就写 "1 hours." => "One hour."。';
 
 /**
  * 拼出完整的一段提示词。结构：
@@ -342,10 +436,12 @@ export function buildPrompt(seg: Segments, m: Memory): string {
     '#LOG',
     'stuck: 这一轮我听不懂或说不出来的词，英文原词，逗号隔开',
     'helped: 这一轮我靠句首、关键词或整句才说出来的句子，每句用英文双引号括起来，句子之间用 | 隔开',
+    FIXED_LINE,
     'recalled: 上面"跨轮回收"那几句，每句写成 "原句" = yes 或 "原句" = no（yes = 不给提示我自己说出来了），句子之间用 | 隔开',
     'new: 今天教我的新词，逗号隔开',
     'counts: A=自己造的句子数 B=靠提示才说出来的句子数 C=同一轮之内回收时独立说对的句子数',
     '#END',
+    FIXED_ASK,
     '这一段只许出现一次，放在整段回答的最后，前后不要加任何说明文字。',
   ].join('\n');
   return [seg.scene, seg.rules + '\n' + 追加.join('\n'), seg.before, seg.ending + '\n\n' + 块].join('\n\n');
@@ -359,16 +455,16 @@ const json = (data: unknown, status = 200) => new Response(JSON.stringify(data),
 const bad = (出错: string, 怎么办: string, status = 400) => json({ 出错, 怎么办 }, status);
 
 interface WordRow { word: string; band: number; known: number; source: string; taught_round: number }
-interface SentRow { id: number; norm: string; text: string; from_round: number; due_round: number; step: number; asked: number; passed: number }
-interface RoundRow { n: number; started_at: number; logged_at: number | null; scene: string; due_json: string; new_json: string; prompt: string; a: number | null; b: number | null; c: number | null; recall_due: number; recalled: number }
+interface SentRow { id: number; norm: string; text: string; from_round: number; due_round: number; step: number; asked: number; passed: number; last_result: string }
+interface RoundRow { n: number; started_at: number; logged_at: number | null; scene: string; due_json: string; new_json: string; prompt: string; a: number | null; b: number | null; c: number | null; recall_due: number; recalled: number; raw?: string }
 
 const BY_WORD = new Map(WORDLIST.map((p) => [p.word, p]));
 
 async function readState(env: Env, now: number) {
   const [words, sents, rounds] = await Promise.all([
     env.DB.prepare('SELECT word, band, known, source, taught_round FROM en_word').all<WordRow>(),
-    env.DB.prepare('SELECT id, norm, text, from_round, due_round, step, asked, passed FROM en_sentence ORDER BY due_round, id').all<SentRow>(),
-    env.DB.prepare('SELECT n, started_at, logged_at, scene, due_json, new_json, prompt, a, b, c, recall_due, recalled FROM en_round ORDER BY n').all<RoundRow>(),
+    env.DB.prepare('SELECT id, norm, text, from_round, due_round, step, asked, passed, last_result FROM en_sentence ORDER BY due_round, id').all<SentRow>(),
+    env.DB.prepare('SELECT n, started_at, logged_at, scene, due_json, new_json, prompt, a, b, c, recall_due, recalled, raw FROM en_round ORDER BY n').all<RoundRow>(),
   ]);
   void now;
   return { words: words.results ?? [], sents: sents.results ?? [], rounds: rounds.results ?? [] };
@@ -398,7 +494,33 @@ export function recallRate(rounds: { recall_due: number; recalled: number }[]): 
 export function roundRows(rounds: RoundRow[]) {
   return rounds
     .filter((r) => r.logged_at !== null)
-    .map((r) => ({ n: r.n, 场景: r.scene, A: r.a, B: r.b, C: r.c, 到期考了: r.recall_due, 说对了: r.recalled, 贴回来的时间: r.logged_at }));
+    .map((r) => ({ n: r.n, 场景: r.scene, A: r.a, B: r.b, C: r.c, 纠正句: fixedCount(r.raw), 到期考了: r.recall_due, 说对了: r.recalled, 贴回来的时间: r.logged_at }));
+}
+
+/**
+ * 这一轮报了几条纠正句（v6）。**没有新增字段、没有新增迁移**：直接从 `en_round.raw`（他贴回来的 `#LOG` 原文）
+ * 现场数一遍。v6 之前的轮里压根没有 `fixed` 这一项 → 回 `null`，页面写「—」，**不拿 0 冒充**（底线 3）。
+ * raw 存的时候截到 2000 字，万一 `fixed` 那一项被截掉了，这里会少数几条——那也只少不多，不会凭空多出来。
+ */
+export function fixedCount(raw: string | null | undefined): number | null {
+  if (!raw) return null;
+  // raw 里带着 #LOG / #END 这两行（整块挤成一行时它们和内容在同一行），先剥掉，不然按键切会被行首的 #LOG 挡住
+  const i = raw.indexOf('#LOG');
+  const tail = i >= 0 ? raw.slice(i + 4) : raw;
+  const j = tail.indexOf('#END');
+  const inner = j >= 0 ? tail.slice(0, j) : tail;
+  let has = false;
+  let n = 0;
+  for (const line of inner.split('\n')) {
+    const entries = lineEntries(line.trim());
+    if (!entries) continue;
+    for (const { key, val } of entries) {
+      if (key !== 'fixed') continue;
+      has = true;
+      n += parseFixed(val, () => {}).length;
+    }
+  }
+  return has ? n : null;
 }
 
 export async function englishApi(env: Env, req: Request, now: number, sub: string): Promise<Response | null> {
@@ -416,10 +538,11 @@ export async function englishApi(env: Env, req: Request, now: number, sub: strin
       跨轮回收成功率: recallRate(rounds),
       轮次: { 已经跑过: rounds.filter((r) => r.logged_at !== null).length, 这一轮: next, 开着的轮: open ? { n: open.n, 场景: open.scene, 提示词: open.prompt } : null },
       到期要考: due.length,
-      句子: { 一共: sents.length, 毕业: sents.filter((s) => s.step >= GAPS.length).length },
+      // 淘汰（v6）= due_round 归 0、但没走完三档的那些：连考两次都说不出来，不再考它（和"毕业"靠 step 区分）
+      句子: { 一共: sents.length, 毕业: sents.filter((s) => s.step >= GAPS.length).length, 淘汰: sents.filter((s) => s.step < GAPS.length && s.due_round === 0).length },
       不认识的词: words.filter((w) => !w.known).length,
       最近一轮: (() => { const rows = roundRows(rounds); return rows.length ? rows[rows.length - 1] : null; })(),
-      最近几轮: rounds.slice(-8).reverse().map((r) => ({ n: r.n, 场景: r.scene, 贴回来了: r.logged_at !== null, A: r.a, B: r.b, C: r.c, 到期考了: r.recall_due, 说对了: r.recalled })),
+      最近几轮: rounds.slice(-8).reverse().map((r) => ({ n: r.n, 场景: r.scene, 贴回来了: r.logged_at !== null, A: r.a, B: r.b, C: r.c, 纠正句: fixedCount(r.raw), 到期考了: r.recall_due, 说对了: r.recalled })),
     });
   }
 
@@ -488,7 +611,7 @@ export async function englishApi(env: Env, req: Request, now: number, sub: strin
 
   // ---- 第 3 步：贴回来，自动入库 ----
   if (sub === 'log') {
-    const { sents, rounds } = await readState(env, now);
+    const { words, sents, rounds } = await readState(env, now);
     const open = rounds.find((r) => r.logged_at === null);
     if (!open) return bad('现在没有开着的轮次，不知道这一段是哪一轮的。', '先点上面的「开始这一轮」，把提示词复制去 Gemini Live 聊完，再回来粘。', 409);
     const r = parseLog(typeof body.text === 'string' ? body.text : '');
@@ -514,22 +637,43 @@ export async function englishApi(env: Env, req: Request, now: number, sub: strin
       );
     }
 
-    // ② 靠提示才说出来的句子：没见过的存一条，下一轮就考（间隔第 1 档）
+    // ② 入库：**纠正句（fixed）是主力，帮扶句（helped）是补充**（v6，2026-11-05 第 2 轮真实数据）。
+    // 第 2 轮 B=0、helped 空着 → 一句都没存进去，系统空转；可他明明说错过两句、也被纠正过。
+    // 纠正句存的是**正确说法**（回收时考的是"同一个意思你能不能自己说对"）。
+    // **他的原话目前没地方存**：en_sentence 没有多余字段，而这一版不新增迁移——先不存，缺的字段写在汇报里。
+    //
+    // 过滤（v6）：句子里只要有一个他还不认识的词就**不存**——存了也考不出来。
+    // 第 1 轮那 5 句全是这么废掉的（constraints / bandwidth / clarify 他都不认识）。
+    // "不认识"算上这一轮 stuck 报上来的词和今天刚教的新词（上面 ① 正要把它们记成 known = 0）。
+    const unknownWords = [
+      ...words.filter((w) => !w.known).map((w) => w.word),
+      ...log.stuck,
+      ...log.fresh,
+    ].filter((w, i, a) => a.indexOf(w) === i);
+    const skipped: string[] = [];
     let added = 0;
-    for (const text of log.helped) {
+    let addedFixed = 0;
+    const keep = (text: string): boolean => {
       const norm = normSentence(text);
-      if (!norm || byNorm.has(norm)) continue;
-      byNorm.set(norm, { id: -1, norm, text, from_round: open.n, due_round: open.n + GAPS[0], step: 0, asked: 0, passed: 0 });
-      added++;
+      if (!norm || byNorm.has(norm)) return false;
+      const bad = unknownWordsIn(text, unknownWords);
+      if (bad.length) { skipped.push(`${text.slice(0, 60)}（里面有 ${bad.slice(0, 3).join('、')}）`); return false; }
+      byNorm.set(norm, { id: -1, norm, text, from_round: open.n, due_round: open.n + GAPS[0], step: 0, asked: 0, passed: 0, last_result: '' });
       stmts.push(
         env.DB.prepare('INSERT INTO en_sentence (norm, text, from_round, due_round, step, asked, passed, last_result, first_at, at) VALUES (?1, ?2, ?3, ?4, 0, 0, 0, \'\', ?5, ?5) ON CONFLICT (norm) DO NOTHING')
           .bind(norm, text.slice(0, 200), open.n, open.n + GAPS[0], now),
       );
-    }
+      return true;
+    };
+    for (const f of log.fixed) if (keep(f.right)) addedFixed++;
+    for (const text of log.helped) if (keep(text)) added++;
+    if (skipped.length)
+      warnings.push(`这 ${skipped.length} 句没存，因为里面有你还不认识的词（存了下一轮也考不出来）：${skipped.slice(0, 5).join(' ／ ')}`);
 
     // ③ 跨轮回收的结果：只认**这一轮真的派出去考了**的句子（北极星的分母就是它）
     let askedN = 0;
     let passedN = 0;
+    const retired: string[] = [];
     const hitIds = new Set<number>();
     for (const rc of log.recalled) {
       const s = byNorm.get(normSentence(rc.text));
@@ -539,7 +683,9 @@ export async function englishApi(env: Env, req: Request, now: number, sub: strin
       hitIds.add(s.id);
       askedN++;
       if (rc.ok) passedN++;
-      const nx = nextDue(s.step, open.n, rc.ok);
+      // v6：连着两次说不出来 → 淘汰（due_round = 0，不再考），并且当面说清楚为什么
+      const nx = nextDue(s.step, open.n, rc.ok, s.last_result);
+      if (retiredNow(rc.ok, s.last_result)) retired.push(s.text);
       stmts.push(
         env.DB.prepare('UPDATE en_sentence SET step = ?1, due_round = ?2, asked = asked + 1, passed = passed + ?3, last_result = ?4, at = ?5 WHERE id = ?6')
           .bind(nx.step, nx.due, rc.ok ? 1 : 0, rc.ok ? 'yes' : 'no', now, s.id),
@@ -551,6 +697,8 @@ export async function englishApi(env: Env, req: Request, now: number, sub: strin
       stmts.push(env.DB.prepare(`UPDATE en_sentence SET due_round = ?1, at = ?2 WHERE id IN (${missed.map((_, i) => '?' + (i + 3)).join(',')})`).bind(open.n + 1, now, ...missed));
     }
 
+    for (const t of retired) warnings.push(`这句淘汰了，因为连考两次都说不出来，往后不再考它：${t.slice(0, 60)}`);
+
     stmts.push(
       env.DB.prepare('UPDATE en_round SET logged_at = ?1, a = ?2, b = ?3, c = ?4, recall_due = ?5, recalled = ?6, raw = ?7 WHERE n = ?8')
         .bind(now, log.counts.a, log.counts.b, log.counts.c, askedN, passedN, log.raw, open.n),
@@ -558,11 +706,13 @@ export async function englishApi(env: Env, req: Request, now: number, sub: strin
     await env.DB.batch(stmts);
 
     const after = await env.DB.prepare('SELECT recall_due, recalled FROM en_round').all<{ recall_due: number; recalled: number }>();
-    console.log(JSON.stringify({ event: 'english.log_saved', round: open.n, asked: askedN, passed: passedN, added }));
+    console.log(JSON.stringify({ event: 'english.log_saved', round: open.n, asked: askedN, passed: passedN, added, fixed: addedFixed, skipped: skipped.length, retired: retired.length }));
     return json({
       ok: true,
       轮次: open.n,
-      存下来了: { 新句子: added, 生词: log.stuck.length + log.fresh.length, 到期考了: askedN, 说对了: passedN },
+      存下来了: { 纠正句: addedFixed, 新句子: added, 生词: log.stuck.length + log.fresh.length, 到期考了: askedN, 说对了: passedN },
+      没存的句子: skipped.length,
+      淘汰: retired.length,
       跨轮回收成功率: recallRate(after.results ?? []),
       提醒: warnings,
     });

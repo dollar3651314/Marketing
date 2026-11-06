@@ -38,8 +38,9 @@ export const EM_CSS = `
 .em .em-err{border:1px solid var(--err);background:var(--err-soft);color:var(--err);border-radius:8px;padding:var(--s3);margin:var(--s3) 0 0;font-size:var(--fs-aux);white-space:pre-wrap}
 .em .em-ok{border:1px solid var(--ok);background:var(--ok-soft);color:var(--ok);border-radius:8px;padding:var(--s3);margin:var(--s3) 0 0;font-size:var(--fs-aux);white-space:pre-wrap}
 .em .em-tip{font-size:var(--fs-aux);color:var(--muted);margin:var(--s2) 0 0}
-/* v5：三个数（A / B / C）。**数字要大、要显眼**，390 宽一眼看得到，所以 34px、三等分、不折叠 */
-.em .em-nums{display:grid;grid-template-columns:1fr 1fr 1fr;gap:var(--s2);margin:0 0 var(--s2)}
+/* v5：三个数（A / B / C）。**数字要大、要显眼**，390 宽一眼看得到，所以 34px、不折叠。
+   v6 多了第四个「纠正句」，390 宽四等分放不下 34px，所以窄屏把数字收到 26px（**还是一眼看得到**，不是缩到看不清） */
+.em .em-nums{display:grid;grid-template-columns:repeat(4,1fr);gap:var(--s2);margin:0 0 var(--s2)}
 .em .em-cell{border:1px solid var(--line);border-radius:12px;background:var(--surface-2);padding:var(--s3) 4px;text-align:center}
 .em .em-big{display:block;font-size:34px;font-weight:700;line-height:1.1;color:var(--ink)}
 .em .em-big.none{font-size:22px;color:var(--muted)}
@@ -53,7 +54,7 @@ export const EM_CSS = `
 .em .em-hist tr:last-child td{border-bottom:0}
 .em .em-hist tr.now td{font-weight:700;color:var(--ink)}
 .em .em-fmt{font-family:var(--mono);font-size:12px;line-height:1.6;white-space:pre-wrap;background:var(--surface-2);border:1px solid var(--line);border-radius:8px;padding:var(--s3);margin:var(--s2) 0 0;overflow-wrap:anywhere}
-@media (max-width:420px){.em .em-two{grid-template-columns:1fr}}
+@media (max-width:420px){.em .em-two{grid-template-columns:1fr}.em .em-big{font-size:26px}.em .em-big.none{font-size:18px}.em .em-cl{font-size:11px}}
 `;
 
 /** 工作台"英语练习"下面那一块：跨轮记忆（id 不进二级菜单，菜单还是 7 项） */
@@ -69,11 +70,12 @@ export const EM_MOD = `<section class="card mod em" id="w-engmem"><header class=
     <div class="em-cell"><b class="em-big none" id="em-a">—</b><p class="em-cl">A<br>自己造的句子</p></div>
     <div class="em-cell"><b class="em-big none" id="em-b">—</b><p class="em-cl">B<br>靠提示才说出来</p></div>
     <div class="em-cell"><b class="em-big none" id="em-c">—</b><p class="em-cl">C<br>同一轮回收说对</p></div>
+    <div class="em-cell"><b class="em-big none" id="em-f">—</b><p class="em-cl">纠正句<br>说错被纠正的</p></div>
   </div>
   <p class="em-cap" id="em-nums-cap" hidden></p>
   <div class="em-histwrap" id="em-histwrap" hidden>
     <p class="em-cap">每一轮一行 · 看的是这几个数<b>在不在涨</b>——只看一轮看不出来</p>
-    <table class="em-hist"><thead><tr><th>轮次</th><th>场景</th><th>A</th><th>B</th><th>C</th><th>跨轮考</th><th>说对</th></tr></thead><tbody id="em-hist-b"></tbody></table>
+    <table class="em-hist"><thead><tr><th>轮次</th><th>场景</th><th>A</th><th>B</th><th>C</th><th>纠正句</th><th>跨轮考</th><th>说对</th></tr></thead><tbody id="em-hist-b"></tbody></table>
   </div>
 
   <div class="em-step" id="em-s1">
@@ -114,6 +116,7 @@ export const EM_MOD = `<section class="card mod em" id="w-engmem"><header class=
     <details><summary class="em-sub">它该吐出来的那一块长什么样</summary><div class="em-fmt" id="em-fmt">#LOG
 stuck: pitch, solidify, scope
 helped: "I was wondering if you could cover the meeting." | "It requires a lot of time and money."
+fixed: "Do you help me?" => "Can you help me?" | "1 hours." => "One hour."
 recalled: "I was wondering if you could cover the meeting." = yes | "It requires a lot of time and money." = no
 new: mitigate, prioritize
 counts: A=12 B=9 C=4
@@ -128,7 +131,9 @@ counts: A=12 B=9 C=4
   <p>上面那个数只看<b>跨轮</b>：同一轮之内回收说对了，只能证明你刚才记住了，证明不了你学会了。</p>
   <p><b>一轮只教 1 个新词</b>（2026-11-04 改的）：第 1 轮真实数据 A=3 B=5 <b>C=0</b>——教的 5 个新词、你卡住的词、它给你念的帮扶句<b>是同一批</b>，等于拿你不会的词来帮你。所以现在新词一次只派 1 个，而且<b>这一轮新教的词不许进帮扶句</b>。</p>
   <p>它给你念的句子也砍到<b>不超过 5 个词</b>：你真正垮掉的是"Today is I think today's good"这种基本句子在实时压力下组织不起来，不是词不够多。先把简单结构练到不用想。</p>
-  <p>上面 A / B / C 三个数和下面那张表，就是用来看<b>在不在涨</b>的：A 越多越好（自己造得出来），B 和 C 看的是趋势，一轮看不出来。</p>
+  <p><b>真正在回收的是「纠正句」</b>（2026-11-05 改的）：第 2 轮 B=0——你全程没用帮扶，于是<b>一句都没存进去</b>，系统空转。可那一轮你明明说错过：<code>Do you help me?</code>（该说 <code>Can you help me?</code>）、<code>1 hours.</code>（该说 <code>One hour.</code>）。帮扶句是<b>别人的话</b>，纠正句是<b>你自己想说、说错了、被纠正</b>的话——学习价值高得多，而且<b>只要你开口就永远不缺货</b>。所以现在 <code>#LOG</code> 里多一项 <code>fixed</code>，存的是<b>母语者的说法</b>，下一轮考的是"同一个意思你能不能自己说对"。</p>
+  <p><b>坏句子会被淘汰</b>：一句连着两轮都说不出来就不再考它（页面上会告诉你是哪一句）。入库前还会过一道筛子——<b>句子里只要有一个你还不认识的词就不存</b>，存了下一轮也考不出来（第 1 轮那 5 句就是这么废掉的：<code>constraints</code>、<code>bandwidth</code>、<code>clarify</code> 你都不认识）。</p>
+  <p>上面四个数和下面那张表，就是用来看<b>在不在涨</b>的：A 越多越好（自己造得出来），纠正句是这一轮收到的素材量，B 和 C 看的是趋势，一轮看不出来。</p>
   <p>全程不花钱：这一块不调任何 AI，只是存和拼字符串。</p></div></details></section>`;
 
 /** 跨轮记忆那一块的脚本（整段 try/catch，出错只影响这一块）。宿主页面先设 window.__engmemBase，例如 '/api/english/' */
@@ -198,7 +203,7 @@ function eBig(id,v){var e=eq(id);if(!e)return;e.textContent=eN(v);e.className='e
 function eNums(r){
   if(!r){eShow('em-nums',false);eShow('em-nums-cap',false);return;}
   eShow('em-nums',true);
-  eBig('em-a',r.A);eBig('em-b',r.B);eBig('em-c',r.C);
+  eBig('em-a',r.A);eBig('em-b',r.B);eBig('em-c',r.C);eBig('em-f',r['纠正句']);
   var 考=r['到期考了']||0,对=r['说对了']||0;
   eText('em-nums-cap','最近一轮是第 '+r.n+' 轮（场景 '+(r['场景']||'')+'）· 跨轮到期被考 '+考+' 句、说对 '+对+' 句'+(考?'':'（这一轮没有到期的句子）'));
   eShow('em-nums-cap',true);
@@ -210,7 +215,7 @@ function eHist(rows){
   rows.forEach(function(r,i){
     var tr=document.createElement('tr');
     if(i===rows.length-1)tr.className='now';
-    [r.n,(r['场景']||''),eN(r.A),eN(r.B),eN(r.C),String(r['到期考了']||0),String(r['说对了']||0)].forEach(function(v){
+    [r.n,(r['场景']||''),eN(r.A),eN(r.B),eN(r.C),eN(r['纠正句']),String(r['到期考了']||0),String(r['说对了']||0)].forEach(function(v){
       var td=document.createElement('td');td.textContent=String(v);tr.appendChild(td);
     });
     b.appendChild(tr);
@@ -244,7 +249,8 @@ function eSave(){
   ePost('log',{text:t.value||''}).then(function(j){
     EM.busy=false;eText('em-s3-msg','');
     var s=j['存下来了']||{};
-    var lines=['第 '+j['轮次']+' 轮存好了：新句子 '+(s['新句子']||0)+' 句，生词 '+(s['生词']||0)+' 个，到期考了 '+(s['到期考了']||0)+' 句、说对 '+(s['说对了']||0)+' 句。'];
+    var lines=['第 '+j['轮次']+' 轮存好了：纠正句 '+(s['纠正句']||0)+' 句（主力），帮扶句 '+(s['新句子']||0)+' 句，生词 '+(s['生词']||0)+' 个，到期考了 '+(s['到期考了']||0)+' 句、说对 '+(s['说对了']||0)+' 句。'];
+    if(j['没存的句子'])lines.push('· 有 '+j['没存的句子']+' 句没存（里面有你还不认识的词，存了下一轮也考不出来），下面写了是哪几句。');
     (j['提醒']||[]).forEach(function(w){lines.push('· '+w)});
     var e=eq('em-s3-ok');if(e){e.textContent=lines.join('\\n');e.hidden=false;}
     t.value='';eRate(j['跨轮回收成功率']);eState();eHistory();
@@ -299,7 +305,8 @@ function eState(){
       eText('em-s2-sub',v['测完了']?('下一轮是第 '+r['这一轮']+' 轮 · 到期要考 '+(j['到期要考']||0)+' 句'):'先把上面的词汇线测完');
     }
     eNums(j['最近一轮']);
-    eText('em-mini','已经跑过 '+(r['已经跑过']||0)+' 轮 · 库里 '+((j['句子']||{})['一共']||0)+' 句（毕业 '+((j['句子']||{})['毕业']||0)+' 句） · 还不认识 '+(j['不认识的词']||0)+' 个词');
+    var 句=j['句子']||{};
+    eText('em-mini','已经跑过 '+(r['已经跑过']||0)+' 轮 · 库里 '+(句['一共']||0)+' 句（毕业 '+(句['毕业']||0)+' 句、淘汰 '+(句['淘汰']||0)+' 句） · 还不认识 '+(j['不认识的词']||0)+' 个词');
   },function(e){eErr('em-s2-err',e.j||{'出错':e.message});});
 }
 
