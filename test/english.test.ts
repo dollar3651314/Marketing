@@ -1,6 +1,7 @@
 /**
  * 工作台"英语练习"模块（src/english-page.ts，#/work/english）的单元测试。守住六条：
- *   1. **位置**：在工作台页 #v-work 里，二级菜单 #sub-work 正好 7 项、第 7 项是"英语练习"、排在"经营会"后面；
+ *   1. **位置**：在工作台页 #v-work 里，二级菜单 #sub-work 正好 8 项（2026-11-09 加了第 8 项"带练"，Amos 批的上限就是 8；
+ *      这一条的意思没变：**项数和顺序是钉死的**，第 7 项仍然是"英语练习"、仍然排在"经营会"后面）；
  *      **公共工具菜单一个位子都不许占**（还是 8 项，T-4：第 9 项会撑破手机菜单）。
  *   2. **8 条、原文照抄 + 纯语音可行**：顺序 C-1～C-6、N-1、N-2，☆ 难度标记在；每条都带"今天只聊一件事"那句钉死的小事，
  *      而且那件小事**只有声音也办得成**（v4：C-2 原来是"帮我看一段代码"，实测时 AI 答"I cannot see your screen"，对话死在那儿）；
@@ -33,9 +34,9 @@ const SUB_TOOLS = ADMIN_PAGE.slice(
 const TEXTS = [...MOD.matchAll(/<pre class="en-pre" id="(en-p\d+-t)">([\s\S]*?)<\/pre>/g)].map((m) => ({ id: m[1], text: m[2] }));
 
 describe('1. 放在工作台，不占公共工具的位子', () => {
-  it('二级菜单正好 7 项，第 7 项是"英语练习"、排在"经营会"后面', () => {
+  it('二级菜单正好 8 项，第 7 项是"英语练习"、排在"经营会"后面（第 8 项是 2026-11-09 加的"带练"）', () => {
     const mods = [...SUB_WORK.matchAll(/data-s="(w-[a-z]+)"/g)].map((m) => m[1]);
-    expect(mods).toEqual(['w-now', 'w-todo', 'w-live', 'w-proj', 'w-num', 'w-meet', 'w-english']);
+    expect(mods).toEqual(['w-now', 'w-todo', 'w-live', 'w-proj', 'w-num', 'w-meet', 'w-english', 'w-drill']);
     expect(SUB_WORK).toContain('<a href="#/work/english" data-s="w-english">英语练习</a>');
   });
 

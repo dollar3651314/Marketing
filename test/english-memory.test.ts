@@ -804,8 +804,14 @@ describe('10. v6：纠正句进库、坏句子淘汰、第四个数', () => {
     expect(EM_JS).toContain('纠正句 ');
   });
 
-  it('v6 没有新增迁移：0012 还是只有三条 CREATE TABLE，也没有第 13 个迁移文件', () => {
-    expect(readdirSync(MIG).filter((f) => f.endsWith('.sql'))).toHaveLength(12);
+  // 2026-11-09：第 13 个迁移是别的功能（工作台「带练」的 drill_item）加的，和跨轮记忆无关。
+  // 这一条守的还是同一件事——**跨轮记忆自己没有新增迁移**，只是改成按内容判（比数文件个数更严）：
+  // 除了 0012，别的迁移文件里一个 en_ 开头的表都不许出现。
+  it('v6 没有新增迁移：跨轮记忆只有 0012 这一个迁移（别的迁移一个 en_ 表都不碰），0012 还是只有三条 CREATE TABLE', () => {
+    const sqls = readdirSync(MIG).filter((f) => f.endsWith('.sql'));
+    for (const f of sqls.filter((f) => f !== M0012)) {
+      expect([f, /\ben_\w+/.test(readFileSync(path.join(MIG, f), 'utf8'))]).toEqual([f, false]);
+    }
     const code = readFileSync(path.join(MIG, M0012), 'utf8').split('\n').map((l) => l.replace(/--.*$/, '')).join('\n');
     expect((code.match(/CREATE TABLE/g) ?? []).length).toBe(3);
     for (const w of ['ALTER ', 'DROP ', 'CREATE INDEX']) expect([w, code.toUpperCase().includes(w)]).toEqual([w, false]);
