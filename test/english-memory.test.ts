@@ -23,7 +23,7 @@ import type { Env } from '../src/env';
 import { handle } from '../src/index';
 import { ENGLISH_MOD } from '../src/english-page';
 import { EM_CSS, EM_JS, EM_MOD } from '../src/english-memory-page';
-import { buildPrompt, GAPS, NEW_PER_ROUND, NEW_WORD_NOT_IN_HELP, nextDue, normSentence, parseLog, recallRate, roundRows, segments, SHORT_HELP_SENTENCE, vocabLine, WORDLIST } from '../src/english-memory';
+import { buildPrompt, FIXED_ASK, FIXED_LINE, fixedCount, GAPS, NEW_PER_ROUND, NEW_WORD_NOT_IN_HELP, nextDue, normSentence, parseLog, recallRate, retiredNow, roundRows, segments, SHORT_HELP_SENTENCE, unknownWordsIn, vocabLine, WORDLIST } from '../src/english-memory';
 import { ROOT, T0 } from './helpers';
 
 const PASS = 'ci_only_copilot_password_01';
@@ -549,8 +549,8 @@ describe('9. v5：新词只教 1 个、不进帮扶句、帮扶句砍到 5 个�
     for (const id of ['em-nums', 'em-a', 'em-b', 'em-c', 'em-nums-cap', 'em-histwrap', 'em-hist-b']) expect([id, EM_MOD.includes('id="' + id + '"')]).toEqual([id, true]);
     // 三个数的名字写给小白看，不是光一个字母
     for (const t of ['自己造的句子', '靠提示才说出来', '同一轮回收说对']) expect([t, EM_MOD.includes(t)]).toEqual([t, true]);
-    // 历史表七列：轮次 / 场景 / A / B / C / 跨轮考 / 说对
-    expect((EM_MOD.match(/<th>/g) ?? []).length).toBe(7);
+    // 历史表八列（v6 多了「纠正句」）：轮次 / 场景 / A / B / C / 纠正句 / 跨轮考 / 说对
+    expect((EM_MOD.match(/<th>/g) ?? []).length).toBe(8);
     for (const t of ['<th>轮次</th>', '<th>跨轮考</th>', '<th>说对</th>']) expect([t, EM_MOD.includes(t)]).toEqual([t, true]);
     // 数字 34px（和首屏那个大数一个量级），窄屏放不下就横滑、不缩字
     expect(EM_CSS).toContain('.em .em-big{display:block;font-size:34px');
@@ -567,5 +567,253 @@ describe('9. v5：新词只教 1 个、不进帮扶句、帮扶句砍到 5 个�
     expect(EM_JS).toContain("eq('em-hist-b')");
     // 存完一轮之后立刻刷新三个数和历史表
     expect(EM_JS).toContain("eRate(j['跨轮回收成功率']);eState();eHistory();");
+  });
+});
+
+// ======================================================================
+/**
+ * v6（2026-11-05，第 2 轮真实数据之后）。第 2 轮：`stuck: propose` / `helped:` **空** / `recalled:` 五句全 no /
+ * `new: escalate` / `counts: A=5 B=0 C=0`。用词控制起作用了（不认识的词 7 → 1，自己造的句子 3 → 5，全程没用帮扶），
+ * **但 B=0 等于这一轮什么都没存进去**——系统的全部价值是回收他说过的句子，帮扶不触发就空转。
+ * 而真正该回收的是他**说错、被纠正**的那两句（`Do you help me?` → `Can you help me?`、`1 hours.` → `One hour.`）。
+ * 三件事：① `#LOG` 多一项 `fixed`，**正确说法**进 `en_sentence` 当主力素材；② 连续失败 2 次淘汰 +
+ * 含生词的句子不入库；③ 页面第四个数「纠正句」+ 历史表第六列。**不新增迁移**（`fixed` 的条数从 `en_round.raw` 现场数）。
+ */
+describe('10. v6：纠正句进库、坏句子淘汰、第四个数', () => {
+  const log = (o: { stuck?: string; helped?: string; fixed?: string; recalled?: string; fresh?: string; counts?: string }) =>
+    ['#LOG', `stuck: ${o.stuck ?? ''}`, `helped: ${o.helped ?? ''}`, `fixed: ${o.fixed ?? ''}`, `recalled: ${o.recalled ?? ''}`, `new: ${o.fresh ?? ''}`, `counts: ${o.counts ?? ''}`, '#END'].join('\n');
+  const FIX = '"Do you help me?" => "Can you help me?" | "1 hours." => "One hour."';
+
+  // ---- ① 提示词：fixed 那一项 ----
+  it('提示词里 fixed 那一行和「一条都别漏」那句话是原文（改一个字就红），而且排在 helped 后面', () => {
+    expect(FIXED_LINE).toBe('fixed: 这一轮我说错、你纠正过的句子，写成 "我说的原话" => "母语者会怎么说"，每一边都用英文双引号括起来，句子之间用 | 隔开');
+    expect(FIXED_ASK).toBe('**fixed 这一项最重要，一条都别漏**：凡是我说错、你在复盘里纠正过的句子（语法、时态、单复数、用词、说法不地道，都算），全部列进 fixed，哪怕只错一个词也要列。例如我说 "Do you help me?" 就写 "Do you help me?" => "Can you help me?"，我说 "1 hours." 就写 "1 hours." => "One hour."。');
+    for (let i = 0; i < 8; i++) {
+      const p = buildPrompt(segments(i), { line: 2, avoid: [], due: [], fresh: [] });
+      expect([i, p.includes(FIXED_LINE)]).toEqual([i, true]);
+      expect([i, p.includes(FIXED_ASK)]).toEqual([i, true]);
+      expect([i, p.indexOf('fixed:') > p.indexOf('helped:')]).toEqual([i, true]);
+      expect([i, p.indexOf('fixed:') < p.indexOf('recalled:')]).toEqual([i, true]);
+      // v4 原文照旧一个字没动（追加覆盖那一套没被破坏）
+      expect([i, p.includes(SHORT_HELP_SENTENCE)]).toEqual([i, true]);
+    }
+    // #LOG 那一段还是只出现一次、还在最后
+    const p0 = buildPrompt(segments(0), { line: 2, avoid: [], due: [], fresh: [] });
+    expect((p0.match(/#LOG/g) ?? []).length).toBe(1);
+    expect(p0.trimEnd().endsWith('这一段只许出现一次，放在整段回答的最后，前后不要加任何说明文字。')).toBe(true);
+  });
+
+  it('parseLog 认 fixed："原话" => "母语者会怎么说"；没写 => 的那条跳过并说出来（反例）', () => {
+    const r = parseLog(log({ fixed: FIX + ' | "这条没写箭头"' }));
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    expect(r.log.fixed).toEqual([
+      { wrong: 'Do you help me?', right: 'Can you help me?' },
+      { wrong: '1 hours.', right: 'One hour.' },
+    ]);
+    expect(r.log.warnings.join(' ')).toContain('没写 =>');
+    // → 和 -> 也认
+    const r2 = parseLog(log({ fixed: '"I very like it." → "I like it a lot."' }));
+    expect(r2.ok && r2.log.fixed).toEqual([{ wrong: 'I very like it.', right: 'I like it a lot.' }]);
+  });
+
+  // ---- ② 整块挤成一行（第 2 轮真实就是这样）----
+  it('#LOG 整块挤成一行、一个换行都没有也照样解析对（第 2 轮真实数据，别回归）', () => {
+    const 一行 =
+      '聊得很开心。#LOG stuck: propose helped: fixed: ' + FIX +
+      ' recalled: "I need more time." = no | "Let me check." = no new: escalate counts: A=5 B=0 C=0 #END';
+    const r = parseLog(一行);
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    // 反例：按行切的老写法会把 stuck 后面整串（helped: … counts: …）都当成 stuck 的值，后面几项全丢
+    expect(r.log.stuck).toEqual(['propose']);
+    expect(r.log.helped).toEqual([]);
+    expect(r.log.fixed).toEqual([
+      { wrong: 'Do you help me?', right: 'Can you help me?' },
+      { wrong: '1 hours.', right: 'One hour.' },
+    ]);
+    expect(r.log.recalled).toEqual([{ text: 'I need more time.', ok: false }, { text: 'Let me check.', ok: false }]);
+    expect(r.log.fresh).toEqual(['escalate']);
+    expect(r.log.counts).toEqual({ a: 5, b: 0, c: 0 });
+    expect(r.log.warnings).toEqual([]);
+  });
+
+  it('挤成一行也不会把别人的话当成键（行首有东西的那一行还是记成「不认识」）', () => {
+    const r = parseLog('#LOG\nMike: counts: A=1\ncounts: A=9\n#END');
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    expect(r.log.counts.a).toBe(9);
+    expect(r.log.warnings.join(' ')).toContain('有 1 行不认识');
+  });
+
+  // ---- ③ fixed 入库：正确说法进 en_sentence，和 helped 同一张表、同一套间隔 ----
+  it('fixed 存的是**正确说法**，和 helped 同一张表同一套间隔，下一轮照样考（helped 空也不再空转）', async () => {
+    await fillLine(2);
+    await api('start', {});
+    const p1 = await api('log', { text: log({ fixed: FIX, counts: 'A=5 B=0 C=0' }) });
+    expect(p1.status).toBe(200);
+    // B=0、helped 空，照样存进来两句（反例：v5 这里是 0，一整轮白跑）
+    expect(p1.body.存下来了).toMatchObject({ 纠正句: 2, 新句子: 0 });
+    const rows = await db.prepare('SELECT text, from_round, due_round, step FROM en_sentence ORDER BY id').all<{ text: string; from_round: number; due_round: number; step: number }>();
+    expect(rows.results.map((x) => x.text)).toEqual(['Can you help me?', 'One hour.']);
+    // 存的是正确说法，不是他的原话
+    expect(rows.results.map((x) => x.text)).not.toContain('Do you help me?');
+    expect(rows.results.every((x) => x.from_round === 1 && x.due_round === 1 + GAPS[0] && x.step === 0)).toBe(true);
+    // 下一轮这两句到期，原样进提示词
+    const r2 = await api('start', {});
+    expect(r2.body.这轮要回收).toBe(2);
+    expect(r2.body.提示词).toContain('Can you help me?');
+    expect(r2.body.提示词).toContain('One hour.');
+  });
+
+  // ---- ④ 入库前过滤：含他不认识的词的句子不存 ----
+  it('unknownWordsIn：词形变化也认（constraints → constraint），词组按整串找', () => {
+    expect(unknownWordsIn('We have too many constraints.', ['constraint', 'bandwidth'])).toEqual(['constraint']);
+    expect(unknownWordsIn('Let me clarify that.', ['clarify'])).toEqual(['clarify']);
+    expect(unknownWordsIn('I can cover it.', ['constraint', 'clarify'])).toEqual([]);
+    expect(unknownWordsIn('Let me test the waters first.', ['test the waters'])).toEqual(['test the waters']);
+    expect(unknownWordsIn('I need more water.', ['test the waters'])).toEqual([]);
+  });
+
+  it('句子里有他还不认识的词就不存，并且说清楚是哪几句；他认识那个词时同一句照样存（反例）', async () => {
+    await fillLine(2); // band 3 / 4 全不认识，constraint 在 band 3
+    await api('start', {});
+    const 带生词 = '"I has constraints." => "I have constraints."';
+    const p = await api('log', { text: log({ fixed: 带生词 + ' | ' + FIX }) });
+    expect(p.body.存下来了.纠正句).toBe(2); // 只存下 FIX 那两句
+    expect(p.body.没存的句子).toBe(1);
+    expect(p.body.提醒.join(' ')).toContain('没存');
+    expect(p.body.提醒.join(' ')).toContain('constraint');
+    expect((await db.prepare("SELECT COUNT(*) AS n FROM en_sentence WHERE text LIKE '%constraints%'").first<{ n: number }>())!.n).toBe(0);
+
+    // 反例：同一句、同一套代码，他认识 constraint 的时候**存得进去**（不是无条件丢）
+    await db.batch(['en_word', 'en_sentence', 'en_round'].map((t) => db.prepare(`DELETE FROM ${t}`)));
+    await fillLine(4);
+    await api('start', {});
+    const p2 = await api('log', { text: log({ fixed: 带生词 }) });
+    expect(p2.body.存下来了.纠正句).toBe(1);
+    expect(p2.body.没存的句子).toBe(0);
+  });
+
+  it('这一轮 stuck 报上来的词也算「还不认识」（当场就该拦住，不等下一轮）', async () => {
+    await fillLine(4); // 整张表都认识
+    await api('start', {});
+    const p = await api('log', { text: log({ stuck: 'propose', fixed: '"I propose this." => "Let me propose this."' }) });
+    expect(p.body.存下来了.纠正句).toBe(0);
+    expect(p.body.没存的句子).toBe(1);
+    expect(p.body.提醒.join(' ')).toContain('propose');
+  });
+
+  // ---- ⑤ 连续失败 2 次 → 淘汰 ----
+  it('nextDue：连着两次说不出来就淘汰（due = 0）；只失败一次照旧退回第一档（反例）', () => {
+    expect(retiredNow(false, 'no')).toBe(true);
+    expect(retiredNow(false, '')).toBe(false);
+    expect(retiredNow(false, 'yes')).toBe(false);
+    expect(retiredNow(true, 'no')).toBe(false);
+    expect(nextDue(0, 5, false, 'no')).toEqual({ step: 0, due: 0 }); // 淘汰
+    expect(nextDue(0, 5, false, '')).toEqual({ step: 0, due: 6 }); // 第一次失败：下一轮再考
+    expect(nextDue(0, 5, false, 'yes')).toEqual({ step: 0, due: 6 }); // 上次是对的：不算连续
+    expect(nextDue(2, 9, true, 'no')).toEqual({ step: 3, due: 0 }); // 说对了照样毕业
+  });
+
+  it('端到端：一句连考两轮都说不出来就不再派，页面提醒里写明为什么（反例：只错一次的还在考）', async () => {
+    await fillLine(2);
+    const S = 'Can you help me?';
+    await api('start', {});
+    await api('log', { text: log({ fixed: '"Do you help me?" => "' + S + '"' }) });
+
+    // 第 2 轮：第一次说不出来 → 退回第一档，**不淘汰**（反例）
+    expect((await api('start', {})).body.这轮要回收).toBe(1);
+    const p2 = await api('log', { text: log({ recalled: `"${S}" = no` }) });
+    expect(p2.body.淘汰).toBe(0);
+    expect(p2.body.提醒.join(' ')).not.toContain('淘汰');
+    expect((await db.prepare('SELECT due_round, last_result FROM en_sentence').first<{ due_round: number; last_result: string }>())).toEqual({ due_round: 3, last_result: 'no' });
+
+    // 第 3 轮：连着第二次说不出来 → 淘汰
+    expect((await api('start', {})).body.这轮要回收).toBe(1);
+    const p3 = await api('log', { text: log({ recalled: `"${S}" = no` }) });
+    expect(p3.body.淘汰).toBe(1);
+    expect(p3.body.提醒.join(' ')).toContain('这句淘汰了，因为连考两次都说不出来');
+    expect(p3.body.提醒.join(' ')).toContain(S);
+    expect((await db.prepare('SELECT due_round FROM en_sentence').first<{ due_round: number }>())!.due_round).toBe(0);
+
+    // 第 4 轮：不再派它（v5 会无限重考）
+    const r4 = await api('start', {});
+    expect(r4.body.这轮要回收).toBe(0);
+    // 不再进"跨轮回收"那一段（S 本身是帮扶句那条死规则里的举例，整段提示词里照样有它）
+    expect(r4.body.提示词).not.toContain('跨轮回收（这一轮最重要的事）');
+    expect(r4.body.提示词).not.toContain('1) ' + S);
+    const s = await api('state');
+    expect(s.body.句子).toMatchObject({ 一共: 1, 毕业: 0, 淘汰: 1 });
+  });
+
+  it('中间说对一次就不算连续：淘汰只认真的连着两次（反例）', async () => {
+    await fillLine(2);
+    const S = 'Can you help me?';
+    await api('start', {});
+    await api('log', { text: log({ fixed: '"Do you help me?" => "' + S + '"' }) });
+    await api('start', {});
+    await api('log', { text: log({ recalled: `"${S}" = no` }) });   // 第 1 次 no
+    await api('start', {});
+    const ok = await api('log', { text: log({ recalled: `"${S}" = yes` }) }); // 说对了 → 隔 3 轮
+    expect(ok.body.淘汰).toBe(0);
+    const row = await db.prepare('SELECT due_round, step, last_result FROM en_sentence').first<{ due_round: number; step: number; last_result: string }>();
+    expect(row).toEqual({ due_round: 3 + GAPS[1], step: 1, last_result: 'yes' });
+  });
+
+  // ---- ⑥ 第四个数：纠正句 ----
+  it('fixedCount 从 #LOG 原文现场数（没有 fixed 这一项回 null，不拿 0 冒充）', () => {
+    expect(fixedCount(undefined)).toBeNull();
+    expect(fixedCount('#LOG\nstuck: pitch\ncounts: A=1\n#END')).toBeNull(); // v6 之前的轮
+    expect(fixedCount('#LOG\nfixed: \n#END')).toBe(0);
+    expect(fixedCount('#LOG\nfixed: ' + FIX + '\n#END')).toBe(2);
+    expect(fixedCount('#LOG fixed: ' + FIX + ' counts: A=1 #END')).toBe(2); // 挤成一行也数得出来
+  });
+
+  it('history / state：每轮的「纠正句」是从 en_round.raw 现场数的，没报过这一项的轮是 null', async () => {
+    await fillLine(2);
+    await api('start', {});
+    await api('log', { text: '#LOG\ncounts: A=5 B=0 C=0\n#END' }); // 第 1 轮：根本没有 fixed 这一项
+    await api('start', {});
+    await api('log', { text: log({ fixed: FIX, counts: 'A=6' }) }); // 第 2 轮：两条
+
+    const h = await api('history');
+    expect(h.body.轮次表[0]).toMatchObject({ n: 1, 纠正句: null });
+    expect(h.body.轮次表[1]).toMatchObject({ n: 2, A: 6, 纠正句: 2 });
+    expect((await api('state')).body.最近一轮).toMatchObject({ n: 2, 纠正句: 2 });
+  });
+
+  it('页面：第四个数「纠正句」和历史表第六列都在，窄屏数字收到 26px（不是缩到看不清）', () => {
+    expect(EM_MOD).toContain('id="em-f"');
+    expect(EM_MOD).toContain('纠正句<br>说错被纠正的');
+    expect(EM_MOD).toContain('<th>纠正句</th>');
+    expect((EM_MOD.match(/<th>/g) ?? []).length).toBe(8);
+    expect(EM_CSS).toContain('.em .em-nums{display:grid;grid-template-columns:repeat(4,1fr)');
+    expect(EM_CSS).toContain('@media (max-width:420px){.em .em-two{grid-template-columns:1fr}.em .em-big{font-size:26px}');
+    // 格式示例里也要有 fixed 那一行（他照着这个对格式）
+    expect(EM_MOD).toContain('fixed: "Do you help me?" => "Can you help me?" | "1 hours." => "One hour."');
+    // 还是只有一个粘贴框、没有 input（v6 没破这条）
+    expect((EM_MOD.match(/<textarea/g) ?? []).length).toBe(1);
+    expect(EM_MOD).not.toContain('<input');
+  });
+
+  it('页面脚本：第四个数和历史表那一列都走同一套「没报就写 —」，没存的句子当面说', () => {
+    expect(EM_JS).toContain("eBig('em-f',r['纠正句'])");
+    expect(EM_JS).toContain("eN(r['纠正句'])");
+    expect(EM_JS).toContain("if(j['没存的句子'])");
+    expect(EM_JS).toContain('纠正句 ');
+  });
+
+  // 2026-11-09：第 13 个迁移是别的功能（工作台「带练」的 drill_item）加的，和跨轮记忆无关。
+  // 这一条守的还是同一件事——**跨轮记忆自己没有新增迁移**，只是改成按内容判（比数文件个数更严）：
+  // 除了 0012，别的迁移文件里一个 en_ 开头的表都不许出现。
+  it('v6 没有新增迁移：跨轮记忆只有 0012 这一个迁移（别的迁移一个 en_ 表都不碰），0012 还是只有三条 CREATE TABLE', () => {
+    const sqls = readdirSync(MIG).filter((f) => f.endsWith('.sql'));
+    for (const f of sqls.filter((f) => f !== M0012)) {
+      expect([f, /\ben_\w+/.test(readFileSync(path.join(MIG, f), 'utf8'))]).toEqual([f, false]);
+    }
+    const code = readFileSync(path.join(MIG, M0012), 'utf8').split('\n').map((l) => l.replace(/--.*$/, '')).join('\n');
+    expect((code.match(/CREATE TABLE/g) ?? []).length).toBe(3);
+    for (const w of ['ALTER ', 'DROP ', 'CREATE INDEX']) expect([w, code.toUpperCase().includes(w)]).toEqual([w, false]);
   });
 });

@@ -10,7 +10,7 @@
  * 页面约定（照原型 v2 的元素；研发要改名就同一个 PR 改这里并在 PR 描述写明）：
  *   一级菜单 nav.nav1 a[data-p="work" | "project" | "tools"]（项目链接另带 data-proj="<项目名>"，有几个项目出几个）；
  *   二级菜单 #sub-work、#sub-project、#sub-tools 里的 a[data-s="<模块 id>"]，地址 #/work/todo、#/<项目>/guide 这类锚点
- *   页面 #v-work、#v-project（一套 DOM 轮流显示每个项目）、#v-tools；工作台模块 #w-now（#hero）、#w-todo（#w-todos li.todo、#w-donelist）、#w-live、#w-proj、#w-num、#w-meet、#w-english（英语练习：8 条提示词 + 每条一个复制按钮）
+ *   页面 #v-work、#v-project（一套 DOM 轮流显示每个项目）、#v-tools；工作台模块 #w-now（#hero）、#w-todo（#w-todos li.todo、#w-donelist）、#w-live、#w-proj、#w-num、#w-meet、#w-english（英语练习：8 条提示词 + 每条一个复制按钮）、#w-drill（带练：场景 0 前三段，第 15 段）
  *   待办 li.todo 带颜色类 over（红，超时）/ soon（橙，24 小时内）/ later / none（没定截止时间）；打勾按钮 .tick；撤销 [data-undo]
  *   全部待办按时间段分组（改版批 A，2026-11-04；取代 2026-11-02 的按项目分组 .over-grp / details.tgrp[data-proj] / #w-todo-all）：
  *     #w-todos 下按页面顺序是 [data-bucket="over" | "soon" | "later" | "none"]（已超时 / 24 小时内到期 / 之后到期 / 没定截止时间，空的组不出），
@@ -332,7 +332,7 @@ try {
   await section('二级菜单', async () => {
     // 页名（#sub-<页>、#v-<页>）和地址段分开：项目页的页名一律是 project，地址段是项目名
     const SUB = [
-      { nav: 'work', page: 'work', seg: 'work', mods: ['w-now', 'w-todo', 'w-live', 'w-proj', 'w-num', 'w-meet', 'w-english'] },
+      { nav: 'work', page: 'work', seg: 'work', mods: ['w-now', 'w-todo', 'w-live', 'w-proj', 'w-num', 'w-meet', 'w-english', 'w-drill'] },
       { nav: 'forecast', page: 'project', seg: 'forecast', mods: ['f-next', 'f-guide', 'f-live', 'f-card', 'f-pack', 'f-match', 'f-tools', 'f-handoff'] },
       { nav: 'Practical', page: 'project', seg: 'Practical', mods: ['f-next', 'f-card', 'f-handoff'] },
       { nav: 'tools', page: 'tools', seg: 'tools', mods: ['t-queue'] },
@@ -565,7 +565,7 @@ try {
 
 
   // ---------- 8.5 英语练习（2026-11-03 晚，Amos 睡前点名要的）----------
-  // 守四件事：① 在工作台二级菜单第 7 项（公共工具满 8 项了，T-4 不许加第 9 项）；② 8 条提示词都在；
+  // 守四件事：① 在工作台二级菜单第 7 项（2026-11-09 工作台加了第 8 项"带练"，上限就是 8；公共工具满 8 项了，T-4 不许加第 9 项）；② 8 条提示词都在；
   // ③ 每条的"复制"按钮**不展开 details 就点得到**，点了剪贴板里真的是那一整条、按钮变"已复制 ✓"；
   // ④ 手机 390 宽菜单不撑破、不横向滚动（和 T-4 同一个口径）。
   await section('英语练习', async () => {
@@ -574,7 +574,7 @@ try {
       await login(p, '/#/work');
       // ① 菜单第 7 项
       const mods = await p.locator('#sub-work a[data-s]').evaluateAll((a) => a.map((x) => x.dataset.s));
-      check(`${width} 宽：工作台二级菜单 7 项、第 7 项是 w-english（不是 9 项以上）`, mods.length === 7 && mods[6] === 'w-english', mods);
+      check(`${width} 宽：工作台二级菜单 8 项、第 7 项是 w-english、第 8 项是 w-drill（不是 9 项以上）`, mods.length === 8 && mods[6] === 'w-english' && mods[7] === 'w-drill', mods);
       await p.click('#sub-work a[data-s="w-english"]', { timeout: WAIT });
       await p.waitForTimeout(400);
       const seen = await p.evaluate(() => { const e = document.getElementById('w-english'); if (!e) return null; const r = e.getBoundingClientRect(); return { top: r.top, h: innerHeight, hash: location.hash }; });
@@ -1309,6 +1309,103 @@ try {
     await openDone(p);
     await p.locator('#w-donelist li', { hasText: ITEM }).locator('[data-undo]').first().click({ timeout: WAIT }).catch(() => {});
     check('批C 打勾 还原：从"做完的"撤销回待办', await waitDone(false), await txt(p, '#w-donelist'));
+    await p.context().close();
+  });
+
+  // ---------- 15. 带练（2026-11-09，Amos："使用 Gemini 和我对话，这个引导我的方式很差"）----------
+  // 四段结构没变，变的是载体：前三段的内容是写死的，就是"卡片 + 按钮 + 进度"，**不调任何 AI**。
+  // 守六件事：① 在工作台二级菜单第 8 项「带练」，点了能滚到、地址是 #/work/drill；
+  // ② 一项三步：卡片上先**只有中文**（英文看不见）→ 点「看答案」才出英文 + 关键点 → 两个大按钮「会了 / 不会」；
+  // ③ 点「不会」马上换下一项、进度不动，这一项**排到这一段末尾**还会再考到；
+  // ④ 这一段六项全会了才进下一段（进度条写明第几段 / 第几个 / 还剩几个）；
+  // ⑤ 三段走完给每段"会了几个 / 第一次就会几个"的小结，并且**明说第四段对话还没做**；
+  // ⑥ 手机 390 宽：不横向滚动、按钮 ≥52px、**整块里一个输入框都没有**。
+  // 顺序有讲究：进度存在服务器上，一个库只能走一遍三段，所以**先在两个宽度上做只读的那几条**（①②⑥），
+  // 再在 390 宽上把三段真的走完（③④⑤）。--shots 时另存三张 390 宽截图（回想 / 揭晓 / 小结），给汇报用。
+  await section('带练', async () => {
+    // —— 只读的几条：两个宽度都看 ——
+    for (const width of [1280, 390]) {
+      const p = await open({ width, height: width === 390 ? 844 : 900 });
+      await login(p, '/#/work');
+      const tg = `${width} 宽`;
+      const mods = await p.locator('#sub-work a[data-s]').evaluateAll((a) => a.map((x) => x.dataset.s));
+      check(`${tg}：工作台二级菜单第 8 项是 w-drill「带练」`, mods.length === 8 && mods[7] === 'w-drill', mods);
+      await p.click('#sub-work a[data-s="w-drill"]', { timeout: WAIT });
+      await waitFor(p, '#w-drill');
+      await p.waitForFunction(() => (document.getElementById('dr-zh')?.textContent || '—') !== '—', null, { timeout: WAIT });
+      await p.waitForTimeout(500); // 等 route() 的 scrollIntoView 和各模块读完数据后的重画都落定（照英语练习那一段的写法）
+      const at = await p.evaluate(() => { const r = document.getElementById('w-drill').getBoundingClientRect(); return { top: r.top, h: innerHeight, hash: location.hash }; });
+      check(`${tg}：点菜单滚到「带练」，地址是 #/work/drill`, at.top >= -2 && at.top < at.h && at.hash === '#/work/drill', at);
+      const inputs = await p.locator('#w-drill input, #w-drill textarea, #w-drill [contenteditable]').count();
+      check(`${tg}：整块里一个输入框都没有（不让他打字）`, inputs === 0, inputs);
+      const step1 = await p.evaluate(() => {
+        const g = (i) => document.getElementById(i);
+        return { zh: g('dr-zh').textContent, ansHidden: g('dr-ans').hidden, twoHidden: g('dr-two').hidden,
+          show: !!g('dr-show').getClientRects().length, showH: Math.round(g('dr-show').getBoundingClientRect().height),
+          where: g('dr-where').textContent, body: g('w-drill').innerText };
+      });
+      check(`${tg}：卡片上只有中文「${step1.zh}」，英文看不见，只有一个「看答案」（${step1.showH}px ≥ 52）`, step1.zh === '听清' && step1.ansHidden && step1.twoHidden && step1.show && step1.showH >= 52, step1);
+      check(`${tg}：整块里看不到任何英文答案（没点「看答案」之前）`, !step1.body.includes('catch'), step1.body.slice(0, 120));
+      check(`${tg}：进度写明第几段 / 第几个 / 还剩几个`, /第 1 段 单词 · 第 1 个 \/ 共 6/.test(step1.where) && /这一段还剩 6 个/.test(step1.body), { where: step1.where, body: step1.body.slice(0, 120) });
+      check(`${tg}：页面没有横向滚动`, await noHScroll(p), await p.evaluate(() => [document.documentElement.scrollWidth, innerWidth]));
+      if (SHOTS && width === 390) { mkdirSync(SHOTS, { recursive: true }); await p.locator('#w-drill').screenshot({ path: path.join(SHOTS, '带练-回想-390.png') }); }
+      await p.context().close();
+    }
+
+    // —— 真的走一遍三段：只在 390 宽（进度存在服务器上，一个库只能走一遍）——
+    const p = await open({ width: 390, height: 844 });
+    await login(p, '/#/work/drill');
+    await waitFor(p, '#w-drill');
+    await p.waitForFunction(() => (document.getElementById('dr-zh')?.textContent || '—') !== '—', null, { timeout: WAIT });
+    const tg = '390 宽';
+    // ② 揭晓：英文 + 关键点 + 两个大按钮；「看答案」收起来
+    await p.click('#dr-show');
+    await p.waitForFunction(() => !document.getElementById('dr-ans').hidden, null, { timeout: WAIT });
+    const step2 = await p.evaluate(() => {
+      const g = (i) => document.getElementById(i);
+      const bs = ['dr-yes', 'dr-no'].map((i) => ({ i, t: g(i).textContent, h: Math.round(g(i).getBoundingClientRect().height), shown: !!g(i).getClientRects().length }));
+      return { en: g('dr-en').textContent, key: g('dr-key').textContent, keyShown: !g('dr-key').hidden, oneHidden: g('dr-one').hidden, bs };
+    });
+    check(`${tg}：点「看答案」出英文 catch + 关键点，「会了」「不会」两个按钮都 ≥52px，「看答案」收起来`, step2.en === 'catch' && step2.keyShown && step2.key.includes('不要用 understand') && step2.oneHidden && step2.bs.every((b) => b.shown && b.h >= 52) && step2.bs.map((b) => b.t).join('/') === '会了/不会', step2);
+    if (SHOTS) await p.locator('#w-drill').screenshot({ path: path.join(SHOTS, '带练-揭晓-390.png') });
+    // ③ 「不会」：换下一项、答案藏回去、进度不动
+    await p.click('#dr-no');
+    await p.waitForFunction(() => document.getElementById('dr-zh').textContent === '跟得上', null, { timeout: WAIT });
+    const step3 = await p.evaluate(() => ({ zh: document.getElementById('dr-zh').textContent, ansHidden: document.getElementById('dr-ans').hidden, body: document.getElementById('w-drill').innerText }));
+    check(`${tg}：点「不会」换下一项（跟得上），答案又藏起来，进度还是"还剩 6 个"`, step3.zh === '跟得上' && step3.ansHidden && /这一段还剩 6 个/.test(step3.body), step3);
+    // 这一段剩下的五项都点「会了」→ 绕回刚才点过「不会」的那一项
+    const once = async () => {
+      await p.click('#dr-show');
+      await p.waitForFunction(() => !document.getElementById('dr-two').hidden, null, { timeout: WAIT });
+      const was = await p.evaluate(() => document.getElementById('dr-zh').textContent);
+      await p.click('#dr-yes');
+      await p.waitForFunction((t) => document.getElementById('dr-zh').textContent !== t || document.getElementById('dr-play').hidden, was, { timeout: WAIT });
+    };
+    for (let k = 0; k < 5; k++) await once();
+    const back = await p.evaluate(() => ({ zh: document.getElementById('dr-zh').textContent, body: document.getElementById('w-drill').innerText }));
+    check(`${tg}：点过「不会」的那一项排到这一段末尾，真的又考到了（回到「听清」、还在第 1 段、还剩 1 个）`, back.zh === '听清' && /第 1 段 单词/.test(back.body) && /这一段还剩 1 个/.test(back.body), back);
+    // ④ 这一段全会了才进下一段
+    await once();
+    const next = await p.evaluate(() => document.getElementById('dr-where').textContent);
+    check(`${tg}：这一段六项全会了才进第 2 段`, /第 2 段 词组 · 第 1 个 \/ 共 6/.test(next), next);
+    // ⑤ 第二、三段也走完：小结 + 第四段还没做
+    for (let k = 0; k < 12; k++) await once();
+    await waitFor(p, '#dr-sum');
+    const done = await p.evaluate(() => ({ sum: document.getElementById('dr-sum-b').innerText, next: document.getElementById('dr-next').innerText, play: document.getElementById('dr-play').hidden }));
+    check(`${tg}：三段走完给每段「会了几个 / 第一次就会几个」的小结`, /第 1 段 单词：会了 6 \/ 6 个，第一次就会 5 个/.test(done.sum) && /第 2 段 词组：会了 6 \/ 6 个，第一次就会 6 个/.test(done.sum) && /第 3 段 例句：会了 6 \/ 6 个，第一次就会 6 个/.test(done.sum), done.sum);
+    check(`${tg}：明说第四段对话还没做，不假装有`, done.next.trim() === '第四段对话还没做，下一版加' && done.play, done);
+    // 「看全部」：这一段 6 项都列出来（练过的带英文答案）
+    await p.click('#dr-all > summary');
+    await p.waitForTimeout(150);
+    const all = await p.evaluate(() => ({ n: document.querySelectorAll('#dr-all-b li').length, t: document.getElementById('dr-all-b').innerText }));
+    check(`${tg}：「看全部」把这一段 6 项列出来（练过的带英文答案）`, all.n === 6 && all.t.includes('复述他的结论：先上简单版本') && all.t.includes('ship the simple version first.'), { n: all.n, t: all.t.slice(0, 80) });
+    check(`${tg}：走完以后页面也没有横向滚动`, await noHScroll(p), await p.evaluate(() => [document.documentElement.scrollWidth, innerWidth]));
+    if (SHOTS) { await p.evaluate(() => document.getElementById('w-drill').scrollIntoView({ block: 'start' })); await p.waitForTimeout(150); await p.locator('#w-drill').screenshot({ path: path.join(SHOTS, '带练-小结-390.png') }); }
+    // 进度存在服务器上：刷新还在（换设备接着练靠的就是这个）
+    await p.reload();
+    await p.waitForSelector('#app:not([hidden])', { timeout: WAIT });
+    await waitFor(p, '#dr-sum');
+    check(`${tg}：刷新后进度还在（存在服务器上，不在浏览器里）`, /三段都练完了/.test(await txt(p, '#dr-lead')), await txt(p, '#dr-lead'));
     await p.context().close();
   });
 
