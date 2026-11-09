@@ -12,8 +12,17 @@
  *     whisper 一步就 6.4 秒且与说话长度成正比——对话必须留给 Gemini Live，但那是下一版的事。
  *     页面在三段走完后**明说"第四段对话还没做，下一版加"**，不假装有（底线 3、9）。
  *
- * **内容一个字都不许改写**：场景 0 的三段、每段 6 项，照抄 agents《项目/Practical/语块库-第一批50条.md》
- * （Amos 已逐条审过说"都有用"）。测试 `test/drill.test.ts` 第 1 组把 18 项**逐字写死**，改一个字就红。
+ * **内容从哪来（2026-11-09 主会话逐项核对过，别再写成"照抄原文"）**：底本是 agents
+ * 《项目/Practical/语块库-第一批50条.md》"一、听不懂的时候"那 9 条（Amos 已逐条审过说"都有用"），
+ * 但这 18 项**不是**那 9 条的原文照抄，实际对应关系如下：
+ *   - **来自语块库、句子本身一字未动**：p1/p2/p3/p5/p6（= 语块库 #1/#2/#3/#5/#6）、s1（= #1 原句）、
+ *     w1 `catch`（#2）、w3 `mean`（#1）。
+ *   - **语块库原句 + 本项目补的后半句**：s2（#2 + "Could you say it again?"）、s3（#3 + "I want to get this right."）、
+ *     s5（#5 + "you need it by Friday?"）、s6（#6 + "we should ship the simple version first."）。
+ *   - **语块库里没有、本项目新加的 6 项（Amos 还没审过）**：w2 `follow`、w4 `rephrase`、w5 `lost`、
+ *     w6 `clarify`、p4 `Could you rephrase that?`、s4 `Could you rephrase that? I'm not sure I follow.`
+ * 这 6 项要等 Amos 过一遍；他说换就换。测试 `test/drill.test.ts` 第 1 组把 18 项**逐字写死**，
+ * 改一个字就红——**那是防手滑，不等于这些内容都审过**。
  *
  * **三步交互**（成败所在，别改成别的）：先回想 → 揭晓 → 自己判。
  *   卡片上**只显示中文**（第一段显示中文词义，第三段显示中文情境）→ 一个大按钮「看答案」（他先在嘴上说一遍）
@@ -43,8 +52,8 @@ export const SCENE = 0;
 export const SCENE_NAME = '听不懂的时候怎么说';
 
 /**
- * 三段的全部内容。来源：agents《项目/Practical/语块库-第一批50条.md》，**原文照抄，一个字没改**。
- * （第一段第 6 项的关键点"他 11/5 卡过这个词"也是原文，没有改写成第二人称——改写就不是照抄了。）
+ * 三段的全部内容。底本是 agents《项目/Practical/语块库-第一批50条.md》的"一、听不懂的时候"，
+ * **但不是原文照抄**——哪 12 项来自语块库、哪 6 项是本项目新加还没审，见本文件顶部的对应关系。
  */
 export const STAGES: DrillStage[] = [
   {
@@ -57,7 +66,7 @@ export const STAGES: DrillStage[] = [
       { id: 'w3', zh: '意思是', en: 'mean', key: 'What do you mean by X —— by 不能丢' },
       { id: 'w4', zh: '换个说法再说', en: 'rephrase', key: 'repeat 是再说一遍，rephrase 是换种说法' },
       { id: 'w5', zh: '听懵了', en: 'lost', key: "I'm lost = 我彻底跟丢了，这么说不丢人" },
-      { id: 'w6', zh: '说清楚', en: 'clarify', key: '他 11/5 卡过这个词' },
+      { id: 'w6', zh: '说清楚', en: 'clarify', key: 'clarify 是请对方讲清楚；catch 是自己没听清，两个别混' },
     ],
   },
   {
