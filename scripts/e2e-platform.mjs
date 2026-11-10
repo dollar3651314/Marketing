@@ -1388,10 +1388,15 @@ try {
     if (SHOTS) await p.locator('#w-drill').screenshot({ path: path.join(SHOTS, '带练-揭晓-390.png') });
     // ⑧ 本地没绑 Workers AI：点🔊 一定生成不出来——**当面说**，不假装有声音、也不自动重试
     await p.click('#dr-say');
-    await p.waitForFunction(() => !document.getElementById('dr-aumsg').hidden, null, { timeout: WAIT }).catch(() => {});
+    // 等的是**最终那条报错**：点下去会先出现一句「第一次要先生成这一段发音，一两秒……」，
+    // 原来只等 `!hidden` 会量到那句提示就收工（2026-11-10 自查）。
+    await p.waitForFunction(() => {
+      const m = document.getElementById('dr-aumsg');
+      return !m.hidden && m.innerText.includes('怎么办：');
+    }, null, { timeout: WAIT }).catch(() => {});
     const aumsg = await p.evaluate(() => ({ t: document.getElementById('dr-aumsg').innerText, hidden: document.getElementById('dr-aumsg').hidden }));
-    check(`${tg}：发音生成不出来时当面说「发音这次没生成出来……」，并把服务器那两句话原样摆出来`,
-      !aumsg.hidden && aumsg.t.includes('发音这次没生成出来') && aumsg.t.includes('怎么办：'), aumsg);
+    check(`${tg}：发音生成不出来时当面说「这一项的发音没生成出来……」，并把服务器那两句话原样摆出来`,
+      !aumsg.hidden && aumsg.t.includes('这一项的发音没生成出来') && aumsg.t.includes('怎么办：'), aumsg);
     if (SHOTS) await p.locator('#w-drill').screenshot({ path: path.join(SHOTS, '带练-发音失败-390.png') });
     // ③ 「不会」：换下一项、答案藏回去、进度不动
     await p.click('#dr-no');
@@ -1447,6 +1452,19 @@ try {
     check(`${tg}：对方那句里**不含答案的 4 词以上片段**（不是"刚看过就考同一句"），而且答案这时还看不见`,
       !run4(st3.pren, st3.en) && !st3.body.includes(st3.en), { pren: st3.pren.slice(0, 60), en: st3.en });
     if (SHOTS) await p.locator('#w-drill').screenshot({ path: path.join(SHOTS, '带练-第三段对方说话-390.png') });
+    // 🔴（2026-11-10 审查）：第三段**揭晓前**点「🔊 听他这句」失败时，报错也必须看得见。
+    // 原来 #dr-aumsg 嵌在 #dr-ans 里，这会儿 #dr-ans 还带 hidden，于是页面一动不动、什么都不显示。
+    await p.click('#dr-prau');
+    await p.waitForFunction(() => {
+      const m = document.getElementById('dr-aumsg');
+      return !m.hidden && m.innerText.includes('怎么办：');
+    }, null, { timeout: WAIT }).catch(() => {});
+    const prErr = await p.evaluate(() => {
+      const m = document.getElementById('dr-aumsg');
+      return { t: m.innerText, hidden: m.hidden, 看得见: !!m.getClientRects().length, 答案还藏着: document.getElementById('dr-ans').hidden };
+    });
+    check(`${tg}：第三段揭晓前点「听他这句」生成不出来，报错**看得见**（不是藏在还没揭晓的答案块里）`,
+      prErr.看得见 && !prErr.hidden && prErr.答案还藏着 && prErr.t.includes('对方那句的发音没生成出来') && prErr.t.includes('怎么办：'), prErr);
     for (let k = 0; k < 6; k++) await once();
     check(`${tg}：18 项里，每一项没点「看答案」之前都看不到它自己的答案（量到 ${leaks.length} 项）`, leaks.length === 18 && leaks.every((x) => !x.leak), leaks.filter((x) => x.leak).slice(0, 3));
     await waitFor(p, '#dr-sum');
