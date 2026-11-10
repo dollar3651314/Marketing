@@ -23,6 +23,16 @@
  *   I. 刷新：点"刷新"→ 进行中按钮变灰（防重复点）→ 页面按 next 循环调 POST /api/funds/refresh（第二次 body.cursor = 第一次回的 next）直到 next 为 null
  *      → 再读一次 GET /api/funds → 失败的那只（VOO）在页面上写明没取到。
  *   J. 空状态（C32）：从没刷新过（items 只有定义、没有数值）时页面不报错、刷新按钮在、写明还没有数据。
+ *   第二轮修改（主会话 2026-11-10 定的约定；接口 / 计时那两条在 test/funds-round2.test.ts）：
+ *   K. 标题下数据时间写"（新加坡时间）"、按 UTC+8 换算；页面任何地方不出现"台湾"（约定 1）。
+ *   L. 整次失败（服务器回 500 / 网络断了）：写"这次没取到、显示的还是 <时间> 的数据、可以再点一次"，不说"已存好"、不逐个列代码（约定 2）。
+ *   M. 中途断了：写"前 N 只已更新，其余 M 只还是 <旧时间> 的数据，再点会从头取"，写库失败那批不说"已存好"；没更新的那几只标出"上次数据"（约定 2、3）。
+ *   N. 1200 宽：刷新结果文字再长，刷新按钮前后位置不变、仍在右上（约定 4）。
+ *   O. 手机（触屏）点散点：先出浮框（名字、收益、回撤、"看这一只"），页面不动；再点"看这一只"才跳到那一行（约定 5）。
+ *   P. 详情表里上市不足的格子写"上市不足"不写"—"；散点副标题写"N 只上市不满这段时间"（约定 6）。
+ *   Q. 每次进入 #/funds 都重新 GET /api/funds（约定 7）。
+ *   R. 刷完汇总里从没取到过的那只单独说"没取到数据"，不算进"那几行显示的是上次的数据"（约定 10）。
+ *   S. 400 宽：每行的"1 日"有标签（约定 11）。
  *   全程没有页面脚本报错（pageerror）。
  *
  * 页面约定（研发照加；要改名就在同一个提交里改这里并写明）：
@@ -68,14 +78,17 @@ const errors = [];
  * 打开一个页面；/api/funds 和 /api/funds/refresh 在浏览器这一侧用替身（服务端的取数在 test/funds-api.test.ts 测）。
  * api.snap：GET 回什么；api.posts：收到的 refresh 请求体；api.gets：GET 次数；api.onRefresh(body, n)：返回 refresh 的回包（可以是 Promise，用来扣住）
  */
-async function open({ width = 1280, height = 900, colorScheme = 'light', snap = SNAP, onRefresh } = {}) {
-  const ctx = await browser.newContext({ viewport: { width, height }, colorScheme });
+async function open({ width = 1280, height = 900, colorScheme = 'light', snap = SNAP, onRefresh, touch = false } = {}) {
+  const ctx = await browser.newContext({ viewport: { width, height }, colorScheme, ...(touch ? { hasTouch: true, isMobile: true } : {}) });
   const api = { snap, posts: [], gets: 0 };
   api.onRefresh = onRefresh ?? (() => ({ next: null, done: true, total: 45, updated: [], failed: [] }));
   await ctx.route(/\/api\/funds\/refresh(\?.*)?$/, async (r) => {
     const body = (() => { try { return JSON.parse(r.request().postData() || '{}'); } catch { return { bad: r.request().postData() }; } })();
     api.posts.push(body);
     const res = await api.onRefresh(body, api.posts.length);
+    // 第二轮加：{ __abort: true } = 网络断了；{ __status, body } = 服务器回错（例如 D1 写库失败的 500）
+    if (res && res.__abort) return r.abort('connectionreset');
+    if (res && res.__status) return r.fulfill({ status: res.__status, contentType: 'application/json', body: JSON.stringify(res.body ?? {}) });
     await r.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(res) });
   });
   await ctx.route(/\/api\/funds(\?.*)?$/, async (r) => {
@@ -260,6 +273,212 @@ if (!PROTO) {
     await enter(page);
     const txt = await page.locator(R).innerText({ timeout: 2000 }).catch(() => '');
     check('J 从没刷新过：#t-funds 在、刷新按钮在、写明还没有数据', (await page.locator(R).getByRole('button', { name: /刷新/ }).first().isVisible().catch(() => false)) && /(还没|暂无|没有数据)/.test(txt), txt.replace(/\s+/g, ' ').slice(0, 200));
+    await ctx.close();
+  });
+}
+
+if (!PROTO) {
+  // ================================================================ 第二轮修改（主会话 2026-11-10 定的约定 1～7、10、11；测试先写，C154）
+  // 接口 / 计时那两条（约定 8、9）在 test/funds-round2.test.ts。
+  /** ISO → 新加坡时间（UTC+8）的 { day: 'YYYY-MM-DD', md: 'MM-DD', hm: 'HH:MM' } */
+  const sgt = (iso) => { const d = new Date(Date.parse(iso) + 8 * 3600_000).toISOString(); return { day: d.slice(0, 10), md: d.slice(5, 10), hm: d.slice(11, 16) }; };
+  const OLD = sgt(SNAP.fetched_at); // 2026-11-10T08:59Z → 16:59
+  const CODES = SNAP.items.map((x) => x.code);
+  /** #v-funds 里（行外面、图外面）看得见、文字匹配 re 的最小那个元素的文字 */
+  const note = (page, re) => page.evaluate(({ R, src }) => {
+    const re = new RegExp(src);
+    const root = document.querySelector(R);
+    if (!root) return null;
+    const hit = [...root.querySelectorAll('*')].filter((e) => e.getClientRects().length && !e.closest('[data-code][aria-expanded]') && !e.closest('svg') && !e.closest('[data-detail]'))
+      .map((e) => (e.innerText || '').replace(/\s+/g, ' ').trim()).filter((t) => t.length <= 400 && re.test(t));
+    return hit.length ? hit.sort((a, b) => a.length - b.length)[0] : null;
+  }, { R, src: re.source });
+  /** 点"刷新"，等到发了 n 次 POST、按钮恢复可点，再多等一会儿让结果文字和重读的数据画上去 */
+  async function doRefresh(page, api, n) {
+    const btn = page.locator(R).getByRole('button', { name: /刷新/ }).first();
+    await btn.click();
+    const t0 = Date.now();
+    while (Date.now() - t0 < WAIT && (api.posts.length < n || !(await btn.isEnabled().catch(() => false)))) await new Promise((ok) => setTimeout(ok, 30));
+    await page.waitForTimeout(400);
+    return btn;
+  }
+  const noTaiwan = (page) => page.evaluate((R) => !/台湾/.test(document.querySelector(R)?.textContent || '') && !/台湾/.test(document.title), R);
+  const FIRST23 = CODES.slice(0, 23), REST22 = CODES.slice(23);
+
+  // ---------------------------------------------------------------- K 数据时间写新加坡时间（约定 1）
+  await section('K 新加坡时间', async () => {
+    const { page, ctx } = await open();
+    await enter(page);
+    const m = await note(page, /数据时间/);
+    check(`K 标题下数据时间写"（新加坡时间）"、按 UTC+8 换算（${SNAP.fetched_at} → ${OLD.day} ${OLD.hm}）`, !!m && /（新加坡时间）/.test(m) && m.includes(OLD.hm) && (m.includes(OLD.day) || m.includes(OLD.md)), m);
+    check('K 页面任何地方不出现"台湾"', await noTaiwan(page), m);
+    await ctx.close();
+  });
+
+  // ---------------------------------------------------------------- L 整次失败的提示（约定 2）
+  for (const [how, res] of [['服务器回 500（例如 D1 写库失败）', { __status: 500, body: { error: '服务器出错了' } }], ['网络断了', { __abort: true }]]) {
+    await section(`L 整次失败：${how}`, async () => {
+      const { page, api, ctx } = await open({ onRefresh: () => res });
+      await enter(page);
+      await doRefresh(page, api, 1);
+      const t = await note(page, /没取到|停了|失败|出错|断了/);
+      check(`L 整次失败（${how}）：写"这次没取到"、写明显示的还是 ${OLD.hm} 的数据、可以再点一次`, !!t && /没取到/.test(t) && t.includes(OLD.hm) && /再点/.test(t), t);
+      check(`L 整次失败（${how}）：不说"已存好"，不逐个列代码`, !!t && !/存好/.test(t) && !CODES.some((c) => t.includes(c)), t);
+      await ctx.close();
+    });
+  }
+
+  // ---------------------------------------------------------------- M 中途断了（约定 2、3）
+  await section('M 中途断了', async () => {
+    const NEW_AT = '2026-11-10T10:30:00Z';
+    const { page, api, ctx } = await open({
+      onRefresh: (body, n) => {
+        if (n === 1) { api.snap = { ...SNAP, fetched_at: NEW_AT }; return { next: 23, done: 23, total: 45, updated: FIRST23, failed: [], requests: 40 }; }
+        return { __status: 500, body: { error: '服务器出错了' } }; // 第二批 D1 写库失败
+      },
+    });
+    await enter(page);
+    await doRefresh(page, api, 2);
+    const t = await note(page, /前 ?23 ?只/);
+    check(`M 中途断了：写"前 23 只已更新，其余 22 只还是 ${OLD.hm} 的数据，再点会从头取"`, !!t && /前 ?23 ?只[^；;。]*更新/.test(t) && /其余 ?22 ?只/.test(t) && t.includes(OLD.hm) && /再点/.test(t) && /从头/.test(t), t ?? (await note(page, /停了|没取到|失败|出错/)));
+    const any = t ?? (await note(page, /停了|没取到|失败|出错/)) ?? '';
+    check('M 中途断了：第二批（写库失败那批）不说成"已存好"', !/存好/.test(any), any);
+    // 约定 3：没更新的 22 只要标出是上次的数据——标题上写明"有 22 只是旧时间的"，或者这 22 行每行都标"上次数据"（更新了的 23 行不标）
+    const meta = (await note(page, /数据时间/)) ?? '';
+    const restMarked = await Promise.all(REST22.map(async (c) => /上次/.test(await rowText(page, c))));
+    const firstMarked = await Promise.all(FIRST23.map(async (c) => /上次/.test(await rowText(page, c))));
+    const byMeta = /22 ?只/.test(meta) && /(上次|旧)/.test(meta);
+    const byRows = restMarked.every(Boolean) && !firstMarked.some(Boolean);
+    check('M 中途断了：没更新的 22 只标出是上次的数据（标题写明 22 只是旧时间的，或这 22 行都标"上次数据"、更新了的不标）', byMeta || byRows,
+      { meta, restMarked: restMarked.filter(Boolean).length, firstMarked: firstMarked.filter(Boolean).length });
+    await ctx.close();
+  });
+
+  // ---------------------------------------------------------------- N 刷新结果再长，按钮位置不变（约定 4）
+  const LONG = SNAP.items.slice(0, 20).map((x) => ({ code: x.code, reason: 'Yahoo 8 秒没回应（试了 2 次）；东方财富 8 秒没回应（试了 2 次）：' + 'No data found, symbol may be delisted' }));
+  for (const [how, onRefresh] of [
+    ['20 只没取到（原因很长）', () => ({ next: null, done: 45, total: 45, updated: CODES.slice(20), failed: LONG, requests: 45 })],
+    ['中途断了（服务器回一段很长的错）', (b, n) => (n === 1 ? { next: 12, done: 12, total: 45, updated: CODES.slice(0, 12), failed: [], requests: 30 } : { __status: 500, body: { error: '服务器出错了：' + '写库失败，'.repeat(30) } })],
+  ]) {
+    await section(`N 按钮位置：${how}`, async () => {
+      const { page, api, ctx } = await open({ width: 1200, height: 900, onRefresh });
+      await enter(page);
+      const btn = page.locator(R).getByRole('button', { name: /刷新/ }).first();
+      const b0 = await btn.boundingBox();
+      await doRefresh(page, api, how.startsWith('中途') ? 2 : 1);
+      const b1 = await btn.boundingBox();
+      const same = !!b0 && !!b1 && Math.abs(b0.x - b1.x) <= 1 && Math.abs(b0.y - b1.y) <= 1;
+      const topRight = !!b1 && b1.x + b1.width >= 1200 * 0.7 && b1.y <= 250;
+      check(`N 1200 宽、${how}：刷新按钮前后位置不变、仍在右上`, same && topRight, { before: b0, after: b1 });
+      await ctx.close();
+    });
+  }
+
+  // ---------------------------------------------------------------- O 手机点散点：先出浮框，再点"看这一只"才跳（约定 5）
+  await section('O 手机点散点', async () => {
+    const { page, ctx } = await open({ width: 400, height: 860, colorScheme: 'light', touch: true });
+    await enter(page);
+    await page.locator(`${R} svg[role="img"]`).filter({ has: page.locator('circle') }).first().scrollIntoViewIfNeeded();
+    await page.waitForTimeout(200);
+    // 选一个在视口里、中心点上最上面就是它自己的点
+    const pick = await page.evaluate((R) => {
+      const svg = [...document.querySelectorAll(R + ' svg[role="img"]')].filter((s) => s.getClientRects().length).sort((a, b) => b.querySelectorAll('circle[data-code]').length - a.querySelectorAll('circle[data-code]').length)[0];
+      for (const c of svg ? svg.querySelectorAll('circle[data-code]') : []) {
+        const r = c.getBoundingClientRect(), x = r.left + r.width / 2, y = r.top + r.height / 2;
+        if (y > 0 && y < innerHeight && document.elementFromPoint(x, y) === c) return { code: c.getAttribute('data-code'), x, y };
+      }
+      return null;
+    }, R);
+    if (!pick) { check('O 散点图里找得到一个点得着的点', false, null); await ctx.close(); return; }
+    const name = BY[pick.code].name;
+    const y0 = await page.evaluate(() => scrollY);
+    await page.touchscreen.tap(pick.x, pick.y);
+    await page.waitForTimeout(500);
+    const y1 = await page.evaluate(() => scrollY);
+    const go = page.locator(R).getByRole('button', { name: /看这一只/ }).or(page.locator(R).getByRole('link', { name: /看这一只/ })).filter({ visible: true }).first();
+    const hasGo = await go.isVisible().catch(() => false);
+    const tip = hasGo ? await go.evaluate((b, name) => { let e = b; while (e && !(e.innerText || '').includes(name)) e = e.parentElement; return e ? e.innerText.replace(/\s+/g, ' ').trim() : ''; }, name) : '';
+    check(`O 手机点散点（${pick.code}）：先出浮框，写着名字、收益、回撤和"看这一只"`, hasGo && tip.includes(name) && /收益/.test(tip) && /回撤/.test(tip), { tip, hasGo });
+    check('O 手机点散点：不直接滚走（页面不动、没有展开哪一行）', Math.abs(y1 - y0) <= 2 && (await page.locator(`${R} [data-code][aria-expanded="true"]`).count()) === 0, { y0, y1 });
+    if (hasGo) {
+      await go.tap().catch(() => go.click());
+      await page.waitForTimeout(800);
+      const inView = await page.evaluate(({ R, code }) => { const r = document.querySelector(`${R} [data-code="${code}"][aria-expanded]`)?.getBoundingClientRect(); return !!r && r.top >= 0 && r.bottom <= innerHeight; }, { R, code: pick.code });
+      check(`O 再点"看这一只"：跳到 ${pick.code} 那一行（在视口里）`, inView, null);
+    }
+    await ctx.close();
+  });
+
+  // ---------------------------------------------------------------- P "上市不足"（约定 6）
+  await section('P 上市不足', async () => {
+    const { page, ctx } = await open();
+    await enter(page);
+    const pg = page.locator(R).getByRole('group', { name: '时间段' });
+    await pg.getByRole('button', { name: '近 1 年' }).click();
+    const short = SNAP.items.filter((x) => Array.isArray(x.series) && x.series.length && (x.y1 == null || x.dd_y1 == null)).length; // 3（XUS、XWR、UPD）
+    const sub = await page.evaluate((R) => {
+      const svg = [...document.querySelectorAll(R + ' svg[role="img"]')].filter((s) => s.getClientRects().length).sort((a, b) => b.querySelectorAll('circle').length - a.querySelectorAll('circle').length)[0];
+      const card = svg?.closest('section') ?? svg?.parentElement;
+      return card ? card.innerText.replace(/\s+/g, ' ').trim().slice(0, 400) : '';
+    }, R);
+    check(`P 散点副标题写出"${short} 只上市不满这段时间"（近 1 年、全部）`, new RegExp(`${short} ?只上市不满`).test(sub), sub.slice(0, 200));
+    await page.locator(`${R} [data-code="XUS"][aria-expanded]`).first().click();
+    await page.waitForTimeout(200);
+    const cells = await page.evaluate(({ R, labels }) => {
+      const tb = [...document.querySelectorAll(R + ' table')].filter((t) => t.getClientRects().length);
+      const out = {};
+      for (const t of tb) for (const tr of t.querySelectorAll('tr')) {
+        const c = [...tr.children].map((x) => (x.innerText || '').trim());
+        if (labels.includes(c[0])) out[c[0]] = c.slice(1);
+      }
+      return out;
+    }, { R, labels: PERIODS.map((p) => p[0]) });
+    const nullPeriods = PERIODS.filter(([, p]) => BY.XUS[p] == null).map(([l]) => l); // 今年以来、近 1 年
+    const bad = nullPeriods.filter((l) => !cells[l] || cells[l].some((v) => v === '—' || v === '-') || !cells[l].some((v) => /上市不足/.test(v)));
+    check(`P XUS 详情表里上市不足的格子（${nullPeriods.join('、')}）写"上市不足"不写"—"`, nullPeriods.length > 0 && bad.length === 0, { cells, bad });
+    await ctx.close();
+  });
+
+  // ---------------------------------------------------------------- Q 每次进入都重新读（约定 7）
+  await section('Q 每次进入都重新读', async () => {
+    const { page, api, ctx } = await open();
+    await enter(page);
+    const g1 = api.gets;
+    await page.evaluate(() => { location.hash = '#/tools'; });
+    await page.waitForTimeout(300);
+    await page.evaluate(() => { location.hash = '#/funds'; });
+    const t0 = Date.now();
+    while (api.gets <= g1 && Date.now() - t0 < 3000) await new Promise((ok) => setTimeout(ok, 30));
+    check('Q 离开 #/funds 再回来：又发了一次 GET /api/funds', api.gets > g1, { before: g1, after: api.gets });
+    await ctx.close();
+  });
+
+  // ---------------------------------------------------------------- R 从没取到过的那只单独说"没取到数据"（约定 10）
+  await section('R 从没取到的那只', async () => {
+    const strip = ({ market, category, name, code, symbol, source, tag }) => ({ market, category, name, code, symbol, source, tag });
+    const before = { ...SNAP, items: SNAP.items.map((x) => (x.code === 'XUS' ? { ...strip(x), error: '还没取过' } : x)) };
+    const after = { ...SNAP, fetched_at: '2026-11-10T10:30:00Z', items: SNAP.items.map((x) => (x.code === 'XUS' ? { ...strip(x), error: 'Yahoo 回 404' } : x.code === 'VOO' ? { ...x, error: 'Yahoo 8 秒没回应（试了 2 次）', error_at: '2026-11-10T10:30:00Z' } : x)) };
+    const { page, api, ctx } = await open({
+      snap: before,
+      onRefresh: () => { api.snap = after; return { next: null, done: 45, total: 45, updated: CODES.filter((c) => c !== 'XUS' && c !== 'VOO'), failed: [{ code: 'VOO', reason: 'Yahoo 8 秒没回应（试了 2 次）' }, { code: 'XUS', reason: 'Yahoo 回 404' }], requests: 45 }; },
+    });
+    await enter(page);
+    await doRefresh(page, api, 1);
+    const t = (await note(page, /已更新|更新了/)) ?? '';
+    const clauses = t.split(/[；;。]/);
+    const xus = clauses.filter((c) => c.includes('XUS') || c.includes(BY.XUS.name));
+    const n = [...t.matchAll(/(\d+) ?只[^；;。]*上次/g)].map((m) => Number(m[1]));
+    check('R 刷完汇总：从没取到过的 XUS 单独说"没取到数据"，"那几行显示的是上次的数据"只算有旧数据的那 1 只（VOO）',
+      /没取到数据/.test(t) && xus.every((c) => !/上次/.test(c) && /没取到数据/.test(c)) && n.every((x) => x === 1), { t, xus, n });
+    await ctx.close();
+  });
+
+  // ---------------------------------------------------------------- S 手机上"1 日"有标签（约定 11）
+  await section('S 手机 1 日标签', async () => {
+    const { page, ctx } = await open({ width: 400, height: 860 });
+    await enter(page);
+    const t = (await rowText(page, 'QQQ')).replace(/\s+/g, ' ');
+    check('S 400 宽：每行的"1 日"有标签可读（QQQ 那行读得到"1 日 +3.54%"）', /1 ?日[：: ]*\+?3\.54%/.test(t), t.slice(0, 160));
     await ctx.close();
   });
 }
