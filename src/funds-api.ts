@@ -16,7 +16,11 @@
  * 不花钱（底线 8）：两个来源都是公开免费接口，不用密钥。
  */
 import type { Env } from './env';
-import { cleanPoints, eastmoneyPageOldest, FUNDS, MIN_POINTS, parseEastmoney, parseYahoo, summarize, type FundDef, type FundSnapshot, type Point } from './funds';
+import { bandCoverage, bondCenter, cleanPoints, eastmoneyPageOldest, FUNDS, MIN_POINTS, parseEastmoney, parseYahoo, rangeBand, summarize, type FundDef, type FundSnapshot, type Point } from './funds';
+import {
+  approxYield, autoYield, BOND_YIELDS, parseBlackrockSg, parseChinabond, parseEm7d, parseEmNav, parseIshares, parseMasHtml, parseTreasuryCsv, parseVanguard,
+  type BondYield, type BondYieldDef, type Curve, type CurvePoints, type ParsedYield,
+} from './funds-yield';
 
 /** 一次 /api/funds/refresh 最多发几个对外请求 */
 export const MAX_REQUESTS = 45;
@@ -75,6 +79,14 @@ export class Http {
   ) {}
   get left() { return this.max - this.used; }
   async get(url: string, headers: Record<string, string>, what: string): Promise<unknown> {
+    return (await this.send(url, { headers }, what, 'json')).body;
+  }
+  /** 取网页 / CSV 原文（第二版债券收益率用）；cookie = 回包里 set-cookie 的 name=value 拼好的（MAS 的表单要带回去） */
+  async text(url: string, init: { method?: string; headers: Record<string, string>; body?: string }, what: string): Promise<{ text: string; cookie: string }> {
+    const r = await this.send(url, init, what, 'text');
+    return { text: r.body as string, cookie: r.cookie };
+  }
+  private async send(url: string, init: { method?: string; headers: Record<string, string>; body?: string }, what: string, as: 'json' | 'text'): Promise<{ body: unknown; cookie: string }> {
     let last = '', tries = 0;
     const cut = () => new TimeUp(last ? `${last}（试了 ${tries} 次）` : '');
     for (let i = 0; i < TRIES; i++) {
@@ -88,12 +100,13 @@ export class Http {
       const ac = new AbortController();
       const timer = setTimeout(() => ac.abort(), limit);
       try {
-        const r = await this.f(url, { headers, signal: ac.signal });
+        const r = await this.f(url, { ...init, signal: ac.signal });
         if (r.ok) {
           const text = await r.text();
+          if (as === 'text') return { body: text, cookie: cookieOf(r.headers) };
           let body: unknown;
           try { body = JSON.parse(text); } catch { throw new FetchFail(`${what}回的不是数据（可能被拦了）`); }
-          return body;
+          return { body, cookie: '' };
         }
         // 出错的回包里常有说明（Yahoo 的 chart.error.description），带进原因
         let why = '';
@@ -114,6 +127,15 @@ export class Http {
     }
     throw new FetchFail(`${last}（试了 ${tries} 次）`);
   }
+}
+
+/** 回包的 set-cookie → "a=1; b=2"（只要 name=value） */
+function cookieOf(h: Headers): string {
+  const hh = h as Headers & { getSetCookie?: () => string[]; getAll?: (k: string) => string[] };
+  let list: string[] = [];
+  try { list = hh.getSetCookie ? hh.getSetCookie() : hh.getAll ? hh.getAll('set-cookie') : []; } catch { list = []; }
+  if (!list.length) { const one = h.get('set-cookie'); if (one) list = one.split(/,(?=\s*[A-Za-z0-9_.-]+=)/); }
+  return list.map((c) => c.split(';')[0].trim()).filter(Boolean).join('; ');
 }
 
 const yahooUrl = (sym: string, range: string) => `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(sym)}?range=${range}&interval=1d&events=div`;
@@ -187,6 +209,8 @@ export interface RefreshResult {
   failed: { code: string; reason: string }[];
   /** 这一次实际发了几个对外请求 */
   requests: number;
+  /** 第二版：最后一批（45 只都过了一遍的那一批）顺带取债券收益率的结果 */
+  yields?: YieldsResult;
 }
 
 /** 批首那只被截止打断（只有它会因为时间用完记失败）：写实际等了几秒，有前面的情况一起写 */
@@ -206,6 +230,8 @@ export async function refreshBatch(env: Env, cursor: number, now: number, f: Fet
   while (i < total && n < MAX_FUNDS_PER_CALL) {
     const def = FUNDS[i];
     if (n > 0 && (http.left < estimateRequests(def) || Date.now() - t0 > START_CUTOFF_MS)) break;
+    // 第二版 ③：最后一只之后要在同一次调用里取债券收益率——额度或时间不够留给它，就把最后一只留给下一批（下一批 = 最后一只 + 收益率）
+    if (n > 0 && i === total - 1 && (http.left - estimateRequests(def) < YIELD_RESERVE || Date.now() - t0 > YIELD_START_MS)) break;
     try {
       ok.push(await fetchFund(def, http, now));
     } catch (e) {
@@ -218,22 +244,35 @@ export async function refreshBatch(env: Env, cursor: number, now: number, f: Fet
     }
     i++; n++;
   }
+  // 第二版 ③：45 只都过了一遍（这是最后一批）→ 用这一次剩下的额度和时间取债券收益率（同一个计数器：价格 + 收益率合计 ≤ 45、25 秒截止照旧）。
+  // 收益率那边各自兜底、只写 fund_yield，不影响上面价格的 updated / failed
+  let yields: YieldsResult | undefined;
+  if (i >= total) {
+    try { yields = await refreshYields(env, now, f, sleep, http); } catch (e) { yields = { updated: [], failed: [{ code: '*', reason: why(e) }], requests: 0, curves: { ust: why(e), sgs: why(e), cgb: why(e) } }; }
+  }
   // 先取完再写库（不在事务里调外部接口）
   const stmts = [
     ...ok.map((s) => env.DB.prepare('INSERT INTO fund_snapshot (code, data, ok_at, err, err_at) VALUES (?1, ?2, ?3, NULL, NULL) ON CONFLICT (code) DO UPDATE SET data = ?2, ok_at = ?3, err = NULL, err_at = NULL').bind(s.code, JSON.stringify(s), now)),
     ...failed.map((x) => env.DB.prepare('INSERT INTO fund_snapshot (code, data, ok_at, err, err_at) VALUES (?1, NULL, NULL, ?2, ?3) ON CONFLICT (code) DO UPDATE SET err = ?2, err_at = ?3').bind(x.code, x.reason.slice(0, 200), now)),
   ];
   if (stmts.length) await env.DB.batch(stmts);
-  return { next: i < total ? i : null, done: i, total, updated: ok.map((x) => x.code), failed, requests: http.used };
+  return { next: i < total ? i : null, done: i, total, updated: ok.map((x) => x.code), failed, requests: http.used, ...(yields ? { yields } : {}) };
 }
 
 interface Row { code: string; data: string | null; ok_at: number | null; err: string | null; err_at: number | null }
 
-/** GET /api/funds 的内容 */
-export async function fundsList(env: Env): Promise<{ fetched_at: string | null; items: Record<string, unknown>[] }> {
+/** 债券收益率"过期"的门槛：这一只上次取到的时间比最近一次取到任何一只早 5 分钟以上（同一次刷新里的不算） */
+const YIELD_OLD_MS = 5 * 60_000;
+
+/** GET /api/funds 的内容（第二版：每只多 band；债券类多 yield；顶层多 band_coverage、yields_at） */
+export async function fundsList(env: Env): Promise<{ fetched_at: string | null; yields_at: string | null; band_coverage: number | null; items: Record<string, unknown>[] }> {
   const rows = (await env.DB.prepare('SELECT code, data, ok_at, err, err_at FROM fund_snapshot').all<Row>()).results ?? [];
+  const yrows = (await env.DB.prepare('SELECT code, data, ok_at, err, err_at FROM fund_yield').all<Row>()).results ?? [];
   const by = new Map(rows.map((r) => [r.code, r]));
+  const yby = new Map(yrows.map((r) => [r.code, r]));
+  const ylatest = yrows.reduce((m, r) => Math.max(m, r.ok_at ?? 0), 0);
   let latest = 0;
+  const covs: number[] = [];
   const items = FUNDS.map((def) => {
     const r = by.get(def.code);
     let snap: Record<string, unknown> | null = null;
@@ -246,12 +285,183 @@ export async function fundsList(env: Env): Promise<{ fetched_at: string | null; 
     if (!snap) item.error = r?.err ?? '还没取过';
     // 取到时会把 err 清空，所以 err 还在 = 最近一次没取到（不比时间：同一毫秒先成功后失败也算失败，C106）
     else if (r?.err) { item.error = r.err; if (r.err_at) item.error_at = new Date(r.err_at).toISOString(); }
+    // 第二版 ③：债券类的预期年化（取不到时保留上次的值、标 stale；从没取到过是 null）
+    let yv: number | null = null;
+    if (def.category === '债券') {
+      const yr = yby.get(def.code);
+      let y: BondYield | null = null;
+      if (yr?.data) { try { y = JSON.parse(yr.data); } catch { y = null; } }
+      const cfg = BOND_YIELDS.find((d) => d.code === def.code);
+      // kind 按配置（auto / approx）；自动的这次退回了国债近似时 approx = true（页面照样标"近似"、加"≈"）
+      if (y && typeof y.value === 'number' && y.value !== 0) {
+        yv = y.value;
+        const stale = !!yr?.err || (!!yr?.ok_at && ylatest - yr.ok_at > YIELD_OLD_MS);
+        item.yield = { ...(cfg?.note ? { note: cfg.note } : {}), value: y.value, kind: cfg?.kind ?? y.kind, approx: y.kind === 'approx', label: y.label, duration: y.duration ?? null, asOf: y.asOf, source: y.source, stale, ...(yr?.err ? { error: yr.err } : {}) };
+      } else {
+        // 从没取到过：value 为 null（不显示 0），带上口径和没取到的原因
+        item.yield = { ...(cfg?.note ? { note: cfg.note } : {}), value: null, kind: cfg?.kind ?? 'approx', approx: cfg?.kind === 'approx', label: cfg?.label ?? '', duration: cfg?.duration ?? null, asOf: null, source: '', stale: !!yr?.err, ...(yr?.err ? { error: yr.err } : {}) };
+      }
+    }
+    // 第二版 ①：未来 1 个月的可能区间（股票类中心 0；债券类中心 = ln(1+预期年化)/12）
+    const series = Array.isArray(snap?.series) ? (snap!.series as [string, number][]) : [];
+    item.band = series.length ? rangeBand(series, def.category === '债券' ? bondCenter(yv) : 0) : null;
+    const cov = series.length ? bandCoverage(series) : null;
+    if (cov !== null) covs.push(cov);
     return item;
   });
-  return { fetched_at: latest ? new Date(latest).toISOString() : null, items };
+  return {
+    fetched_at: latest ? new Date(latest).toISOString() : null,
+    yields_at: ylatest ? new Date(ylatest).toISOString() : null,
+    band_coverage: covs.length ? covs.reduce((a, b) => a + b, 0) / covs.length : null,
+    items,
+  };
 }
 
-/** /api/funds 和 /api/funds/refresh；别的地址回 null（由 adminApi 回 404） */
+// ---------------------------------------------------------------- 第二版 ③：债券类预期年化（"刷新数据"循环的最后一批里、45 只取完之后顺带取）
+/** 最后一批给收益率留的对外请求数（首轮最多约 18 个：8 个页面 + 美国 1～2 + MAS 2 + 中债 1～6） */
+export const YIELD_RESERVE = 22;
+/** 最后一批过了这么久还没轮到最后一只，就把它留给下一批（留约 15 秒给收益率） */
+const YIELD_START_MS = 10_000;
+const BROWSER_UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120 Safari/537.36';
+const HTML_HEADERS = { 'user-agent': BROWSER_UA, accept: 'text/html,application/xhtml+xml', 'accept-language': 'en-US,en;q=0.9' };
+const MAS_URL = 'https://eservices.mas.gov.sg/statistics/fdanet/BenchmarkPricesAndYields.aspx';
+/** 中债曲线：当天没有就往前退，最多退 5 个自然日（周末、节假日没有曲线）——循环硬上限，最多 6 个请求 */
+const CGB_MAX_BACK = 5;
+/** 中债国债收益率曲线的 ycDefId */
+const CGB_CURVE_ID = '2c9081e50a2f9606010a3068cae70001';
+
+/** UTC+8 的日期（新加坡 / 中国） */
+const day8 = (now: number, back = 0) => new Date(now + 8 * 3600_000 - back * 86_400_000).toISOString().slice(0, 10);
+const ustUrl = (y: number) => `https://home.treasury.gov/resource-center/data-chart-center/interest-rates/daily-treasury-rates.csv/${y}/all?type=daily_treasury_yield_curve&field_tdr_date_value=${y}&page&_format=csv`;
+/** 中债 searchYc：测试会话 2026-11-10 实测取得到数据的那组参数（workTimes 必须写日期，留空回 []；原来那组 dsmSelect=1&&locale=cn_ZH 回 []） */
+const cgbUrl = (d: string) => `https://yield.chinabond.com.cn/cbweb-mn/yc/searchYc?xyzSelect=txy&&workTimes=${d}&&dxbj=0&&qxll=0,&&yqqxN=N&&yqqxK=K&&ycDefIds=${CGB_CURVE_ID}&&wrjxCBFlag=0&&locale=zh_CN`;
+
+async function fetchUst(http: Http, now: number): Promise<CurvePoints> {
+  const y = new Date(now).getUTCFullYear();
+  let c = parseTreasuryCsv((await http.text(ustUrl(y), { headers: { 'user-agent': BROWSER_UA } }, '美国财政部')).text);
+  // 1 月初今年的表可能还是空的，退回上一年（只多 1 个请求）
+  if (!c) c = parseTreasuryCsv((await http.text(ustUrl(y - 1), { headers: { 'user-agent': BROWSER_UA } }, '美国财政部')).text);
+  if (!c) throw new FetchFail('美国财政部的收益率表认不出来');
+  return c;
+}
+
+/** MAS：先 GET 取 __VIEWSTATE / __EVENTVALIDATION（和 cookie），再 POST 上月到本月、日频、1/2/5/10 年 */
+async function fetchSgs(http: Http, now: number): Promise<CurvePoints> {
+  const g = await http.text(MAS_URL, { headers: HTML_HEADERS }, 'MAS');
+  const hid = (n: string) => new RegExp(`name="${n}"[^>]*value="([^"]*)"`).exec(g.text)?.[1] ?? null;
+  const vs = hid('__VIEWSTATE'), ev = hid('__EVENTVALIDATION');
+  if (vs === null || ev === null) throw new FetchFail('MAS 的查询页认不出来');
+  const d = new Date(now + 8 * 3600_000), y = d.getUTCFullYear(), m = d.getUTCMonth() + 1;
+  const py = m === 1 ? y - 1 : y, pm = m === 1 ? 12 : m - 1;
+  const P = 'ctl00$ContentPlaceHolder1$';
+  const form = new URLSearchParams({
+    __EVENTTARGET: '', __EVENTARGUMENT: '', __LASTFOCUS: '', __VIEWSTATE: vs, __VIEWSTATEGENERATOR: hid('__VIEWSTATEGENERATOR') ?? '', __EVENTVALIDATION: ev,
+    [P + 'StartYearDropDownList']: String(py), [P + 'StartMonthDropDownList']: String(pm), [P + 'EndYearDropDownList']: String(y), [P + 'EndMonthDropDownList']: String(m),
+    [P + 'FrequencyDropDownList']: 'D',
+    [P + 'OneYearTreasuryBillYieldCheckBox']: 'on', [P + 'TwoYearBondYieldCheckBox']: 'on', [P + 'FiveYearBondYieldCheckBox']: 'on', [P + 'TenYearBondYieldCheckBox']: 'on',
+    [P + 'DisplayButton']: 'Display',
+  });
+  const r = await http.text(MAS_URL, { method: 'POST', headers: { ...HTML_HEADERS, 'content-type': 'application/x-www-form-urlencoded', referer: MAS_URL, ...(g.cookie ? { cookie: g.cookie } : {}) }, body: form.toString() }, 'MAS');
+  const c = parseMasHtml(r.text);
+  if (!c) throw new FetchFail('MAS 的收益率表认不出来');
+  return c;
+}
+
+/** 中债：从今天（UTC+8）起，当天没有曲线就往前退一天，最多退 CGB_MAX_BACK 天 */
+async function fetchCgb(http: Http, now: number): Promise<CurvePoints> {
+  for (let i = 0; i <= CGB_MAX_BACK; i++) {
+    const d = day8(now, i);
+    const r = await http.text(cgbUrl(d), { method: 'POST', headers: { 'user-agent': BROWSER_UA, referer: 'https://yield.chinabond.com.cn/cbweb-mn/yield_main?locale=zh_CN' } }, '中债');
+    let j: unknown = null;
+    try { j = JSON.parse(r.text); } catch { throw new FetchFail('中债回的不是数据（可能被拦了）'); }
+    const c = parseChinabond(j, d);
+    if (c) return c;
+  }
+  throw new FetchFail(`中债最近 ${CGB_MAX_BACK + 1} 天都没有曲线`);
+}
+
+const PARSE: Partial<Record<BondYieldDef['source'], (t: string) => ParsedYield | null>> = {
+  ishares: parseIshares, vanguard: parseVanguard, 'blackrock-sg': parseBlackrockSg,
+  'em-7d': (t) => { try { return parseEm7d(JSON.parse(t)); } catch { return null; } },
+  'em-nav': (t) => { try { return parseEmNav(JSON.parse(t)); } catch { return null; } },
+};
+const PAGE_NAME: Record<string, string> = { ishares: 'iShares', vanguard: 'Vanguard', 'blackrock-sg': 'BlackRock', 'em-7d': '东方财富', 'em-nav': '东方财富' };
+
+export interface YieldsResult {
+  updated: string[];
+  failed: { code: string; reason: string }[];
+  /** 这一次实际发了几个对外请求（≤ 45） */
+  requests: number;
+  /** 三条国债曲线各自取到没有：'ok' 或原因 */
+  curves: Record<Curve, string>;
+}
+
+function why(e: unknown): string {
+  if (e instanceof BudgetOut) return '这一次的请求数用完了';
+  if (e instanceof TimeUp) return e.detail || '这一次的时间用完了';
+  return e instanceof Error ? e.message : String(e);
+}
+
+/**
+ * 取 16 只债券的预期年化，写 fund_yield。一次调用对外请求 ≤ 45（同一个 Http 计数）、约 25 秒截止（CALL_BUDGET_MS）；
+ * 三条曲线和 9 个自动页面并行取。某只没取到：自动的退回"美国同期限国债 + 利差"（标近似），还不行就只记原因、保留上次的值（页面标"过期"）。
+ */
+export async function refreshYields(env: Env, now: number, f: FetchLike = (u, i) => fetch(u, i), sleep?: (ms: number) => Promise<unknown>, shared?: Http): Promise<YieldsResult> {
+  const http = shared ?? new Http(f, MAX_REQUESTS, sleep, Date.now() + CALL_BUDGET_MS);
+  const used0 = http.used;
+  const curveErr: Record<Curve, string> = { ust: 'ok', sgs: 'ok', cgb: 'ok' };
+  const curve = <K extends Curve>(k: K, p: Promise<CurvePoints>) => p.catch((e) => { curveErr[k] = why(e); return null; });
+  const autos = BOND_YIELDS.filter((d) => d.kind === 'auto' && d.url);
+  const [ust, sgs, cgb, pages] = await Promise.all([
+    curve('ust', fetchUst(http, now)),
+    curve('sgs', fetchSgs(http, now)),
+    curve('cgb', fetchCgb(http, now)),
+    Promise.all(autos.map(async (d) => {
+      try {
+        const headers = d.source.startsWith('em-') ? { 'user-agent': 'Mozilla/5.0', referer: EM_REFERER } : HTML_HEADERS;
+        const t = (await http.text(d.url!, { headers }, PAGE_NAME[d.source] ?? d.source)).text;
+        const p = PARSE[d.source]?.(t) ?? null;
+        return { code: d.code, p, err: p ? '' : `${PAGE_NAME[d.source] ?? d.source}页面认不出收益率`, fetched: true };
+      } catch (e) {
+        // 回 403（被拦了，例如 BlackRock 新加坡页）和"取到了却认不出"一样处理：直接退回国债近似，不当成一时没取到
+        const err = why(e);
+        return { code: d.code, p: null, err, fetched: / 403/.test(err) };
+      }
+    })),
+  ]);
+  const curves = { ust, sgs, cgb };
+  const got = new Map(pages.map((x) => [x.code, x]));
+  const ok: { code: string; y: BondYield }[] = [];
+  const failed: { code: string; reason: string }[] = [];
+  /** 页面没取到（网络错、超时、4xx/5xx）：有上次的值就保留上次的（标过期）；从没取到过才用美国国债近似顶上 */
+  const keepOld: { code: string; y: BondYield; reason: string }[] = [];
+  for (const d of BOND_YIELDS) {
+    if (d.kind === 'auto') {
+      const g = got.get(d.code);
+      if (g?.p) { ok.push({ code: d.code, y: autoYield(d, g.p) }); continue; }
+      const a = approxYield(d, curves, true);
+      // 取到了页面但认不出（页面改版，或免费版 CPU 不够解析大页面）→ 退回近似；页面根本没取到 → 优先保留上次的值
+      if (a && g?.fetched) { ok.push({ code: d.code, y: a }); continue; }
+      if (a) { keepOld.push({ code: d.code, y: a, reason: g?.err || '没取到' }); failed.push({ code: d.code, reason: g?.err || '没取到' }); continue; }
+      failed.push({ code: d.code, reason: (g?.err || '没取到') + (d.curve ? `；${d.curve === 'ust' ? '美国国债' : '国债'}也没取到：${curveErr[d.curve]}` : '') });
+    } else {
+      const a = approxYield(d, curves);
+      if (a) ok.push({ code: d.code, y: a });
+      else failed.push({ code: d.code, reason: d.curve ? curveErr[d.curve] : '没有配置国债曲线' });
+    }
+  }
+  // 先取完再写库（不在事务里调外部接口）
+  const stmts = [
+    ...ok.map((x) => env.DB.prepare('INSERT INTO fund_yield (code, data, ok_at, err, err_at) VALUES (?1, ?2, ?3, NULL, NULL) ON CONFLICT (code) DO UPDATE SET data = ?2, ok_at = ?3, err = NULL, err_at = NULL').bind(x.code, JSON.stringify(x.y), now)),
+    // 没有上次的值（data 为空）时写近似值、算取到；有上次的值就留着它、只记原因（UPDATE 里右边读的都是旧行）
+    ...keepOld.map((x) => env.DB.prepare('INSERT INTO fund_yield (code, data, ok_at, err, err_at) VALUES (?1, ?2, ?3, NULL, NULL) ON CONFLICT (code) DO UPDATE SET data = CASE WHEN fund_yield.data IS NULL THEN ?2 ELSE fund_yield.data END, ok_at = CASE WHEN fund_yield.data IS NULL THEN ?3 ELSE fund_yield.ok_at END, err = CASE WHEN fund_yield.data IS NULL THEN NULL ELSE ?4 END, err_at = CASE WHEN fund_yield.data IS NULL THEN NULL ELSE ?3 END').bind(x.code, JSON.stringify(x.y), now, x.reason.slice(0, 200))),
+    ...failed.filter((x) => !keepOld.some((k) => k.code === x.code)).map((x) => env.DB.prepare('INSERT INTO fund_yield (code, data, ok_at, err, err_at) VALUES (?1, NULL, NULL, ?2, ?3) ON CONFLICT (code) DO UPDATE SET err = ?2, err_at = ?3').bind(x.code, x.reason.slice(0, 200), now)),
+  ];
+  if (stmts.length) await env.DB.batch(stmts);
+  return { updated: ok.map((x) => x.code), failed, requests: http.used - used0, curves: curveErr };
+}
+
+/** /api/funds 和 /api/funds/refresh（第二版：最后一批顺带取债券收益率）；别的地址回 null（由 adminApi 回 404） */
 export async function fundsApi(env: Env, req: Request, now: number, sub: string, f?: FetchLike): Promise<Response | null> {
   if (sub === '' && req.method === 'GET') return json(await fundsList(env));
   if (sub === 'refresh' && req.method === 'POST') {
