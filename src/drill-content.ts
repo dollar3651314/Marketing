@@ -171,6 +171,12 @@ export const STAGE3: Record<string, DrillPrompt> = {
     prompt_zh: '他蹦出一个你没听过的词',
     en: 'What do you mean by "de-risk"?',
   },
+  // **s2 的答案和第二段 p2 一字不差，这是 Amos 2026-11-10 看过细节后定的「就这样用」，不是漏改。**
+  // 背景：另外五条第三段都在第二段原句后面接了尾巴，只有这一条直接用了原句。实际后果他也知道：
+  // 复考 18 项打散后，p2 和 s2 是两张题面不同、答案相同的卡，「说得出来 N / 18」把这一句算两次，
+  // 这一句也占了两段发音（audioTextOf('p2') === audioTextOf('s2')，跑过）。
+  // 当时提的改法是接上 `— could you say it again?`，**他明确回了「不用了，我就这样用」。**
+  // 所以：**要改这一条得他本人再发话**，别当成 bug 顺手修掉（test/drill.test.ts 第 1 组逐字钉着，改了会红）。
   s2: {
     prompt_en: 'Right, and the settlement window moves to T plus one for all the European corridors.',
     prompt_zh: '他语速快，网又卡了一下',
