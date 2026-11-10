@@ -50,6 +50,7 @@
  */
 import type { Env } from './env';
 import { CONTENT, STAGE3, W1_KEY } from './drill-content';
+import { earWordOf, EAR_WORD_IDS } from './ear';
 
 // ======================================================================
 // 一、内容：场景 0 的前三段，三段各 6 项（**写死，不从接口来、不从 AI 来**）
@@ -144,16 +145,21 @@ export const enOf = (item: DrillItem): string => (STAGE3[item.id]?.en ?? '').tri
 export const zhOf = (item: DrillItem): string => promptOf(item.id)?.zh || item.zh;
 
 /**
- * 发音的编号：18 项各一段，**另加第三段 6 句「对方说的那句」**（`s1p`～`s6p`）。
- * 一共 24 段，第一次需要时生成一次就存 D1（src/drill-audio.ts、表 `drill_audio`）。
+ * 发音的编号：18 项各一段，**另加第三段 6 句「对方说的那句」**（`s1p`～`s6p`），
+ * **再加听辨小测那 16 个词**（`p1a`～`p8b`，编号和词在 src/ear-content.ts，由 src/ear.ts 的 `EAR_WORD_IDS` 给）。
+ * 一共 40 段，第一次需要时生成一次就存 D1（src/drill-audio.ts、表 `drill_audio`），之后永久复用。
+ * 听辨小测**不另开一套发音**：走的就是这一套（底线 8 / C117：那 16 段也只生成一次、之后永久复用，不新增一分钱费用）。
  */
-export const AUDIO_IDS: string[] = [...ALL_IDS, ...STAGES[2].items.map((i) => i.id + 'p')];
+export const AUDIO_IDS: string[] = [...ALL_IDS, ...STAGES[2].items.map((i) => i.id + 'p'), ...EAR_WORD_IDS];
 
 /** 念出来之前只去掉"给眼睛看的符号"（填空的 ___、破折号），**不改一个词** */
 export const sayText = (en: string): string => en.replace(/_+/g, ' ').replace(/[—–-]+$/g, ' ').replace(/\s+/g, ' ').trim();
 
 /** 某一段发音要念的英文；编号不认识回 null（内容文件没给「对方说的那句」时，`s#p` 也回 null） */
 export function audioTextOf(audioId: string): string | null {
+  // 听辨小测那 16 个词（p1a…p8b）：念的就是那个词本身，一个修饰词都不加
+  const ear = earWordOf(audioId);
+  if (ear) return sayText(ear);
   if (/^s[1-6]p$/.test(audioId)) {
     const pr = promptOf(audioId.slice(0, -1));
     return pr?.en ? sayText(pr.en) : null;

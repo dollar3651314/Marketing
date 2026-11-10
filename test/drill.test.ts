@@ -27,6 +27,8 @@ import { ADMIN_PAGE } from '../src/admin-page';
 import { DRILL_CSS, DRILL_JS, DRILL_MOD } from '../src/drill-page';
 import { ALL_IDS, audioTextOf, AUDIO_IDS, cardOf, orNull, currentStage, drillState, enOf, queueOf, sayText, SCENE, sharesWordRun, STAGE4_NOTE, STAGES, stageStats, zhOf, type DrillRow } from '../src/drill';
 import { CONTENT, STAGE3 } from '../src/drill-content';
+import { PAIRS } from '../src/ear-content';
+import { EAR_WORD_IDS } from '../src/ear';
 import { DRILL_PROJECT, DRILL_PURPOSE } from '../src/drill-audio';
 import { dayText, DAY, REVIEW_MODE, REVIEW_N, reviewLine, shuffleIds } from '../src/drill-review';
 import { TTS_MELOTTS } from '../src/tts';
@@ -434,10 +436,20 @@ describe('7. 不调 AI、不花钱、不碰密钥', () => {
     for (const w of ["from './ai'", "from './gemini'", "from './workers-ai'", "from './ai.js'", '@cf/', 'generativelanguage', '/v1/', 'chargeNeurons', 'neurons']) {
       expect([w, src.includes(w)]).toEqual([w, false]);
     }
-    // 钉死到底 import 了哪两个模块（比"只有一条 import"更严：多一条、换一个来源都红）
+    // 钉死到底 import 了哪三个模块（比"只有一条 import"更严：多一条、换一个来源都红）。
+    // 2026-11-10 听辨小测多了 './ear' 这一条：那 16 段发音挂进 AUDIO_IDS / audioTextOf()，**不另开第二套**。
     expect(src).toContain("import type { Env } from './env';");
     expect(src).toContain("import { CONTENT, STAGE3, W1_KEY } from './drill-content';");
-    expect([...src.matchAll(/^import .*from '([^']+)';$/gm)].map((m) => m[1])).toEqual(['./env', './drill-content']);
+    expect(src).toContain("import { earWordOf, EAR_WORD_IDS } from './ear';");
+    expect([...src.matchAll(/^import .*from '([^']+)';$/gm)].map((m) => m[1])).toEqual(['./env', './drill-content', './ear']);
+    // 多进来的这条**不许把 AI 带进来**：ear.ts 只 import ./env 和 ./ear-content，ear-content.ts 一条 import 都没有
+    const earSrc = readFileSync(path.join(ROOT, 'src/ear.ts'), 'utf8');
+    const earContentSrc = readFileSync(path.join(ROOT, 'src/ear-content.ts'), 'utf8');
+    expect([...earSrc.matchAll(/^import .*from '([^']+)';$/gm)].map((m) => m[1])).toEqual(['./env', './ear-content']);
+    expect([...earContentSrc.matchAll(/^import /gm)]).toHaveLength(0);
+    for (const w of ["from './ai'", "from './gemini'", "from './workers-ai'", '@cf/', 'generativelanguage', '/v1/', 'chargeNeurons', 'neurons']) {
+      expect([w, earSrc.includes(w) || earContentSrc.includes(w)]).toEqual([w, false]);
+    }
   });
 
   it('页面上不出现任何命令行、不出现密钥变量名（底线 1、把用户当小白）', () => {
@@ -568,11 +580,19 @@ describe('10. v2 内容：音标 / 重音、词义、用法（内容在 src/dril
 });
 
 // ======================================================================
-describe('11. 发音：melotts 第一次需要时生成一次，存 D1 永久复用（24 段约 20 neurons）', () => {
-  it('一共 24 段：18 项 + 第三段 6 句「对方说的那句」（s1p～s6p）', () => {
-    expect(AUDIO_IDS).toHaveLength(24);
-    expect(new Set(AUDIO_IDS).size).toBe(24);
-    expect(AUDIO_IDS.slice(18)).toEqual(['s1p', 's2p', 's3p', 's4p', 's5p', 's6p']);
+describe('11. 发音：melotts 第一次需要时生成一次，存 D1 永久复用（40 段约 33 neurons）', () => {
+  // 2026-11-10 听辨小测：24 段 → 40 段（多了听辨那 16 个词 p1a…p8b）。**这一组只往严里改**：
+  // 原来只钉"一共几段"和末尾 6 段，现在三段都逐条钉死（18 项 / 6 句对方那句 / 16 个听辨词），
+  // 而且第三段要和 src/ear-content.ts 的 PAIRS **对得上**（研发自己在 drill.ts 里另抄一份编号就红）。
+  it('一共 40 段：18 项 + 第三段 6 句「对方说的那句」（s1p～s6p）+ 听辨小测 16 个词（p1a～p8b）', () => {
+    expect(AUDIO_IDS).toHaveLength(40);
+    expect(new Set(AUDIO_IDS).size).toBe(40);
+    expect(AUDIO_IDS.slice(0, 18)).toEqual(ALL_IDS);
+    expect(AUDIO_IDS.slice(18, 24)).toEqual(['s1p', 's2p', 's3p', 's4p', 's5p', 's6p']);
+    expect(AUDIO_IDS.slice(24)).toEqual(['p1a', 'p1b', 'p2a', 'p2b', 'p3a', 'p3b', 'p4a', 'p4b', 'p5a', 'p5b', 'p6a', 'p6b', 'p7a', 'p7b', 'p8a', 'p8b']);
+    // 听辨那 16 段**只能来自内容文件**，不许在 drill.ts 里另抄一份
+    expect(AUDIO_IDS.slice(24)).toEqual(PAIRS.flatMap((p) => [p.a.id, p.b.id]));
+    expect(AUDIO_IDS.slice(24)).toEqual(EAR_WORD_IDS);
   });
 
   it('每一段念的是什么：答案念答案、s#p 念对方那句；只去掉填空的 ___ 和破折号，一个词都不改', () => {
@@ -616,13 +636,16 @@ describe('11. 发音：melotts 第一次需要时生成一次，存 D1 永久复
     expect(PURPOSES).toContain(DRILL_PURPOSE);
   });
 
-  it('24 段全生成一遍：加起来远不到免费额度（别偷偷变成一笔新开销）', async () => {
+  it('40 段全生成一遍：加起来远不到免费额度（别偷偷变成一笔新开销）', async () => {
     const ai = fakeAi();
     for (const id of AUDIO_IDS) expect([id, (await getRaw('audio/' + id, ai.env())).status]).toEqual([id, 200]);
-    expect(ai.calls).toHaveLength(24);
+    expect(ai.calls).toHaveLength(40);
     const a = await db.prepare('SELECT neurons FROM ai_usage').first<{ neurons: number }>();
-    expect(a!.neurons).toBeLessThan(100); // 实测约 20；免费额度 10,000/天
-    expect((await db.prepare('SELECT COUNT(*) AS n FROM drill_audio').first<{ n: number }>())?.n).toBe(24);
+    expect(a!.neurons).toBeLessThan(100); // 实测约 33；免费额度 10,000/天
+    expect((await db.prepare('SELECT COUNT(*) AS n FROM drill_audio').first<{ n: number }>())?.n).toBe(40);
+    // 再点一遍：**一次都不许再调 melotts**（存下来就永久复用，不新增一分钱费用）
+    for (const id of AUDIO_IDS) expect([id, (await getRaw('audio/' + id, ai.env())).status]).toEqual([id, 200]);
+    expect(ai.calls).toHaveLength(40);
   });
 
   it('没绑 Workers AI → 503 两句话；编号不认识 → 400（都不进库）', async () => {

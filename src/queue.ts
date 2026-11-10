@@ -10,6 +10,7 @@
  *   /api/english/*（英语练习的跨轮记忆，english-memory.ts：词汇线、生成这一轮的提示词、把 #LOG 贴回来入库；不调任何 AI，不花钱）、
  *   /api/drill/*（工作台「带练」，drill.ts：场景 0 前三段的进度、「会了 / 不会」；内容在 drill-content.ts，不调任何 AI、不花钱），
  *   /api/drill/audio/*（发音，drill-audio.ts：melotts 生成一次存 D1 永久复用），/api/drill/review*（复考，drill-review.ts）、
+ *   /api/drill/ear/*（带练的第二个模式「听辨小测」，ear.ts：放一段音选听到哪个词；内容在 ear-content.ts，发音复用上面那条），
  *   GET /api/funds、POST /api/funds/refresh {cursor?}（基金观察，funds-api.ts：45 只基金的快照、分批去 Yahoo / 东方财富取数）。
  * 登录：密钥 COPILOT_PASSWORD（≥ 16 个字符，没填时后台 404）；同一 IP 15 分钟错 5 次锁 15 分钟，全站 1 小时错 20 次锁 1 小时；
  * 失败一律回答同一句（不透露锁定规则，C128）；会话 12 小时，签名密钥由密码派生，改密码旧会话全部失效。
@@ -28,6 +29,7 @@ import { englishApi } from './english-memory';
 import { drillApi } from './drill';
 import { drillAudioApi } from './drill-audio';
 import { drillReviewApi } from './drill-review';
+import { earApi } from './ear';
 import { fundsApi } from './funds-api';
 
 export const SESSION_MS = 12 * 3600_000;
@@ -175,6 +177,9 @@ export async function adminApi(env: Env, req: Request, now: number): Promise<Res
   if (p.startsWith('/api/drill/audio/')) return (await drillAudioApi(env, req, now, p.slice('/api/drill/audio/'.length))) ?? new Response('Not found', { status: 404 });
   // 带练的复考（drill-review.ts）：「明天再考我这 18 项」；**不动 drill_item 的进度**，不调任何 AI
   if (p.startsWith('/api/drill/review')) return (await drillReviewApi(env, req, now, p.slice('/api/drill/review'.length))) ?? new Response('Not found', { status: 404 });
+  // 带练的第二个模式「听辨小测」（ear.ts）：放一段音、从只差一个音的两个词里选听到哪个；
+  // 发音走上面那条 /api/drill/audio/（同一套，不另开），这里只判对错、记 ear_pair 的三个计数，**不调任何 AI**
+  if (p.startsWith('/api/drill/ear/')) return (await earApi(env, req, now, p.slice('/api/drill/ear/'.length))) ?? new Response('Not found', { status: 404 });
   // 带练（工作台 → 带练，drill.ts）：内容和进度；**一个 AI 都不调、不花一分钱**（底线 8 / C117）
   if (p.startsWith('/api/drill/')) return (await drillApi(env, req, now, p.slice('/api/drill/'.length))) ?? new Response('Not found', { status: 404 });
   // 基金观察（一级菜单「基金观察」#/funds，funds-api.ts）：GET 读快照、POST refresh 分批去 Yahoo / 东方财富取（每次 ≤45 个对外请求）；公开免费接口，不花钱

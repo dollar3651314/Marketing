@@ -38,10 +38,10 @@
  * 时间：页面时钟用 Playwright page.clock 固定在"现在"，拨时钟只拨浏览器（C106）；服务端的"现在"是真实时间，样例的截止时间都按真实时间算。
  * 每段单独 try：一段没做出来不影响别的段报结果；等待都有短超时，等不到就照实报"实际值"。任何一条不符就以非 0 退出。
  */
-import { mkdirSync } from 'node:fs';
+import { mkdirSync, readFileSync } from 'node:fs';
 import path from 'node:path';
 import { chromium } from 'playwright';
-import { startServer, PASS, checker } from './e2e-server.mjs';
+import { startServer, PASS, checker, ROOT } from './e2e-server.mjs';
 import * as LOOK from './e2e-look.mjs';
 
 const shotsAt = process.argv.indexOf('--shots');
@@ -56,7 +56,19 @@ const WAIT = 4000;
  */
 const REDESIGN_B = true;
 
-const srv = await startServer({ name: 'e2e-platform' });
+/**
+ * 听辨小测那 16 段发音（src/ear-content.ts 的 p1a…p8b）：本地没有 Workers AI，现场生成一定失败。
+ * 所以**先把它们当成"已经生成过"放进 drill_audio**（melotts 生成一次就永久复用，这是他第二次之后看到的常态），
+ * 放的是 test/fixtures/ear/silent.mp3 —— 一段 0.26 秒的**静音** mp3（本地用 ffmpeg 生成，不是 melotts 的声音）。
+ * 所以这一段测的是**界面和流程**，不是"两个词念得像不像"；像不像只有人能判断，那正是「两个听着一样」那个按钮的事。
+ * 带练那 24 段**一个都不放**，它那条"生成不出来就当面说"的路照旧是真的在走。
+ */
+const EAR_AUDIO_IDS = ['p1a', 'p1b', 'p2a', 'p2b', 'p3a', 'p3b', 'p4a', 'p4b', 'p5a', 'p5b', 'p6a', 'p6b', 'p7a', 'p7b', 'p8a', 'p8b'];
+const SILENT_MP3 = readFileSync(path.join(ROOT, 'test/fixtures/ear/silent.mp3')).toString('hex');
+const srv = await startServer({
+  name: 'e2e-platform',
+  seedSql: EAR_AUDIO_IDS.map((i) => `INSERT INTO drill_audio (item, mp3, at) VALUES ('${i}', X'${SILENT_MP3}', 0);`).join('\n'),
+});
 const BASE = srv.BASE;
 const now = Date.now();
 const GH = 'https://github.com/dollar3651314/agents/blob/main/';
@@ -1519,6 +1531,151 @@ try {
     check(`${tg}：18 项走完报「说得出来 N / 18」，按钮回到「会了 / 不会」，还能再约下一次`, /说得出来 18 \/ 18/.test(rv2.sum) && rv2.yes === '会了' && rv2.plan, rv2);
     // 复考不影响原来的进度（三段还是走完的状态）
     check(`${tg}：复考不动原来的进度（还是"三段都练完了"）`, /三段都练完了/.test(await txt(p, '#dr-lead')), await txt(p, '#dr-lead'));
+    await p.context().close();
+  });
+
+  // ---------- 16. 听辨小测（2026-11-10，Amos："自然拼读有很多我都不会…所以可能会听不懂别人在说什么"）----------
+  // 治耳朵最快的路是**直接练耳朵**：放一段音 → 从只差一个音的两个词里选听到哪个 → 当场给对错。
+  // 工作台二级菜单已经 8 项满了（T-4），所以它**不新开菜单项**，放进已有的「带练」#w-drill 里当第二个模式。
+  // 守八件事：① 两个菜单都还是 8 项，模式开关一点就切，带练那半边整块藏起来；
+  // ② 听音那一态：🔊 按钮上**只有「再听一次」**，整块 HTML 里**不出现任何一个编号**（p1a…p8b）——答案看不见；
+  // ③ 三个按钮（两个词并排 + 「两个听着一样」）一样高、一样大的字、都 ≥52px；
+  // ④ 答完当场：对 / 错 + **点名刚才放的是哪个词** + 两个词各一个按钮能单独听 + 一行"差在哪" + 两个音标；
+  // ⑤ 故意答错一组、故意点一次「两个听着一样」，小结要分开列出来；
+  // ⑥ 小结「听对 N / 8」和服务器上的累计对得上（tries / ok / same 三个数真的记下来了）；
+  // ⑦ 「再来一轮」重新打散，回到第 1 组；⑧ 切回「带练」那半边还在，手机 390 宽不横滚、没有输入框。
+  // 发音：那 16 段**已经预先放进 drill_audio**（见本文件开头 SILENT_MP3 的说明：静音 mp3，测的是界面和流程）。
+  await section('听辨小测', async () => {
+    const p = await open({ width: 390, height: 844 });
+    const played = [];
+    p.on('request', (r) => { const m = /\/api\/drill\/audio\/(p\d[ab])$/.exec(r.url()); if (m) played.push(m[1]); });
+    await login(p, '/#/work/drill');
+    await waitFor(p, '#w-drill');
+    const tg = '390 宽';
+    const mods = await p.locator('#sub-work a[data-s]').evaluateAll((a) => a.map((x) => x.dataset.s));
+    const tools = await p.locator('#sub-tools a[data-s]').evaluateAll((a) => a.map((x) => x.dataset.s));
+    check(`${tg}：听辨小测没新开菜单项（工作台还是 8 项、公共工具还是 8 项，T-4）`,
+      mods.length === 8 && mods[7] === 'w-drill' && tools.length === 8, { mods, tools });
+
+    // 内容从接口拿一份，后面每一组都和它逐条对（页面不自己造内容）
+    const ZU = await p.evaluate(async () => await (await fetch('/api/drill/ear/state')).json());
+    const PAIR = {}, WORD = {};
+    (ZU['组'] || []).forEach((z) => { [z.a, z.b].forEach((w) => { PAIR[w['编号']] = z; WORD[w['编号']] = w['词']; }); });
+    check(`${tg}：接口给 8 组、16 个编号（和发音的编号是同一套，没有第二套）`,
+      ZU['一共'] === 8 && (ZU['组'] || []).length === 8 && JSON.stringify(Object.keys(WORD).sort()) === JSON.stringify([...EAR_AUDIO_IDS].sort()), Object.keys(WORD));
+
+    await p.click('#dr-m-ear');
+    await p.waitForFunction(() => !document.getElementById('dr-ear').hidden && document.getElementById('dr-ear-l').textContent !== '—', null, { timeout: WAIT });
+    await p.waitForFunction(() => document.getElementById('dr-ear-msg').hidden, null, { timeout: WAIT }).catch(() => {});
+    const now = () => p.evaluate(() => {
+      const g = (i) => document.getElementById(i);
+      const h = (i) => Math.round(g(i).getBoundingClientRect().height);
+      const f = (i) => getComputedStyle(g(i)).fontSize;
+      return { where: g('dr-ear-where').textContent, l: g('dr-ear-l').textContent, r: g('dr-ear-r').textContent,
+        say: g('dr-ear-say').textContent, same: g('dr-ear-same').textContent,
+        hl: h('dr-ear-l'), hr: h('dr-ear-r'), hs: h('dr-ear-same'), hsay: h('dr-ear-say'),
+        fl: f('dr-ear-l'), fr: f('dr-ear-r'), fs: f('dr-ear-same'),
+        wl: Math.round(g('dr-ear-l').getBoundingClientRect().width), ws: Math.round(g('dr-ear-same').getBoundingClientRect().width),
+        mainHidden: g('dr-main').hidden, resHidden: g('dr-ear-res').hidden, msgHidden: g('dr-ear-msg').hidden,
+        html: g('dr-ear').outerHTML, body: g('dr-ear').innerText };
+    });
+    const waitPlay = async (mark) => { for (let i = 0; i < 60 && played.length <= mark; i++) await p.waitForTimeout(50); return played[mark]; };
+
+    const first = await now();
+    const id1 = await waitPlay(0);
+    check(`${tg}：点「听辨小测」切过去，带练那半边整块藏起来，先到听音那一态`, first.mainHidden === true && first.resHidden === true, { mainHidden: first.mainHidden, resHidden: first.resHidden });
+    check(`${tg}：进这一组自动放了一次（${id1}），按钮上**只有「🔊 再听一次」**，没有那个词`,
+      !!id1 && first.say === '🔊 再听一次' && !first.say.includes(WORD[id1] || 'x'), { id1, say: first.say });
+    check(`${tg}：听音这一态整块 HTML 里**一个编号都没有**（答案看不见）`,
+      EAR_AUDIO_IDS.every((x) => !first.html.includes(x)), EAR_AUDIO_IDS.filter((x) => first.html.includes(x)));
+    const z1 = PAIR[id1] || {};
+    check(`${tg}：两个词的拼写并排摆着（${first.l} / ${first.r}），就是这一组的两个词，看不出哪个是答案`,
+      [first.l, first.r].sort().join('|') === [z1.a['词'], z1.b['词']].sort().join('|') && !first.body.includes('刚才放的'), { l: first.l, r: first.r });
+    check(`${tg}：三个按钮一样高、一样大的字、都 ≥52px（「两个听着一样」占满一整行，比另外两个还宽）`,
+      first.hl === first.hr && first.hr === first.hs && first.hs >= 52 && first.fl === first.fr && first.fr === first.fs && first.ws >= first.wl,
+      { h: [first.hl, first.hr, first.hs], f: [first.fl, first.fr, first.fs], w: [first.wl, first.ws], say: first.hsay });
+    check(`${tg}：发音是从服务器上取回来的（已经生成过的那一段），没有报错`, first.msgHidden, first.msgHidden);
+    const inputs = await p.locator('#dr-ear input, #dr-ear textarea, #dr-ear [contenteditable]').count();
+    check(`${tg}：听辨小测里一个输入框都没有（不让他打字）`, inputs === 0, inputs);
+    check(`${tg}：听音这一态没有横向滚动`, await noHScroll(p), await p.evaluate(() => [document.documentElement.scrollWidth, innerWidth]));
+    if (SHOTS) { mkdirSync(SHOTS, { recursive: true }); await p.locator('#w-drill').screenshot({ path: path.join(SHOTS, '听辨-听音选词-390.png') }); }
+
+    // 一轮 8 组：第 2 组故意点「两个听着一样」，第 3 组故意答错，其余答对 → 听对 6 / 8
+    let mark = 0, 对 = 0, 错组 = null, 一样组 = null;
+    for (let k = 0; k < 8; k++) {
+      if (k > 0) {
+        await p.waitForFunction((n) => document.getElementById('dr-ear-where').textContent === '第 ' + n + ' 组 / 共 8', k + 1, { timeout: WAIT });
+        await p.waitForFunction(() => document.getElementById('dr-ear-res').hidden && document.getElementById('dr-ear-l').textContent !== '—', null, { timeout: WAIT });
+      }
+      const sid = await waitPlay(mark);
+      const st = await now();
+      const z = PAIR[sid], word = WORD[sid];
+      // 答案**只能**以"两个选项之一"的身份出现一次：多出第二处（写进🔊按钮、写进提示、塞进属性）就是露了答案
+      const 出现 = (t, w) => (t.match(new RegExp('(^|[^A-Za-z])' + w + '([^A-Za-z]|$)', 'g')) ?? []).length;
+      check(`${tg}：第 ${k + 1} 组揭晓前，页面上找不到"放的是哪个词"（HTML 里没有编号、没有"刚才放的"、那个词只作为两个选项之一出现一次）`,
+        EAR_AUDIO_IDS.every((x) => !st.html.includes(x)) && !st.body.includes('刚才放的') && st.resHidden && 出现(st.body, word) === 1,
+        { where: st.where, 有编号: EAR_AUDIO_IDS.filter((x) => st.html.includes(x)), 那个词出现几次: 出现(st.body, word) });
+      let 点的, 期望;
+      if (k === 1) { 点的 = '#dr-ear-same'; 期望 = 'same'; 一样组 = z; }
+      else if (k === 2) { 点的 = st.l === word ? '#dr-ear-r' : '#dr-ear-l'; 期望 = 'no'; 错组 = z; }
+      else { 点的 = st.l === word ? '#dr-ear-l' : '#dr-ear-r'; 期望 = 'ok'; 对++; }
+      await p.click(点的);
+      await p.waitForFunction(() => !document.getElementById('dr-ear-res').hidden, null, { timeout: WAIT });
+      const rs = await p.evaluate(() => {
+        const g = (i) => document.getElementById(i);
+        return { ver: g('dr-ear-ver').textContent, wa: g('dr-ear-wa').textContent, wb: g('dr-ear-wb').textContent, ex: g('dr-ear-ex').textContent,
+          ipa: g('dr-ear-ipa').textContent, next: g('dr-ear-next').textContent, h: Math.round(g('dr-ear-wa').getBoundingClientRect().height), playHidden: g('dr-ear-play').hidden };
+      });
+      const 开头 = 期望 === 'ok' ? '✅ 对了' : 期望 === 'no' ? '❌ 不对' : '你说两个听着一样';
+      check(`${tg}：第 ${k + 1} 组答完当场给结果，**点名刚才放的是 ${word}**（${rs.ver}）`,
+        rs.ver.startsWith(开头) && rs.ver.includes(word) && rs.playHidden, rs.ver);
+      check(`${tg}：第 ${k + 1} 组答完，两个词各一个按钮能单独点来听，一行"差在哪"，一行两个音标`,
+        rs.wa === '🔊 ' + z.a['词'] && rs.wb === '🔊 ' + z.b['词'] && rs.h >= 52 && rs.ex === z['差在哪'] && rs.ipa.includes(z.a['音标']) && rs.ipa.includes(z.b['音标']),
+        { wa: rs.wa, wb: rs.wb, ex: rs.ex, ipa: rs.ipa });
+      if (k === 0) {
+        // 两个词都真的点得响（学习就发生在这一刻）
+        await p.click('#dr-ear-wa'); await p.click('#dr-ear-wb');
+        await p.waitForTimeout(200);
+        const m = await p.evaluate(() => ({ hidden: document.getElementById('dr-ear-msg').hidden, t: document.getElementById('dr-ear-msg').innerText }));
+        check(`${tg}：答完点两个词都放得出来（不报错）`, m.hidden, m);
+        if (SHOTS) await p.locator('#w-drill').screenshot({ path: path.join(SHOTS, '听辨-答完对比两个词-390.png') });
+      }
+      check(`${tg}：第 ${k + 1} 组的「${rs.next}」按钮在`, rs.next === (k < 7 ? '下一组' : '看这一轮的小结'), rs.next);
+      mark = played.length;
+      await p.click('#dr-ear-next');
+    }
+
+    await p.waitForFunction(() => !document.getElementById('dr-ear-sum').hidden, null, { timeout: WAIT });
+    const sum = await p.evaluate(async () => {
+      const g = (i) => document.getElementById(i);
+      const j = await (await fetch('/api/drill/ear/state')).json();
+      return { score: g('dr-ear-score').textContent, bad: g('dr-ear-bad').innerText, badShown: !g('dr-ear-badwrap').hidden,
+        sm: g('dr-ear-sm').innerText, smShown: !g('dr-ear-smwrap').hidden, note: g('dr-ear-smwrap').innerText,
+        tot: g('dr-ear-tot').textContent, again: g('dr-ear-again').textContent, h: Math.round(g('dr-ear-again').getBoundingClientRect().height),
+        lei: j['累计'], ji: j['记录'] };
+    });
+    check(`${tg}：小结第一行就是「听对 ${对} / 8」`, sum.score === `听对 ${对} / 8`, sum.score);
+    check(`${tg}：**错的那几组单独列出来**（哪两个词、在分什么音）`,
+      sum.badShown && sum.bad.includes(`${错组.a['词']} / ${错组.b['词']}`) && sum.bad.includes(错组['在分什么音']) && sum.bad.split('\n').filter(Boolean).length === 1, sum.bad);
+    check(`${tg}：**点过「两个听着一样」的那几组另外列**，并写明可能是机器没念出区别`,
+      sum.smShown && sum.sm.includes(`${一样组.a['词']} / ${一样组.b['词']}`) && sum.note.includes('要么是机器没念出区别') && sum.note.includes('换模型'), { sm: sum.sm, note: sum.note.slice(0, 80) });
+    check(`${tg}：服务器上真的记下来了（考过 8 次、对 ${对} 次、点过「两个听着一样」1 次），和小结对得上`,
+      sum.lei['考过'] === 8 && sum.lei['对'] === 对 && sum.lei['两个听着一样'] === 1
+      && (sum.ji.find((x) => x['组'] === 错组['组']) || {})['对'] === 0 && (sum.ji.find((x) => x['组'] === 一样组['组']) || {})['两个听着一样'] === 1
+      && sum.tot.includes('考过 8 次'), { lei: sum.lei, tot: sum.tot });
+    check(`${tg}：小结页有大按钮「再来一轮」（${sum.h}px ≥ 52）`, sum.again === '再来一轮' && sum.h >= 52, sum);
+    check(`${tg}：小结页也没有横向滚动`, await noHScroll(p), await p.evaluate(() => [document.documentElement.scrollWidth, innerWidth]));
+    if (SHOTS) { await p.evaluate(() => document.getElementById('w-drill').scrollIntoView({ block: 'start' })); await p.waitForTimeout(150); await p.locator('#w-drill').screenshot({ path: path.join(SHOTS, '听辨-小结-390.png') }); }
+
+    await p.click('#dr-ear-again');
+    await p.waitForFunction(() => document.getElementById('dr-ear-where').textContent === '第 1 组 / 共 8', null, { timeout: WAIT }).catch(() => {});
+    const again = await now();
+    check(`${tg}：「再来一轮」回到第 1 组、答案又藏起来`, again.where === '第 1 组 / 共 8' && again.resHidden && EAR_AUDIO_IDS.every((x) => !again.html.includes(x)), again.where);
+
+    await p.click('#dr-m-drill');
+    await p.waitForFunction(() => !document.getElementById('dr-main').hidden && document.getElementById('dr-ear').hidden, null, { timeout: WAIT }).catch(() => {});
+    const back = await p.evaluate(() => ({ main: !document.getElementById('dr-main').hidden, ear: document.getElementById('dr-ear').hidden, lead: document.getElementById('dr-lead').innerText }));
+    check(`${tg}：切回「带练」，带练那半边原样还在（听辨整块藏起来）`, back.main && back.ear && back.lead.length > 0, back);
     await p.context().close();
   });
 
