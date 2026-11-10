@@ -296,10 +296,10 @@ export async function fundsList(env: Env): Promise<{ fetched_at: string | null; 
       if (y && typeof y.value === 'number' && y.value !== 0) {
         yv = y.value;
         const stale = !!yr?.err || (!!yr?.ok_at && ylatest - yr.ok_at > YIELD_OLD_MS);
-        item.yield = { value: y.value, kind: cfg?.kind ?? y.kind, approx: y.kind === 'approx', label: y.label, duration: y.duration ?? null, asOf: y.asOf, source: y.source, stale, ...(yr?.err ? { error: yr.err } : {}) };
+        item.yield = { ...(cfg?.note ? { note: cfg.note } : {}), value: y.value, kind: cfg?.kind ?? y.kind, approx: y.kind === 'approx', label: y.label, duration: y.duration ?? null, asOf: y.asOf, source: y.source, stale, ...(yr?.err ? { error: yr.err } : {}) };
       } else {
         // 从没取到过：value 为 null（不显示 0），带上口径和没取到的原因
-        item.yield = { value: null, kind: cfg?.kind ?? 'approx', approx: cfg?.kind === 'approx', label: cfg?.label ?? '', duration: cfg?.duration ?? null, asOf: null, source: '', stale: !!yr?.err, ...(yr?.err ? { error: yr.err } : {}) };
+        item.yield = { ...(cfg?.note ? { note: cfg.note } : {}), value: null, kind: cfg?.kind ?? 'approx', approx: cfg?.kind === 'approx', label: cfg?.label ?? '', duration: cfg?.duration ?? null, asOf: null, source: '', stale: !!yr?.err, ...(yr?.err ? { error: yr.err } : {}) };
       }
     }
     // 第二版 ①：未来 1 个月的可能区间（股票类中心 0；债券类中心 = ln(1+预期年化)/12）
@@ -318,22 +318,23 @@ export async function fundsList(env: Env): Promise<{ fetched_at: string | null; 
 }
 
 // ---------------------------------------------------------------- 第二版 ③：债券类预期年化（"刷新数据"循环的最后一批里、45 只取完之后顺带取）
-/** 最后一批给收益率留的对外请求数（首轮约 16 个：8 个页面 + 美国 1～2 + MAS 2 + 中债 1～4） */
-export const YIELD_RESERVE = 20;
+/** 最后一批给收益率留的对外请求数（首轮最多约 18 个：8 个页面 + 美国 1～2 + MAS 2 + 中债 1～6） */
+export const YIELD_RESERVE = 22;
 /** 最后一批过了这么久还没轮到最后一只，就把它留给下一批（留约 15 秒给收益率） */
 const YIELD_START_MS = 10_000;
 const BROWSER_UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120 Safari/537.36';
 const HTML_HEADERS = { 'user-agent': BROWSER_UA, accept: 'text/html,application/xhtml+xml', 'accept-language': 'en-US,en;q=0.9' };
 const MAS_URL = 'https://eservices.mas.gov.sg/statistics/fdanet/BenchmarkPricesAndYields.aspx';
-/** 中债曲线：今天往前最多试几天（周末、节假日没有曲线）——循环硬上限 */
-const CGB_MAX_DAYS = 4;
+/** 中债曲线：当天没有就往前退，最多退 5 个自然日（周末、节假日没有曲线）——循环硬上限，最多 6 个请求 */
+const CGB_MAX_BACK = 5;
 /** 中债国债收益率曲线的 ycDefId */
 const CGB_CURVE_ID = '2c9081e50a2f9606010a3068cae70001';
 
 /** UTC+8 的日期（新加坡 / 中国） */
 const day8 = (now: number, back = 0) => new Date(now + 8 * 3600_000 - back * 86_400_000).toISOString().slice(0, 10);
 const ustUrl = (y: number) => `https://home.treasury.gov/resource-center/data-chart-center/interest-rates/daily-treasury-rates.csv/${y}/all?type=daily_treasury_yield_curve&field_tdr_date_value=${y}&page&_format=csv`;
-const cgbUrl = (d: string) => `https://yield.chinabond.com.cn/cbweb-mn/yc/searchYc?xyzSelect=txy&&workTimes=${d}&&dsmSelect=1&&ycDefIds=${CGB_CURVE_ID}&&locale=cn_ZH`;
+/** 中债 searchYc：测试会话 2026-11-10 实测取得到数据的那组参数（workTimes 必须写日期，留空回 []；原来那组 dsmSelect=1&&locale=cn_ZH 回 []） */
+const cgbUrl = (d: string) => `https://yield.chinabond.com.cn/cbweb-mn/yc/searchYc?xyzSelect=txy&&workTimes=${d}&&dxbj=0&&qxll=0,&&yqqxN=N&&yqqxK=K&&ycDefIds=${CGB_CURVE_ID}&&wrjxCBFlag=0&&locale=zh_CN`;
 
 async function fetchUst(http: Http, now: number): Promise<CurvePoints> {
   const y = new Date(now).getUTCFullYear();
@@ -366,17 +367,17 @@ async function fetchSgs(http: Http, now: number): Promise<CurvePoints> {
   return c;
 }
 
-/** 中债：从今天（UTC+8）往前最多试 CGB_MAX_DAYS 天，取到有曲线的那天 */
+/** 中债：从今天（UTC+8）起，当天没有曲线就往前退一天，最多退 CGB_MAX_BACK 天 */
 async function fetchCgb(http: Http, now: number): Promise<CurvePoints> {
-  for (let i = 0; i < CGB_MAX_DAYS; i++) {
+  for (let i = 0; i <= CGB_MAX_BACK; i++) {
     const d = day8(now, i);
-    const r = await http.text(cgbUrl(d), { method: 'POST', headers: { 'user-agent': BROWSER_UA, 'x-requested-with': 'XMLHttpRequest', referer: 'https://yield.chinabond.com.cn/cbweb-mn/yield_main?locale=zh_CN' } }, '中债');
+    const r = await http.text(cgbUrl(d), { method: 'POST', headers: { 'user-agent': BROWSER_UA, referer: 'https://yield.chinabond.com.cn/cbweb-mn/yield_main?locale=zh_CN' } }, '中债');
     let j: unknown = null;
     try { j = JSON.parse(r.text); } catch { throw new FetchFail('中债回的不是数据（可能被拦了）'); }
     const c = parseChinabond(j, d);
     if (c) return c;
   }
-  throw new FetchFail(`中债最近 ${CGB_MAX_DAYS} 天都没有曲线`);
+  throw new FetchFail(`中债最近 ${CGB_MAX_BACK + 1} 天都没有曲线`);
 }
 
 const PARSE: Partial<Record<BondYieldDef['source'], (t: string) => ParsedYield | null>> = {
@@ -422,7 +423,9 @@ export async function refreshYields(env: Env, now: number, f: FetchLike = (u, i)
         const p = PARSE[d.source]?.(t) ?? null;
         return { code: d.code, p, err: p ? '' : `${PAGE_NAME[d.source] ?? d.source}页面认不出收益率`, fetched: true };
       } catch (e) {
-        return { code: d.code, p: null, err: why(e), fetched: false };
+        // 回 403（被拦了，例如 BlackRock 新加坡页）和"取到了却认不出"一样处理：直接退回国债近似，不当成一时没取到
+        const err = why(e);
+        return { code: d.code, p: null, err, fetched: / 403/.test(err) };
       }
     })),
   ]);
@@ -440,11 +443,11 @@ export async function refreshYields(env: Env, now: number, f: FetchLike = (u, i)
       // 取到了页面但认不出（页面改版，或免费版 CPU 不够解析大页面）→ 退回近似；页面根本没取到 → 优先保留上次的值
       if (a && g?.fetched) { ok.push({ code: d.code, y: a }); continue; }
       if (a) { keepOld.push({ code: d.code, y: a, reason: g?.err || '没取到' }); failed.push({ code: d.code, reason: g?.err || '没取到' }); continue; }
-      failed.push({ code: d.code, reason: (g?.err || '没取到') + (d.curve ? `；${d.curve === 'ust' ? '美国国债' : '国债'}也没取到（${curveErr[d.curve]}）` : '') });
+      failed.push({ code: d.code, reason: (g?.err || '没取到') + (d.curve ? `；${d.curve === 'ust' ? '美国国债' : '国债'}也没取到：${curveErr[d.curve]}` : '') });
     } else {
       const a = approxYield(d, curves);
       if (a) ok.push({ code: d.code, y: a });
-      else failed.push({ code: d.code, reason: `国债收益率没取到（${d.curve ? curveErr[d.curve] : '没有配置曲线'}）` });
+      else failed.push({ code: d.code, reason: d.curve ? curveErr[d.curve] : '没有配置国债曲线' });
     }
   }
   // 先取完再写库（不在事务里调外部接口）

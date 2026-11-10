@@ -35,6 +35,8 @@ export interface BondYieldDef {
   spreadNote?: string;
   /** 久期（年）：自动的以页面为准，这里是近似 / 兜底时用的值；不知道写 null */
   duration: number | null;
+  /** 页面上额外提醒的一句（例如高收益债的违约风险） */
+  note?: string;
 }
 
 /** 近似 / 兜底时页面写的曲线名 */
@@ -53,7 +55,7 @@ export const BOND_YIELDS: BondYieldDef[] = [
   { code: 'A35', kind: 'approx', source: 'sgs', label: '近似：新加坡 8 年国债 + 利差', curve: 'sgs', tenor: 8.2, spread: 0.15, spreadNote: '2026-09-30 月报加权 YTM 2.54 − 同日 8.2 年 SGS 2.39', duration: 8.18 },
   { code: 'MBH', kind: 'approx', source: 'sgs', label: '近似：新加坡 6 年国债 + 利差', curve: 'sgs', tenor: 5.8, spread: 0.89, spreadNote: '2026-09-30 月报加权 YTM 3.17 − 同日 5.8 年 SGS 2.28', duration: 5.76 },
   { code: 'SBO', kind: 'approx', source: 'sgs', label: '近似：新加坡 2 年国债 + 利差', curve: 'sgs', tenor: 2, spread: 1.44, spreadNote: '2026-05-31 母基金 YTM 3.01 − 5/29 2 年 SGS 1.57', duration: 2.5 },
-  { code: 'O9P', kind: 'auto', source: 'blackrock-sg', url: 'https://www.blackrock.com/sg/en/products/251722/ishares-barclays-usd-asia-high-yield-bond-index-etf', label: '加权 YTM（美元）', curve: 'ust', tenor: 2.98, spread: 3.76, spreadNote: '2026-11-09 加权 YTM 8.30 − 同日 3 年美债 4.54', duration: 2.98 },
+  { code: 'O9P', kind: 'auto', source: 'blackrock-sg', url: 'https://www.blackrock.com/sg/en/products/251722/ishares-barclays-usd-asia-high-yield-bond-index-etf', label: '加权 YTM（美元）', curve: 'ust', tenor: 2.98, spread: 3.76, spreadNote: '2026-11-09 加权 YTM 8.30 − 同日 3 年美债 4.54', duration: 2.98, note: '高收益债，含违约风险' },
   { code: '0P00006FY6', kind: 'approx', source: 'sgs', label: '近似：新加坡 7 年国债 + 利差', curve: 'sgs', tenor: 6.8, spread: 3.48, spreadNote: '2026-09-30 月报加权 YTM 5.80 − 同日 6.8 年 SGS 2.32', duration: 6.75 },
   { code: 'AGG', kind: 'auto', source: 'ishares', url: 'https://www.ishares.com/us/products/239458/ishares-core-total-us-bond-market-etf', label: 'YTM', curve: 'ust', tenor: 5.73, spread: 0.5, spreadNote: '2026-11-09 YTM 5.20 − 同日 5.7 年美债 4.70', duration: 5.73 },
   { code: 'BND', kind: 'auto', source: 'vanguard', url: 'https://investor.vanguard.com/investment-products/etfs/profile/bnd', label: 'YTM', curve: 'ust', tenor: 5.7, spread: 0.53, spreadNote: '2026-11-06 YTM 5.2 − 同日 5.7 年美债 4.68', duration: 5.7 },

@@ -140,6 +140,7 @@ export const FUNDS_CSS = `
 #v-funds .fu-yb .src{font-size:12px;color:var(--muted);line-height:1.5;min-width:0;overflow-wrap:anywhere}
 #v-funds .fu-q{display:inline-block;font-size:12px;border-radius:4px;padding:0 6px;margin-right:6px;line-height:18px;white-space:nowrap}
 #v-funds .fu-q.auto{background:var(--teal-soft);color:var(--teal-ink)}#v-funds .fu-q.approx{background:var(--amber-soft);color:var(--ink)}#v-funds .fu-q.stale{background:var(--err-soft);color:var(--err)}
+#v-funds .fu-risk{display:block;font-size:12px;color:var(--err);margin-top:2px}
 #v-funds .fu-ybmsg{font-size:var(--fs-aux);color:var(--err);margin:var(--s2) 0 0}#v-funds .fu-ybmsg:empty{display:none}
 @media (max-width:760px){
   #v-funds .fu-rg-row,#v-funds .fu-rg-scale{grid-template-columns:minmax(0,1fr) auto}
@@ -383,7 +384,7 @@ function detail(f){var box=el('div',{'class':'fu-detail','data-detail':f.code}),
   var peak=-Infinity,uw=s.map(function(x){peak=Math.max(peak,x[1]);return(x[1]/peak-1)*100});
   var umin=Math.min(-1,Math.min.apply(null,uw)),n=Math.max(1,s.length-1);
   // 第二版 C：价格图右侧留一段画"未来 1 个月"的喇叭（68%、95% 两层）
-  var ml=52,mr=8,cw=B?(W<480?44:64):0,X=function(i){return ml+i/n*(W-ml-mr-cw)},Y1=function(v){return 8+(mx-v)/(mx-mn)*(H1-16)},Y2=function(v){return H1+g+(-v)/(-umin)*(H2-4)};
+  var ml=52,mr=8,cw=B?(W<480?44:64):0,X=function(i){return ml+i/n*(W-ml-mr-cw)},tp=B?22:8,Y1=function(v){return tp+(mx-v)/(mx-mn)*(H1-8-tp)},Y2=function(v){return H1+g+(-v)/(-umin)*(H2-4)};
   var svg=sv('svg',{viewBox:'0 0 '+W+' '+(H1+g+H2+20),role:'img','aria-label':f.name+' 一年复权价走势和回撤过程'});
   [mn,(mn+mx)/2,mx].forEach(function(v){svg.appendChild(sv('line',{x1:ml,x2:W-mr,y1:Y1(v),y2:Y1(v),stroke:'var(--fu-grid)'}));var t=sv('text',{x:ml-6,y:Y1(v)+4,'text-anchor':'end','font-size':12,fill:'var(--muted)'});t.textContent=v>=100?v.toFixed(0):v.toPrecision(4);svg.appendChild(t)});
   var d=s.map(function(x,i){return(i?'L':'M')+X(i).toFixed(1)+' '+Y1(x[1]).toFixed(1)}).join('');
@@ -449,6 +450,8 @@ function list_(){var p=st.p,L=$('fu-list');L.replaceChildren();$('fu-colp').text
       r.addEventListener('click',tog);r.addEventListener('keydown',function(e){if(e.key==='Enter'||e.key===' '){e.preventDefault();tog()}});
       L.appendChild(r);if(ok&&st.open===f.code)L.appendChild(detail(f));});})});}
 
+/** 失败原因里的技术词换成大白话（"回 403" → "对方网站拒绝了访问"） */
+function plainWhy(e){return String(e||'').replace(/(\\S+?)回 40[13]\\b[^，；]*/g,'$1拒绝了访问').replace(/(\\S+?)回 429\\b[^，；]*/g,'$1嫌请求太多，暂时不给').replace(/(\\S+?)回 5\\d\\d\\b[^，；]*/g,'$1暂时出错了').replace(/(\\S+?)回 404\\b[^，；]*/g,'$1找不到这一页')}
 var CATK={'宽基':'fu-broad','债券':'fu-bond','红利':'fu-div'};
 /** 第二版 ①：未来 1 个月的可能区间（按 2/3 那段的宽度从宽到窄排） */
 function ranges(){var arr=shown().filter(band).sort(function(a,b){return(b.band[3]-b.band[1])-(a.band[3]-a.band[1])});
@@ -468,7 +471,7 @@ function ranges(){var arr=shown().filter(band).sort(function(a,b){return(b.band[
     t.appendChild(el('span',{'class':'b68',style:'left:'+X(B[1])+'%;width:'+Math.max(.4,X(B[3])-X(B[1]))+'%;background:'+col}));
     t.appendChild(el('span',{'class':'zero',style:'left:50%'}));
     t.appendChild(el('span',{'class':'mid',style:'left:calc('+X(B[2])+'% - 1px)'}));
-    r.appendChild(t);r.appendChild(el('div',{'class':'fu-rg-v'},pct(B[1],1)+' ～ '+pct(B[3],1)));L.appendChild(r)});
+    r.appendChild(t);r.appendChild(el('div',{'class':'fu-rg-v'},'约 2/3：'+pct(B[1],1)+' ～ '+pct(B[3],1)));L.appendChild(r)});
   // 算不出的也各占一行（排在最后），写明原因
   shown().filter(function(f){return!band(f)}).forEach(function(f){var r=el('div',{'class':'fu-rg-row','data-band-code':f.code}),nm=el('div',{'class':'nm'});nm.appendChild(document.createTextNode(f.name));nm.appendChild(el('small',null,f.code));r.appendChild(nm);
     r.appendChild(el('div',{'class':'fu-rg-na'},has(f)?'上市不满两个月，算不出':'没有数据'));L.appendChild(r)});}
@@ -480,13 +483,14 @@ function bonds(){var all=shown().filter(function(f){return f.category==='债券'
   var arr=all.slice().sort(function(a,b){var x=v(a),y=v(b);return x==null?(y==null?0:1):y==null?-1:y-x});
   var mx=Math.max(1,Math.max.apply(null,arr.map(function(f){return v(f)||0})));
   arr.forEach(function(f){var y=f.yield,val=v(f),r=el('div',{'class':'fu-yb','data-yield-code':f.code});
-    var nm=el('div',{'class':'nm'});nm.appendChild(el('b',null,f.name));nm.appendChild(el('span',{'class':'fu-code'},f.code+(f.currency?' · '+f.currency:'')));r.appendChild(nm);
+    var nm=el('div',{'class':'nm'});nm.appendChild(el('b',null,f.name));nm.appendChild(el('span',{'class':'fu-code'},f.code+(f.currency?' · '+f.currency:'')));if(y&&y.note)nm.appendChild(el('span',{'class':'fu-risk'},y.note));r.appendChild(nm);
     var bw=el('div',{'class':'bar-w'});if(val!=null)bw.appendChild(el('div',{'class':'bar'+(apx(y)?' approx':'')+(y.stale?' stale':''),style:'width:'+Math.max(1,Math.max(0,val)/mx*100)+'%'}));r.appendChild(bw);
     r.appendChild(el('div',{'class':'v num'+(val==null?' na':'')},val==null?'—':(apx(y)?'≈':'')+val.toFixed(2)+'%'));
     var src=el('div',{'class':'src'});
     if(y&&val!=null){src.appendChild(el('span',{'class':'fu-q '+(apx(y)?'approx':'auto')},apx(y)?'近似':'每天自动'));if(y.stale)src.appendChild(el('span',{'class':'fu-q stale',title:y.error||''},'过期'));
-      src.appendChild(document.createTextNode(y.label+(y.duration!=null?' · 久期 '+y.duration+' 年':'')+' · '+(y.source||'')+' '+(y.asOf||'').slice(5)+(y.stale&&y.error?'（这次没取到：'+y.error+'）':'')))}
-    else src.appendChild(document.createTextNode(y&&y.error?'还没有收益率数据（'+y.error+'）':'还没有收益率数据，点「刷新数据」时会一起取'));
+      // 标签已经写了"近似"，口径文字去掉"近似："前缀（详情里保留）
+      src.appendChild(document.createTextNode(String(y.label||'').replace(/^近似：/,'')+(y.duration!=null?' · 久期 '+y.duration+' 年':'')+' · '+(y.source||'')+' '+(y.asOf||'').slice(5)+(y.stale&&y.error?' · 这次没取到：'+plainWhy(y.error):'')))}
+    else src.appendChild(document.createTextNode(y&&y.error?'还没有收益率数据：'+plainWhy(y.error):'还没有收益率数据，点「刷新数据」时会一起取'));
     r.appendChild(src);L.appendChild(r)});}
 function render(){meta();lede();mkcards();scatter();ranges();bonds();list_()}
 function showErr(m){$('fu-err').hidden=!m;$('fu-err-t').textContent=m||''}
@@ -509,7 +513,15 @@ function prog(parts,err){progAt=D&&D.fetched_at||null;var P=$('fu-prog');P.repla
 function names(codes){return codes.length<=5?'（'+codes.join('、')+'）':''}
 /** 一次刷新最多发几次 POST：每批至少 1 只，正常最多"基金总数"批（现在 45）；超了说明进度没往前走，停下（防请求失控） */
 function maxPosts(){return Math.max(45,ITEMS.length)}
-async function refresh(){if(busy)return;busy=true;var btn=$('fu-refresh');btn.disabled=true;btn.textContent='正在刷新…';
+/** 这次刷新里没取到收益率的那几只（最后一批回包里的 yields.failed）；读到新数据后分"从没取到过"和"显示上次的值"两种说 */
+var yFail=null;
+function yMsg(){var M=$('fu-yb-msg');if(!yFail){return}var by={};ITEMS.forEach(function(f){by[f.code]=f});
+  var never=yFail.filter(function(x){var f=by[x.code];return!(f&&f.yield&&typeof f.yield.value==='number')}),old=yFail.filter(function(x){return never.indexOf(x)<0});
+  var parts=[];
+  if(never.length)parts.push(never.length+' 只还没有收益率数据（'+never.map(function(x){return x.code}).join('、')+'）：'+plainWhy(never[0].reason));
+  if(old.length)parts.push(old.length+' 只这次没取到（'+old.map(function(x){return x.code}).join('、')+'），显示的是上次的值，标了「过期」');
+  M.textContent=parts.length?parts.join('；')+'。':'';yFail=null}
+async function refresh(){if(busy)return;yFail=null;busy=true;var btn=$('fu-refresh');btn.disabled=true;btn.textContent='正在刷新…';
   var cur=0,total=ITEMS.length||45,updated=[],failed=[],before=D&&D.fetched_at;
   var mk=function(i){var f=ITEMS[i];return f?f.market:''};
   var was=before?'显示的还是 '+tw(before)+' 的数据':'还没有数据';
@@ -519,10 +531,10 @@ async function refresh(){if(busy)return;busy=true;var btn=$('fu-refresh');btn.di
       var r=await getJson(BASE+'/refresh',{cursor:cur});total=r.total;updated=updated.concat(r.updated||[]);failed=failed.concat(r.failed||[]);
       if(r.next!=null&&!(r.next>cur))throw new Error('服务器回的进度没有往前走（'+cur+' → '+r.next+'），先停下了，防止请求失控');
       // 第二版 ③：最后一批顺带取了债券收益率；它没取到的不算刷新失败（价格照样存好了），只在债券那块写一句
-      if(r.yields){var yf=r.yields.failed||[];$('fu-yb-msg').textContent=yf.length?'这次有 '+yf.length+' 只的收益率没取到'+(yf.length<=6?'（'+yf.map(function(x){return x.code}).join('、')+'）':'')+'，有上次的值就显示上次的，标了"过期"。':''}
+      if(r.yields)yFail=r.yields.failed||[];
       cur=r.next;
       if(cur!=null)prog([['正在取 '],[mk(cur),1],[' · '+r.done+' / '+r.total]]);}
-    STALE=null;await load();
+    STALE=null;await load();yMsg();
     if(!updated.length){prog([['这次没取到，'+was+'，可以再点一次']],true);return}
     var msg='已更新 '+updated.length+' / '+total+(D&&D.fetched_at?'，数据时间 '+tw(D.fetched_at):'');
     if(failed.length){
