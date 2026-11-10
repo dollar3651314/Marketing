@@ -16,6 +16,7 @@
     "e2e:platform": "node scripts/e2e-platform.mjs",
     "e2e:tools": "node scripts/e2e-tools.mjs",
     "e2e:live": "node scripts/e2e-live.mjs",
+    "e2e:funds": "node scripts/e2e-funds.mjs",
     "check-index": "node scripts/check-project-index.mjs",
     "predry-run": "node scripts/build-ext-zip.mjs",
     "dry-run": "wrangler deploy --dry-run --env= --outdir .wrangler/dry-run && wrangler deploy --dry-run --env=staging --outdir .wrangler/dry-run-staging"
