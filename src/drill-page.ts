@@ -38,6 +38,8 @@
  *
  * 字号只用全站那几级（30 / 26 / 24 / 22 / 18 / 15 / 13 / 12，控件可以 14；e2e-platform 的 fontOutliers 守着）。
  */
+import { EAR_MOD } from './ear-page';
+
 export const DRILL_CSS = `
 /* 进度条一行：第几段 / 这一段第几个 / 还剩几个 */
 .dr .dr-top{border:1px solid var(--line);border-radius:12px;background:var(--surface-2);padding:var(--s3) var(--s4);margin:0 0 var(--s4)}
@@ -103,9 +105,13 @@ export const DRILL_CSS = `
 `;
 
 /** 工作台第 8 个模块：带练（二级菜单第 8 项「带练」，公共工具那 8 项一个没动） */
-export const DRILL_MOD = `<section class="card mod dr" id="w-drill"><header class="mh"><h2>带练</h2><span class="sp"></span><span class="aux">场景 0 · 前三段</span></header>
-<p class="lead" id="dr-lead"><span class="dot gray" id="dr-dot"></span><span id="dr-lead-t">读取中…</span><span class="soft">先回想 → 看答案 → 自己判「会了 / 不会」。不会的这一段末尾再考一遍，全会了才进下一段。</span></p>
+export const DRILL_MOD = `<section class="card mod dr" id="w-drill"><header class="mh"><h2>带练</h2><span class="sp"></span><span class="aux" id="dr-aux">场景 0 · 前三段</span></header>
+<p class="lead" id="dr-lead"><span class="dot gray" id="dr-dot"></span><span id="dr-lead-t">读取中…</span><span class="soft" id="dr-soft">先回想 → 看答案 → 自己判「会了 / 不会」。不会的这一段末尾再考一遍，全会了才进下一段。</span></p>
 <div class="mbody">
+  <!-- 两个模式：带练 / 听辨小测。二级菜单已经 8 项满了（T-4，第 9 项会撑破手机菜单），
+       所以听辨小测放进这一块里当第二个模式，**公共工具那 8 项一个都没动**。 -->
+  <div class="dr-two dr-mode" id="dr-mode"><button class="btn primary" type="button" id="dr-m-drill" aria-pressed="true">带练</button><button class="btn" type="button" id="dr-m-ear" aria-pressed="false">听辨小测</button></div>
+  <div id="dr-main">
   <div class="dr-top">
     <div class="dr-steps" id="dr-steps" aria-label="三段"><span class="dr-step" data-st="1">1 单词</span><span class="dr-step" data-st="2">2 词组</span><span class="dr-step" data-st="3">3 例句</span></div>
     <p class="dr-where" id="dr-where">读取中…</p>
@@ -162,6 +168,9 @@ export const DRILL_MOD = `<section class="card mod dr" id="w-drill"><header clas
 
   <details class="dr-all" id="dr-all"><summary>看全部（这一段 6 项）</summary><ul class="dr-list" id="dr-all-b"></ul></details>
   <div class="dr-err" id="dr-err" hidden></div>
+  </div>
+
+  ${EAR_MOD}
 </div>
 <details class="more"><summary>这一块到底在做什么 · 内容和发音各从哪来</summary><div class="in">
   <p>四段结构（单词 → 词组 → 例句 → 对话）没变，变的是<b>载体</b>：前三段的内容是<b>写死的</b>，就是一个"卡片 + 按钮 + 进度"的界面，交给语音反而看不到字、不能回看、没有进度、它还会自由发挥跳步。</p>
@@ -195,28 +204,30 @@ function dJson(path,init){return fetch(DR.base+path,init||{}).then(function(r){
 });}
 
 /* ---- 发音：同一段只取一次，之后复用；**失败就当面说，不自动重试** ---- */
-function dAuErr(j,which){
-  var m=dq('dr-aumsg');if(!m)return;
+function dAuErr(j,which,msgId){
+  var m=dq(msgId||'dr-aumsg');if(!m)return;
   var ipa=dq('dr-ipa');
-  var s=(which==='pr'?'对方那句的发音':'这一项的发音')+'没生成出来，'
-      +((which!=='pr'&&ipa&&!ipa.hidden)?'先看上面的音标。':'这一次先跳过发音。');
+  var s=(which==='ear'?'这一组的发音':which==='pr'?'对方那句的发音':'这一项的发音')+'没生成出来，'
+      +((which==='ans'&&ipa&&!ipa.hidden)?'先看上面的音标。':'这一次先跳过发音。');
   if(j&&j['出错'])s+='\\n'+j['出错'];
   if(j&&j['怎么办'])s+='\\n怎么办：'+j['怎么办'];
   m.textContent=s;m.hidden=false;
 }
-function dPlay(url,rate){
+function dPlay(url,rate,which,msgId){
   try{
     if(!DR.player)DR.player=new Audio();
     var a=DR.player;a.pause();a.src=url;a.playbackRate=rate;
     a.onloadedmetadata=function(){a.playbackRate=rate};
     var pr=a.play();
-    if(pr&&pr.catch)pr.catch(function(){dAuErr({'出错':'浏览器把这次播放挡住了。','怎么办':'再点一下这个按钮就会响。'});});
-  }catch(e){dAuErr({'出错':'这台设备放不了这段声音。'});}
+    if(pr&&pr.catch)pr.catch(function(){dAuErr({'出错':'浏览器把这次播放挡住了。','怎么办':'再点一下这个按钮就会响。'},which,msgId);});
+  }catch(e){dAuErr({'出错':'这台设备放不了这段声音。'},which,msgId);}
 }
-function dAudio(id,rate,which){
+/* 听辨小测（src/ear-page.ts）走的就是这一个函数：同一段只取一次、连点闸、「正在生成」提示、
+   失败当面说、不自动重试，**一套都不另外写**；只多一个参数说"报错写到哪一条"（它那条在另一个模式里）。 */
+function dAudio(id,rate,which,msgId){
   if(!id)return;
-  var m=dq('dr-aumsg');if(m)m.hidden=true;
-  if(DR.au[id]){dPlay(DR.au[id],rate);return;}
+  var m=dq(msgId||'dr-aumsg');if(m)m.hidden=true;
+  if(DR.au[id]){dPlay(DR.au[id],rate,which,msgId);return;}
   // 第一次要现生成，melotts 要一两秒。这期间他若再点另一个速度按钮，
   // 不拦住就会**再发一个请求、再调一次 melotts、再记一次账**（2026-11-10 审查 🟡2）。
   if(DR.auBusy[id]){return;}
@@ -225,9 +236,9 @@ function dAudio(id,rate,which){
   var done=function(){delete DR.auBusy[id];};
   fetch(DR.base+'audio/'+encodeURIComponent(id)).then(function(r){
     var ct=r.headers.get('content-type')||'';
-    if(!r.ok||ct.indexOf('audio')<0){return r.json().catch(function(){return {}}).then(function(j){done();dAuErr(j,which)});}
-    return r.blob().then(function(b){done();if(m)m.hidden=true;var u=URL.createObjectURL(b);DR.au[id]=u;dPlay(u,rate);});
-  },function(e){done();dAuErr({'出错':'没连上服务器（'+e.message+'）。','怎么办':'等一下再点一次。'},which);});
+    if(!r.ok||ct.indexOf('audio')<0){return r.json().catch(function(){return {}}).then(function(j){done();dAuErr(j,which,msgId)});}
+    return r.blob().then(function(b){done();if(m)m.hidden=true;var u=URL.createObjectURL(b);DR.au[id]=u;dPlay(u,rate,which,msgId);});
+  },function(e){done();dAuErr({'出错':'没连上服务器（'+e.message+'）。','怎么办':'等一下再点一次。'},which,msgId);});
 }
 
 /* ---- 画一遍 ---- */
@@ -403,6 +414,8 @@ var pa=dq('dr-prau');if(pa)pa.addEventListener('click',function(){dAudio(DR.cur&
 var go=dq('dr-go');if(go)go.addEventListener('click',dRvStart);
 var pl=dq('dr-plan');if(pl)pl.addEventListener('click',dRvPlan);
 window.drillOpen=function(){if(DR.loaded)return;DR.loaded=true;dLoad();dRvLoad();};
+/* 听辨小测复用这一个发音实现（src/ear-page.ts 调它），**不另写第二套** */
+window.drillAudio=dAudio;
 }catch(e){}
 })();
 `;
