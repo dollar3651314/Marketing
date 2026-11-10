@@ -9,7 +9,8 @@
  *   /api/assets/*（素材生成器，assets.ts）、/api/tts/*（语音生成，tts.ts）、/api/voice/*（语音对话实测，voice.ts）、
  *   /api/english/*（英语练习的跨轮记忆，english-memory.ts：词汇线、生成这一轮的提示词、把 #LOG 贴回来入库；不调任何 AI，不花钱）、
  *   /api/drill/*（工作台「带练」，drill.ts：场景 0 前三段的进度、「会了 / 不会」；内容在 drill-content.ts，不调任何 AI、不花钱），
- *   /api/drill/audio/*（发音，drill-audio.ts：melotts 生成一次存 D1 永久复用），/api/drill/review*（复考，drill-review.ts）。
+ *   /api/drill/audio/*（发音，drill-audio.ts：melotts 生成一次存 D1 永久复用），/api/drill/review*（复考，drill-review.ts）、
+ *   GET /api/funds、POST /api/funds/refresh {cursor?}（基金观察，funds-api.ts：45 只基金的快照、分批去 Yahoo / 东方财富取数）。
  * 登录：密钥 COPILOT_PASSWORD（≥ 16 个字符，没填时后台 404）；同一 IP 15 分钟错 5 次锁 15 分钟，全站 1 小时错 20 次锁 1 小时；
  * 失败一律回答同一句（不透露锁定规则，C128）；会话 12 小时，签名密钥由密码派生，改密码旧会话全部失效。
  */
@@ -27,6 +28,7 @@ import { englishApi } from './english-memory';
 import { drillApi } from './drill';
 import { drillAudioApi } from './drill-audio';
 import { drillReviewApi } from './drill-review';
+import { fundsApi } from './funds-api';
 
 export const SESSION_MS = 12 * 3600_000;
 const LOCK = { ipWindow: 15 * 60_000, ipMax: 5, ipLock: 15 * 60_000, allWindow: 3600_000, allMax: 20, allLock: 3600_000 };
@@ -175,6 +177,8 @@ export async function adminApi(env: Env, req: Request, now: number): Promise<Res
   if (p.startsWith('/api/drill/review')) return (await drillReviewApi(env, req, now, p.slice('/api/drill/review'.length))) ?? new Response('Not found', { status: 404 });
   // 带练（工作台 → 带练，drill.ts）：内容和进度；**一个 AI 都不调、不花一分钱**（底线 8 / C117）
   if (p.startsWith('/api/drill/')) return (await drillApi(env, req, now, p.slice('/api/drill/'.length))) ?? new Response('Not found', { status: 404 });
+  // 基金观察（一级菜单「基金观察」#/funds，funds-api.ts）：GET 读快照、POST refresh 分批去 Yahoo / 东方财富取（每次 ≤45 个对外请求）；公开免费接口，不花钱
+  if (p === '/api/funds' || p.startsWith('/api/funds/')) return (await fundsApi(env, req, now, p === '/api/funds' ? '' : p.slice('/api/funds/'.length))) ?? new Response('Not found', { status: 404 });
   const company = await companyApi(env, req, now);
   if (company) return company;
   const live = await activeApi(env, req, now);
