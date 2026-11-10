@@ -484,6 +484,10 @@ ${ASSETS_CSS}${TTS_CSS}${VOICE_CSS}${ENGLISH_CSS}${EM_CSS}${DRILL_CSS}${EAR_CSS}
 <nav class="sub" id="sub-company" aria-label="公司总览模块" hidden><div class="in">
   <a href="#/company/people" data-s="co-people">各岗位在做什么</a><a href="#/company/learn" data-s="co-learn">这周学到了什么</a><a href="#/company/health" data-s="co-health">做得怎么样</a>
 </div></nav>
+<!-- 基金观察第二版（Amos 11/10）：板块子菜单，顺序 = 页面顺序；点了定位到板块、滚动时当前板块高亮（同一套 subSpy），手机上横滑 -->
+<nav class="sub" id="sub-funds" aria-label="基金观察板块" hidden><div class="in">
+  <a href="#/funds/sum" data-s="fu-sum" data-target="fu-sum">总结</a><a href="#/funds/mk" data-s="fu-mk" data-target="fu-mk">市场卡</a><a href="#/funds/sc" data-s="fu-sc" data-target="fu-sc">散点</a><a href="#/funds/rg" data-s="fu-rg" data-target="fu-rg">可能区间</a><a href="#/funds/yb" data-s="fu-yb" data-target="fu-yb">债券预期</a><a href="#/funds/ls" data-s="fu-ls" data-target="fu-ls">逐只对比</a><a href="#/funds/note" data-s="fu-note" data-target="fu-note">说明</a>
+</div></nav>
 </div></div>
 <form class="login" id="login" hidden>
   <b>登录</b><label for="pw">密码</label><input id="pw" type="password" autocomplete="current-password" required>
@@ -750,8 +754,8 @@ const TITLES={hook:'Webhook 开关',list:'跟帖评论清单',usage:'用量和�
 // 外框路由（工作平台批 1）：#/<页>/<模块>；页 = work / <项目> / tools / company；模块 id = 页的前缀 + 模块名（#/work/todo → w-todo）
 // 2026-11-02：项目不再写死。地址里第一段是项目名时，内部页名一律是 'project'（一套 DOM #v-project 轮流显示），当前项目记在 proj 里。
 let page='', proj='';
-const FIXED={work:'w-',tools:'t-',company:'',funds:''};
-const PFX={work:'w-',project:'f-',tools:'t-',company:'co-'}, TOOLV={queue:'list',usage:'usage',ext:'ext',reply:'reply',byproj:'usage',hook:'hook',assets:'assets',tts:'tts',voice:'voice'};
+const FIXED={work:'w-',tools:'t-',company:'',funds:'fu-'};
+const PFX={work:'w-',project:'f-',tools:'t-',company:'co-',funds:'fu-'}, TOOLV={queue:'list',usage:'usage',ext:'ext',reply:'reply',byproj:'usage',hook:'hook',assets:'assets',tts:'tts',voice:'voice'};
 // 有项目页的项目：先用兜底名单（src/projects.ts PROJECT_PAGES_FALLBACK），读到 /api/company 后由第三段脚本调 setProjects() 换成真的
 const PCFG=${JSON.stringify({ PROJECT_PAGES_FALLBACK, MAX_PROJECT_PAGES, PROJECT_SITE })};
 let PROJS=PCFG.PROJECT_PAGES_FALLBACK.slice();
@@ -801,7 +805,8 @@ function route(){if(!authed)return;let h=hashOf();
   if(page==='tools'&&view==='assets'){try{window.assetsOpen();}catch(e){}}
   if(page==='tools'&&view==='tts'){try{window.ttsOpen();}catch(e){}}
   if(page==='tools'&&view==='voice'){try{window.voiceOpen();}catch(e){}}
-  if(page==='funds'){try{window.fundsOpen();}catch(e){}}
+  // 每次从别的页进来都重新读（e2e Q）；在基金观察里点子菜单（#/funds/rg 之类）只滚动，不重读
+  if(page==='funds'&&prev!=='funds'){try{window.fundsOpen();}catch(e){}}
   if(page==='company'){try{companyOpen(prev==='company');}catch(e){$('co-at').textContent='这一页出错了：'+e.message;}}
   // 批 2：在公共工具、公司总览刷新时，一级菜单上的待办数量也马上读出来（以前要切到工作台才有）
   if(page==='work'||page==='project'){try{platformOpen(page,mod);}catch(e){}}else{try{platformStop();platformPeek();}catch(e){}}
@@ -842,7 +847,8 @@ function subSpy(){subRaf=0;const nav=[...document.querySelectorAll('nav.sub')].f
     if(scrollY>0&&innerHeight+scrollY>=de.scrollHeight-2)cur=secs[secs.length-1].id;
     else{// 批 A 去掉了页面底部 60vh 的空白：快到底时判定线往下移（剩下不到 0.6 屏时开始，到底时移到屏幕底边上面 60px），
       // 短的最后几块也能依次被选中，不会从中间直接跳到最后一个。还在最上面（scrollY=0）时不移。
-      const base=$('bars').getBoundingClientRect().bottom+16,rest=de.scrollHeight-innerHeight-scrollY;
+      // 基金观察的板块是大卡片、彼此只隔 24px：判定线放宽到菜单下 64px（板块顶滚到菜单下面一点就算到了这一块）
+      const base=$('bars').getBoundingClientRect().bottom+(page==='funds'?64:16),rest=de.scrollHeight-innerHeight-scrollY;
       const k=scrollY>0?Math.max(0,Math.min(1,1-rest/(innerHeight*0.6))):0;const line=base+k*Math.max(0,innerHeight-base-60);
       let c=secs[0];secs.forEach((x)=>{if(x.top<=line)c=x;});
       const row=secs.filter((x)=>Math.abs(x.top-c.top)<=4);
