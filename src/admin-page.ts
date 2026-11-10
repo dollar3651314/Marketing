@@ -4,6 +4,7 @@ import { VOICE_CSS, VOICE_JS } from './voice-page';
 import { ENGLISH_CSS, ENGLISH_JS, ENGLISH_MOD } from './english-page';
 import { EM_CSS, EM_JS, EM_MOD } from './english-memory-page';
 import { DRILL_CSS, DRILL_JS, DRILL_MOD } from './drill-page';
+import { FUNDS_CSS, FUNDS_JS, FUNDS_MOD } from './funds-page';
 import { EXTENSION_VERSION } from './extension-download';
 import { MAX_PROJECT_PAGES, PLATFORM_CONFIG, PROJECT_PAGES_FALLBACK, PROJECT_SITE } from './projects';
 
@@ -462,10 +463,10 @@ th{font-size:12px;color:var(--muted);font-weight:600}td.n{text-align:right}
 .plat details.recent>summary{border-top:1px solid var(--line)}
 @media (max-width:600px){.act-item{grid-template-columns:minmax(0,1fr)}.act-item .go{flex-direction:row;flex-wrap:wrap;align-items:flex-start}}
 /* 收编进来的工具的样式：素材生成器（选择器都带 .ag）、语音生成（都带 .tv）、语音对话实测（都带 .vc），不串到别的模块 */
-${ASSETS_CSS}${TTS_CSS}${VOICE_CSS}${ENGLISH_CSS}${EM_CSS}${DRILL_CSS}
+${ASSETS_CSS}${TTS_CSS}${VOICE_CSS}${ENGLISH_CSS}${EM_CSS}${DRILL_CSS}${FUNDS_CSS}
 </style></head><body>
 <div class="bars" id="bars"><header class="top" id="top"><span class="logo" aria-hidden="true"><i style="height:16px;background:#2DD4BF"></i><i style="height:10px;background:#FBBF24"></i></span><span class="brand">工作平台</span><b class="sr" id="title">工作台</b>
-  <nav class="nav1" id="nav1" aria-label="一级菜单" hidden><a href="#/work" data-p="work">工作台<span class="cnt" id="c-work" hidden></span></a><span class="sep" id="nav1-sep0" aria-hidden="true" hidden></span><span class="grp-l" id="nav1-grp" hidden>项目</span><span class="sep" id="nav1-sep" aria-hidden="true"></span><a href="#/tools" data-p="tools" id="nav1-tools">公共工具</a></nav>
+  <nav class="nav1" id="nav1" aria-label="一级菜单" hidden><a href="#/work" data-p="work">工作台<span class="cnt" id="c-work" hidden></span></a><span class="sep" id="nav1-sep0" aria-hidden="true" hidden></span><span class="grp-l" id="nav1-grp" hidden>项目</span><span class="sep" id="nav1-sep" aria-hidden="true"></span><a href="#/tools" data-p="tools" id="nav1-tools">公共工具</a><a href="#/funds" data-f="funds" id="nav1-funds">基金观察</a></nav>
   <span class="sp"></span><button id="nav" hidden>用量和限额 →</button><button id="extnav" hidden>插件下载</button><details class="more-menu" id="more-menu" hidden><summary aria-label="更多：公司总览、登出">···</summary><span class="tacts" id="tacts"><button id="conav" hidden>公司总览</button><button id="logout" hidden>登出</button></span></details></header>
 <div id="subs" hidden>
 <nav class="sub" id="sub-work" aria-label="工作台模块" hidden><div class="in">
@@ -717,6 +718,8 @@ ${ASSETS_CSS}${TTS_CSS}${VOICE_CSS}${ENGLISH_CSS}${EM_CSS}${DRILL_CSS}
     <div class="crumb"><h1>公司总览</h1><span id="co-at">还没读取</span><span class="sp"></span><button class="btn small" id="co-refresh" type="button">刷新</button></div>
     <div class="page" id="co-body"></div>
   </section>
+  <!-- 基金观察（一级菜单「公共工具」右边一项，地址 #/funds；2026-11-10）：不占公共工具二级菜单的位子（T-4 上限 8 项已满）。结构、样式、脚本在 src/funds-page.ts -->
+  ${FUNDS_MOD}
 </main>
 <!-- 工作台第一次读取中的占位骨架（批 A）：读到数据就藏起来、显示 #app -->
 <main class="boot" id="boot" aria-busy="true" hidden><div class="page plat" style="gap:var(--s6)">
@@ -742,11 +745,11 @@ $('login').addEventListener('submit',async(e)=>{e.preventDefault();const b=$('go
   try{await load();}catch(e){}if(!$('login').hidden)return;// 读清单时又要求重新登录：停在登录框
   if(!authed)showApp();route();});
 $('logout').addEventListener('click',async()=>{moreMenu(false);await call('/api/logout',{}).catch(()=>{});showLogin('已登出');});
-const TITLES={hook:'Webhook 开关',list:'跟帖评论清单',usage:'用量和限额',reply:'每天回帖上限',ext:'插件下载',assets:'素材生成器',tts:'语音生成',voice:'语音对话实测',company:'公司总览',work:'工作台'};
+const TITLES={hook:'Webhook 开关',list:'跟帖评论清单',usage:'用量和限额',reply:'每天回帖上限',ext:'插件下载',assets:'素材生成器',tts:'语音生成',voice:'语音对话实测',company:'公司总览',work:'工作台',funds:'基金观察'};
 // 外框路由（工作平台批 1）：#/<页>/<模块>；页 = work / <项目> / tools / company；模块 id = 页的前缀 + 模块名（#/work/todo → w-todo）
 // 2026-11-02：项目不再写死。地址里第一段是项目名时，内部页名一律是 'project'（一套 DOM #v-project 轮流显示），当前项目记在 proj 里。
 let page='', proj='';
-const FIXED={work:'w-',tools:'t-',company:''};
+const FIXED={work:'w-',tools:'t-',company:'',funds:''};
 const PFX={work:'w-',project:'f-',tools:'t-',company:'co-'}, TOOLV={queue:'list',usage:'usage',ext:'ext',reply:'reply',byproj:'usage',hook:'hook',assets:'assets',tts:'tts',voice:'voice'};
 // 有项目页的项目：先用兜底名单（src/projects.ts PROJECT_PAGES_FALLBACK），读到 /api/company 后由第三段脚本调 setProjects() 换成真的
 const PCFG=${JSON.stringify({ PROJECT_PAGES_FALLBACK, MAX_PROJECT_PAGES, PROJECT_SITE })};
@@ -785,8 +788,10 @@ function route(){if(!authed)return;let h=hashOf();
   const ready=(typeof platformReady!=='function')||platformReady();
   // 批 A：工作台第一次读到数据之前显示占位骨架 #boot（在 #app 外面，#app 还是读到数据再显示，免得看到空模块）；项目页照旧
   $('app').hidden=(page==='work'||page==='project')&&!ready;$('boot').hidden=!(page==='work'&&!ready);
-  ['work','project','tools','company'].forEach(x=>{$('v-'+x).hidden=x!==page;const sb=$('sub-'+x);if(sb)sb.hidden=x!==page;});
+  ['work','project','tools','company','funds'].forEach(x=>{$('v-'+x).hidden=x!==page;const sb=$('sub-'+x);if(sb)sb.hidden=x!==page;});
   document.querySelectorAll('#nav1 a[data-p]').forEach(a=>{const on=a.dataset.p===page&&(!a.dataset.proj||a.dataset.proj===proj);if(on)a.setAttribute('aria-current','page');else a.removeAttribute('aria-current');});
+  // 基金观察：一级菜单上那一项用 data-f（不是 data-p：一级菜单的 data-p 只放 工作台 · 项目 · 公共工具 这三类页，e2e-platform 按 data-p 数）
+  if(page==='funds')$('nav1-funds').setAttribute('aria-current','page');else $('nav1-funds').removeAttribute('aria-current');
   inView($('nav1'),$('nav1').querySelector('a[aria-current="page"]'));
   document.querySelectorAll('nav.sub a[data-s]').forEach(a=>a.setAttribute('aria-current',String(a.dataset.s===mod)));subPin=null;
   const t=page==='project'?proj:(TITLES[view]||TITLES[page]);$('title').textContent=t;document.title=t+' · 工作平台';frameButtons();
@@ -795,6 +800,7 @@ function route(){if(!authed)return;let h=hashOf();
   if(page==='tools'&&view==='assets'){try{window.assetsOpen();}catch(e){}}
   if(page==='tools'&&view==='tts'){try{window.ttsOpen();}catch(e){}}
   if(page==='tools'&&view==='voice'){try{window.voiceOpen();}catch(e){}}
+  if(page==='funds'){try{window.fundsOpen();}catch(e){}}
   if(page==='company'){try{companyOpen(prev==='company');}catch(e){$('co-at').textContent='这一页出错了：'+e.message;}}
   // 批 2：在公共工具、公司总览刷新时，一级菜单上的待办数量也马上读出来（以前要切到工作台才有）
   if(page==='work'||page==='project'){try{platformOpen(page,mod);}catch(e){}}else{try{platformStop();platformPeek();}catch(e){}}
@@ -850,7 +856,7 @@ function inView(box,a){if(!a||!box||box.scrollWidth<=box.clientWidth+1)return;
   const d=r.left<b.left+8?r.left-b.left-8:r.right>b.right-fade?r.right-(b.right-fade):0;if(d)box.scrollLeft+=d;}
 function subSpySoon(){if(!subRaf)subRaf=requestAnimationFrame(subSpy);}
 window.addEventListener('scroll',subSpySoon,{passive:true});window.addEventListener('resize',subSpySoon);
-document.querySelectorAll('nav.sub a[data-s], #nav1 a[data-p]').forEach(a=>a.addEventListener('click',()=>{if(a.getAttribute('href')===location.hash)setTimeout(route,0);}));
+document.querySelectorAll('nav.sub a[data-s], #nav1 a[data-p], #nav1 a[data-f]').forEach(a=>a.addEventListener('click',()=>{if(a.getAttribute('href')===location.hash)setTimeout(route,0);}));
 /** 旧的三个按钮（用量和限额、插件下载、公司总览）：跳到公共工具里的模块或公司总览 */
 function go(v){const h=v==='company'?'#/company':'#/tools/'+({list:'queue',usage:'usage',ext:'ext'}[v]||'queue');if(location.hash===h)route();else location.hash=h;}
 $('nav').addEventListener('click',()=>go(view==='list'?'usage':'list'));
@@ -1651,11 +1657,12 @@ var platformPeek=function(){PL.peek=true;if(!PL.timer)tickTimer();if(!PL.data&&!
 var platformReady=function(){return !!PL.data;};
 }catch(e){var platformReady=function(){return true;};var platformOpen=function(){['w-err','f-err'].forEach((id)=>{const x=document.getElementById(id);if(x){x.hidden=false;x.textContent='这一页出错了：'+e.message;}});};var platformStop=function(){};var platformPeek=function(){};}
 </script>
-<script>window.__assetsBase='/api/assets/';window.__ttsBase='/api/tts/';window.__voiceBase='/api/voice/';window.__engmemBase='/api/english/';window.__drillBase='/api/drill/';</script>
+<script>window.__assetsBase='/api/assets/';window.__ttsBase='/api/tts/';window.__voiceBase='/api/voice/';window.__engmemBase='/api/english/';window.__drillBase='/api/drill/';window.__fundsBase='/api/funds';</script>
 <script>${ASSETS_JS}</script>
 <script>${TTS_JS}</script>
 <script>${VOICE_JS}</script>
 <script>${ENGLISH_JS}</script>
 <script>${EM_JS}</script>
 <script>${DRILL_JS}</script>
+<script>${FUNDS_JS}</script>
 </body></html>`;
