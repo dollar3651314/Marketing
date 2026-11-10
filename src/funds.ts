@@ -278,3 +278,73 @@ export function summarize(def: FundDef, currency: string | null, points: Point[]
     series: points.map((p) => [p[0], r6(p[2])] as [string, number]),
   };
 }
+
+// ---------------------------------------------------------------- 第二版：未来 1 个月的可能区间（Amos 2026-11-10「都按建议」）
+/**
+ * 口径：
+ *   - 取最后一点往前 365 天内的点（价格用每个点的**最后一个数**：Point 是复权价 adj，快照里的 series 是 [日期, 复权价]，两种都能直接传）；
+ *   - 每日对数收益 r_i = ln(P_i / P_{i-1})，日波动 σ = 样本标准差（除以 n−1）；**少于 40 个日收益不算**（返回 null，页面写"上市不满两个月，算不出"）；
+ *   - h = σ·√21（21 个交易日约 1 个月）；区间（百分数）= exp(c ± h) − 1（约 2/3）、exp(c ± 1.96h) − 1（约 95%）；
+ *   - c（center，对数、整段 21 天的中心）：股票类（宽基、红利）= 0；债券类 = ln(1 + 预期年化) / 12（预期年化见 src/funds-yield.ts）。
+ * 只说明波动有多大，不是预测涨跌，不是投资建议。改口径先过 Amos。
+ */
+export const BAND_DAYS = 21;
+/** 少于这么多个日收益不算区间 */
+export const BAND_MIN_RETURNS = 40;
+
+type PriceRow = readonly [string, ...number[]];
+const priceOf = (p: PriceRow) => p[p.length - 1] as number;
+
+/** 最后一点往前 365 天内的价格（升序） */
+function yearPrices(points: readonly PriceRow[]): number[] {
+  if (!points || !points.length) return [];
+  const cut = iso(ms(points[points.length - 1][0]) - 365 * DAY);
+  return points.filter((p) => p[0] >= cut).map(priceOf).filter((v) => typeof v === 'number' && isFinite(v) && v > 0);
+}
+
+/** 过去一年的日对数收益和 h = σ·√21；日收益不够 40 个回 null */
+function bandBase(points: readonly PriceRow[]): { prices: number[]; h: number } | null {
+  const prices = yearPrices(points);
+  const n = prices.length - 1;
+  if (n < BAND_MIN_RETURNS) return null;
+  const rets: number[] = [];
+  for (let i = 1; i < prices.length; i++) rets.push(Math.log(prices[i] / prices[i - 1]));
+  const mean = rets.reduce((a, b) => a + b, 0) / n;
+  const varc = rets.reduce((a, b) => a + (b - mean) * (b - mean), 0) / (n - 1);
+  return { prices, h: Math.sqrt(varc) * Math.sqrt(BAND_DAYS) };
+}
+
+/**
+ * 未来 1 个月（21 个交易日）的可能区间，百分数：[约 95% 下沿, 约 2/3 下沿, 中心, 约 2/3 上沿, 约 95% 上沿]。
+ * center 是对数中心 c（股票类 0；债券类 ln(1+预期年化)/12）。过去一年日收益少于 40 个返回 null。
+ */
+export function rangeBand(points: readonly PriceRow[], center = 0): [number, number, number, number, number] | null {
+  const b = bandBase(points);
+  if (!b) return null;
+  const c = isFinite(center) ? center : 0;
+  const at = (z: number) => fix0((Math.exp(c + z * b.h) - 1) * 100);
+  return [at(-1.96), at(-1), at(0), at(1), at(1.96)];
+}
+
+/**
+ * 回测：过去一年里每一段 21 个交易日（每天起一段，段与段重叠）的真实对数收益，落在 ±h（约 2/3 那段，中心按 0）里的比例，0～1。
+ * σ 用同一年的数据（样本内）。日收益少于 40 个、或者一段都凑不出来返回 null。页面把各只的比例取平均写进说明。
+ */
+export function bandCoverage(points: readonly PriceRow[]): number | null {
+  const b = bandBase(points);
+  if (!b) return null;
+  const p = b.prices;
+  let inside = 0, total = 0;
+  for (let i = 0; i + BAND_DAYS < p.length; i++) {
+    const r = Math.log(p[i + BAND_DAYS] / p[i]);
+    total++;
+    if (Math.abs(r) <= b.h) inside++;
+  }
+  return total ? inside / total : null;
+}
+
+/** 债券类区间的对数中心：预期年化（百分数，例如 5.2）→ ln(1 + 5.2%) / 12；没有预期年化或不是有限数回 0 */
+export function bondCenter(annualPct: number | null | undefined): number {
+  if (typeof annualPct !== 'number' || !isFinite(annualPct) || annualPct <= -100) return 0;
+  return Math.log(1 + annualPct / 100) / 12;
+}

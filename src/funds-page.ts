@@ -42,6 +42,7 @@ export const FUNDS_CSS = `
 #v-funds .fu-chip[aria-pressed="true"],#v-funds .fu-chip[aria-selected="true"]{background:var(--navy);color:#fff;font-weight:700}
 @media (prefers-color-scheme: dark){#v-funds .fu-chip[aria-pressed="true"],#v-funds .fu-chip[aria-selected="true"]{background:var(--teal);color:#08101F}}
 #v-funds .fu-chip:focus-visible,#v-funds .fu-row:focus-visible,#v-funds circle:focus-visible{outline:2px solid var(--amber);outline-offset:2px}
+#v-funds .fu-mkwrap{display:grid;gap:var(--s5);min-width:0}
 #v-funds .fu-grid3{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:var(--s4)}
 @media (max-width:760px){#v-funds .fu-grid3{grid-template-columns:1fr}}
 #v-funds .fu-mk h3{margin:0 0 var(--s2);font-size:var(--fs-mod)}
@@ -111,6 +112,40 @@ export const FUNDS_CSS = `
 #v-funds .fu-foot{font-size:var(--fs-aux);color:var(--muted)}
 #v-funds .fu-foot summary{cursor:pointer;color:var(--ink-2)}
 #v-funds .fu-foot ul{padding-left:1.2em;margin:var(--s2) 0 0}
+/* 第二版 ① 未来 1 个月的可能区间（横条：浅色 95%、深色 2/3、竖线中心） */
+#v-funds .fu-rg-row,#v-funds .fu-rg-scale{display:grid;grid-template-columns:minmax(0,1.6fr) minmax(0,3fr) 132px;gap:var(--s3);align-items:center}
+#v-funds .fu-rg-row{padding:6px var(--s2);border-bottom:1px solid var(--line)}
+#v-funds .fu-rg-row .nm{min-width:0;font-size:14px;overflow-wrap:anywhere;line-height:1.4}
+#v-funds .fu-rg-row .nm small{color:var(--muted);font-size:12px;margin-left:6px;font-family:var(--mono)}
+#v-funds .fu-rg-track{position:relative;height:18px}
+#v-funds .fu-rg-track .axis{position:absolute;left:0;right:0;top:8px;height:2px;background:var(--fu-grid)}
+#v-funds .fu-rg-track .zero{position:absolute;top:0;bottom:0;width:1px;background:var(--muted);opacity:.7}
+#v-funds .fu-rg-track .b95{position:absolute;top:5px;height:8px;border-radius:4px;opacity:.3}
+#v-funds .fu-rg-track .b68{position:absolute;top:3px;height:12px;border-radius:4px;opacity:.8}
+#v-funds .fu-rg-track .mid{position:absolute;top:1px;width:2px;height:16px;background:var(--ink)}
+#v-funds .fu-rg-v{text-align:right;font-variant-numeric:tabular-nums;font-size:var(--fs-aux);color:var(--ink-2);white-space:nowrap}
+#v-funds .fu-rg-scale{font-size:12px;color:var(--muted);padding:0 var(--s2)}
+#v-funds .fu-rg-scale div{position:relative;height:16px}#v-funds .fu-rg-scale span{position:absolute;transform:translateX(-50%);white-space:nowrap}
+#v-funds .fu-disc{font-size:12px;color:var(--muted);margin:var(--s3) 0 0;line-height:1.6}
+#v-funds .fu-miss{font-size:12px;color:var(--muted);padding:var(--s2) var(--s2) 0}
+/* 第二版 ③ 债券类预期年化（近似的条用斜纹） */
+#v-funds .fu-yb{display:grid;grid-template-columns:minmax(0,1.6fr) minmax(0,2fr) 76px minmax(0,1.8fr);gap:var(--s3);align-items:center;padding:8px var(--s2);border-bottom:1px solid var(--line)}
+#v-funds .fu-yb .nm{min-width:0}#v-funds .fu-yb .nm b{font-weight:600;display:block;line-height:1.35;overflow-wrap:anywhere}
+#v-funds .fu-yb .bar{height:12px;border-radius:3px;background:var(--fu-bond);min-width:2px}
+#v-funds .fu-yb .bar.approx{background:repeating-linear-gradient(45deg,var(--fu-bond) 0 6px,transparent 6px 10px);border:1px solid var(--fu-bond)}
+#v-funds .fu-yb .bar.stale{opacity:.45}
+#v-funds .fu-yb .v{text-align:right;font-weight:700;font-variant-numeric:tabular-nums;white-space:nowrap}
+#v-funds .fu-yb .v.na{font-weight:400}
+#v-funds .fu-yb .src{font-size:12px;color:var(--muted);line-height:1.5;min-width:0;overflow-wrap:anywhere}
+#v-funds .fu-q{display:inline-block;font-size:12px;border-radius:4px;padding:0 6px;margin-right:6px;line-height:18px;white-space:nowrap}
+#v-funds .fu-q.auto{background:var(--teal-soft);color:var(--teal-ink)}#v-funds .fu-q.approx{background:var(--amber-soft);color:var(--ink)}#v-funds .fu-q.stale{background:var(--err-soft);color:var(--err)}
+#v-funds .fu-ybmsg{font-size:var(--fs-aux);color:var(--err);margin:var(--s2) 0 0}#v-funds .fu-ybmsg:empty{display:none}
+@media (max-width:760px){
+  #v-funds .fu-rg-row,#v-funds .fu-rg-scale{grid-template-columns:minmax(0,1fr) auto}
+  #v-funds .fu-rg-row .fu-rg-track{grid-column:1 / -1;grid-row:2}
+  #v-funds .fu-rg-scale{grid-template-columns:1fr}#v-funds .fu-rg-scale div:first-child,#v-funds .fu-rg-scale div:last-child{display:none}
+  #v-funds .fu-yb{grid-template-columns:minmax(0,1fr) auto}#v-funds .fu-yb .bar-w{grid-column:1 / -1;grid-row:2}#v-funds .fu-yb .src{grid-column:1 / -1}
+}
 @media (max-width:760px){
   #v-funds .fu-card{padding:var(--s4)}
   #v-funds .fu-colh{display:none}
@@ -130,10 +165,11 @@ export const FUNDS_MOD = `<section class="page plat" id="v-funds" hidden>
   </div>
   <div class="fu-prog" id="fu-prog" aria-live="polite"></div>
   <div class="fu-errbar" id="fu-err" role="alert" hidden><span id="fu-err-t"></span><span class="sp"></span><button class="btn small" type="button" id="fu-retry">再读一次</button></div>
-  <section class="fu-card" aria-label="总结">
+  <section class="fu-card mod" id="fu-sum" aria-label="总结">
     <p class="fu-lede" id="fu-lede">读取中…</p>
     <div class="fu-alerts" id="fu-alerts"></div>
   </section>
+  <div class="mod fu-mkwrap" id="fu-mk">
   <div class="fu-controls">
     <div class="fu-seg" role="group" aria-label="时间段" id="fu-periods">
       <button class="fu-chip" type="button" data-p="w1" aria-pressed="false">近 1 周</button><button class="fu-chip" type="button" data-p="m1" aria-pressed="false">近 1 月</button><button class="fu-chip" type="button" data-p="ytd" aria-pressed="false">今年以来</button><button class="fu-chip" type="button" data-p="y1" aria-pressed="true">近 1 年</button>
@@ -143,18 +179,33 @@ export const FUNDS_MOD = `<section class="page plat" id="v-funds" hidden>
     </div>
   </div>
   <div class="fu-grid3" id="fu-mkcards"></div>
-  <section class="fu-card" aria-labelledby="fu-sc-h">
+  </div>
+  <section class="fu-card mod" id="fu-sc" aria-labelledby="fu-sc-h">
     <div class="fu-sec-h"><h2 id="fu-sc-h">赚了多少，中途最多亏过多少</h2><p id="fu-sc-sub"></p></div>
     <div class="fu-legend"><span><i style="background:var(--fu-broad)"></i>宽基</span><span><i style="background:var(--fu-bond)"></i>债券</span><span><i style="background:var(--fu-div)"></i>红利</span><span>越靠左上越好：收益高、回撤小</span></div>
     <div class="fu-scbox" id="fu-scbox"><svg id="fu-scatter" role="img"></svg><div class="fu-tip" id="fu-tip" hidden></div></div>
   </section>
-  <section class="fu-card" aria-labelledby="fu-ls-h">
+  <section class="fu-card mod" id="fu-rg" aria-labelledby="fu-rg-h">
+    <div class="fu-sec-h"><h2 id="fu-rg-h">未来 1 个月的可能区间</h2><p id="fu-rg-sub">按过去一年的波动推算，不是预测涨跌</p></div>
+    <div class="fu-legend"><span><i class="bar" style="background:var(--fu-broad);opacity:.8"></i>大约 2/3 的可能落在这段</span><span><i class="bar" style="background:var(--fu-broad);opacity:.3"></i>大约 95% 的可能落在这段</span><span>竖线：区间中心（股票类为 0；债券类按下面的预期年化折成 1 个月）</span></div>
+    <div class="fu-rg-scale" id="fu-rg-scale" aria-hidden="true"><div></div><div></div><div></div></div>
+    <div id="fu-rg-list"></div>
+    <p class="fu-disc" id="fu-rg-disc"></p>
+  </section>
+  <section class="fu-card mod" id="fu-yb" aria-labelledby="fu-yb-h">
+    <div class="fu-sec-h"><h2 id="fu-yb-h">债券类：未来 1～3 年预期年化</h2><p>依据到期收益率（YTM）；持有接近久期时最接近实际</p></div>
+    <div class="fu-legend"><span><span class="fu-q auto">每天自动</span>基金公司 / 交易所每天公布</span><span><span class="fu-q approx">近似</span>查不到本身的，用同期限国债 + 利差估</span><span><span class="fu-q stale">过期</span>最近一次取不到，显示的是上次的值</span></div>
+    <div id="fu-yb-list"></div>
+    <p class="fu-ybmsg" id="fu-yb-msg" role="status"></p>
+    <p class="fu-disc">到期收益率是"现在买入、持有到债券到期、不违约"时的年化，扣费前。利率再变动时短期净值会波动（久期越长波动越大）。货币基金用 7 日年化。不是投资建议。</p>
+  </section>
+  <section class="fu-card mod" id="fu-ls" aria-labelledby="fu-ls-h">
     <div class="fu-sec-h"><h2 id="fu-ls-h">逐只对比</h2><p>点一行看一年走势和回撤过程</p></div>
     <div class="fu-legend"><span><i class="bar" style="background:var(--ok)"></i>收益（涨）</span><span><i class="bar" style="background:var(--err)"></i>收益（跌）</span><span><i class="bar" style="background:var(--amber)"></i>期间最大回撤</span><span>⚑ 单日涨跌超过 ±3%</span></div>
     <div class="fu-colh"><span>产品</span><span>最新价</span><span>1 日</span><span id="fu-colp">近 1 年</span><span>一年走势</span></div>
     <div id="fu-list"></div>
   </section>
-  <details class="fu-foot fu-card">
+  <details class="fu-foot fu-card mod" id="fu-note">
     <summary>数据从哪来、什么叫最大回撤、哪些格子是空的</summary>
     <ul>
       <li><b>最大回撤</b>：所选时间段里，从最高点跌到之后最低点的最大跌幅。比如"近 1 年 −10.9%"表示这一年里最多从高点回落过 10.9%。</li>
@@ -162,6 +213,8 @@ export const FUNDS_MOD = `<section class="page plat" id="v-funds" hidden>
       <li>"刷新数据"由服务器分几批去取（每批最多 45 个请求），全部取完大约半分钟；某只没取到时保留上次的数据，并在那一行标出"没取到，显示的是哪天的数据"。</li>
       <li>上市不满某段时间的，那一段写"上市不足"；展开那一行看"上市以来"（最多一年）。</li>
       <li>0P00006FY6 是按名称推断的代码，净值比场内产品晚几天。511990、511880 是货币 ETF，几乎不动。</li>
+      <li><b>未来 1 个月的可能区间</b>：用过去一年每天的涨跌算出日波动 σ，一个月（21 个交易日）的波动 h = σ × √21；深色段 = 中心 ± h（大约 2/3 的可能），浅色段 = 中心 ± 1.96h（大约 95%）。中心：股票类为 0，债券类 = 预期年化折成 1 个月。上市不满两个月（不到 40 个交易日）的算不出。只说明波动有多大，不代表会涨或会跌；不是投资建议。</li>
+      <li><b>债券类预期年化</b>：iShares（AGG、TLT、LQD）、Vanguard（BND、BSV）、BlackRock 新加坡（O9P）的产品页每天公布到期收益率；511990 用东方财富的 7 日年化，511880 用净值自己算 7 日年化。其余 7 只查不到本身的，用同期限国债（新加坡 MAS、中债）加一个固定利差估，标"近似"；利差每季度人工校准一次。iShares / Vanguard / BlackRock 页面取不到时，退回"美国同期限国债 + 利差"并标"近似"；都取不到就显示上次的值并标"过期"。</li>
     </ul>
   </details>
 </section>`;
@@ -320,22 +373,34 @@ function spark(f){var s=f.series,W=120,H=36,vals=s.map(function(x){return x[1]})
 function srcName(f){return f.source==='eastmoney'?'东方财富累计净值':'Yahoo 复权价'}
 // 画布宽度按实际可用宽度算（不靠 viewBox 缩放），手机上字也是 12px，不会缩成看不清
 function detailW(){var lw=$('fu-list').clientWidth||700,narrow=matchMedia('(max-width:760px)').matches;return Math.round(Math.max(280,Math.min(760,narrow?lw-16:lw-16-260-24)))}
-function detail(f){var box=el('div',{'class':'fu-detail','data-detail':f.code}),s=f.series,W=detailW(),H1=W<480?150:170,H2=W<480?70:80,g=10;
-  var vals=s.map(function(x){return x[1]}),mn=Math.min.apply(null,vals),mx=Math.max.apply(null,vals);if(mx===mn){mx+=1;mn-=1}
+function band(f){return Array.isArray(f.band)&&f.band.length===5?f.band:null}
+/** 估文字宽度（12px 字：中文和全角 12px，其余 7px；宁大勿小），给"最深 …"标注让开右边的喇叭 */
+function textW(t){var w=0;for(var i=0;i<t.length;i++)w+=t.charCodeAt(i)>255?12:7;return w}
+function detail(f){var box=el('div',{'class':'fu-detail','data-detail':f.code}),s=f.series,W=detailW(),H1=W<480?150:170,H2=W<480?70:80,g=10,B=band(f);
+  var vals=s.map(function(x){return x[1]});if(B){var lv0=vals[vals.length-1];vals=vals.concat([lv0*(1+B[0]/100),lv0*(1+B[4]/100)])}
+  var mn=Math.min.apply(null,vals),mx=Math.max.apply(null,vals);if(mx===mn){mx+=1;mn-=1}
   var peak=-Infinity,uw=s.map(function(x){peak=Math.max(peak,x[1]);return(x[1]/peak-1)*100});
   var umin=Math.min(-1,Math.min.apply(null,uw)),n=Math.max(1,s.length-1);
-  var ml=52,mr=8,X=function(i){return ml+i/n*(W-ml-mr)},Y1=function(v){return 8+(mx-v)/(mx-mn)*(H1-16)},Y2=function(v){return H1+g+(-v)/(-umin)*(H2-4)};
+  // 第二版 C：价格图右侧留一段画"未来 1 个月"的喇叭（68%、95% 两层）
+  var ml=52,mr=8,cw=B?(W<480?44:64):0,X=function(i){return ml+i/n*(W-ml-mr-cw)},Y1=function(v){return 8+(mx-v)/(mx-mn)*(H1-16)},Y2=function(v){return H1+g+(-v)/(-umin)*(H2-4)};
   var svg=sv('svg',{viewBox:'0 0 '+W+' '+(H1+g+H2+20),role:'img','aria-label':f.name+' 一年复权价走势和回撤过程'});
   [mn,(mn+mx)/2,mx].forEach(function(v){svg.appendChild(sv('line',{x1:ml,x2:W-mr,y1:Y1(v),y2:Y1(v),stroke:'var(--fu-grid)'}));var t=sv('text',{x:ml-6,y:Y1(v)+4,'text-anchor':'end','font-size':12,fill:'var(--muted)'});t.textContent=v>=100?v.toFixed(0):v.toPrecision(4);svg.appendChild(t)});
   var d=s.map(function(x,i){return(i?'L':'M')+X(i).toFixed(1)+' '+Y1(x[1]).toFixed(1)}).join('');
   svg.appendChild(sv('path',{d:d+'L'+X(s.length-1)+' '+(H1-8)+'L'+X(0)+' '+(H1-8)+'Z',fill:'var(--fu-broad)','fill-opacity':.08}));
   svg.appendChild(sv('path',{d:d,fill:'none',stroke:'var(--fu-broad)','stroke-width':1.6}));
+  if(B){var lv=s[s.length-1][1],x0=X(s.length-1),x1=W-mr;
+    var cone=function(lo,hi,op,k){svg.appendChild(sv('path',{'class':'fu-cone','data-k':k,d:'M'+x0.toFixed(1)+' '+Y1(lv).toFixed(1)+'L'+x1+' '+Y1(lv*(1+hi/100)).toFixed(1)+'L'+x1+' '+Y1(lv*(1+lo/100)).toFixed(1)+'Z',fill:'var(--fu-broad)','fill-opacity':op}))};
+    cone(B[0],B[4],.14,'95');cone(B[1],B[3],.32,'68');
+    var ct=sv('text',{x:x1,y:12,'text-anchor':'end','font-size':12,fill:'var(--muted)'});ct.textContent='未来 1 个月';svg.appendChild(ct)}
   // 最深的一次回撤：从哪天的高点跌到哪天
   var pk=0,best=0,bp=0,bt=0;for(var i=0;i<s.length;i++){if(s[i][1]>s[pk][1])pk=i;var r=s[i][1]/s[pk][1]-1;if(r<best){best=r;bp=pk;bt=i}}
   if(best<0){svg.appendChild(sv('circle',{cx:X(bp),cy:Y1(s[bp][1]),r:4,fill:'var(--surface)',stroke:'var(--amber)','stroke-width':2}));svg.appendChild(sv('circle',{cx:X(bt),cy:Y1(s[bt][1]),r:4,fill:'var(--amber)'}));
     // 标注放在谷底下方；谷底贴着底边时放到上方，免得压在横轴日期上（手机上历史短的 XUS 就是这样）
     var ty=Y1(s[bt][1])+16;if(ty>H1-22)ty=Math.max(14,Y1(s[bt][1])-10);
-    var t=sv('text',{x:Math.max(ml+4,Math.min(X(bt)+8,W-mr-250)),y:ty,'font-size':12,fill:'var(--amber)','font-weight':700,'class':'fu-deep',stroke:'var(--surface-2)','stroke-width':3,'paint-order':'stroke','stroke-linejoin':'round'});t.textContent='最深 '+pct(best*100)+'（'+s[bp][0]+' → '+s[bt][0]+'）';svg.appendChild(t)}
+    // 标注的右边不越过喇叭的起点（有喇叭时）或画布右边；放不下长日期就只写月-日
+    var lt='最深 '+pct(best*100)+'（'+s[bp][0]+' → '+s[bt][0]+'）',st2='最深 '+pct(best*100)+'（'+s[bp][0].slice(5)+' → '+s[bt][0].slice(5)+'）';
+    var xr=B?X(s.length-1)-6:W-mr,txt=textW(lt)<=xr-ml-4?lt:st2,tw2=textW(txt);
+    var t=sv('text',{x:Math.max(ml+4,Math.min(X(bt)+8,xr-tw2)),y:ty,'font-size':12,fill:'var(--amber)','font-weight':700,'class':'fu-deep',stroke:'var(--surface-2)','stroke-width':3,'paint-order':'stroke','stroke-linejoin':'round'});t.textContent=txt;svg.appendChild(t)}
   svg.appendChild(sv('line',{x1:ml,x2:W-mr,y1:Y2(0),y2:Y2(0),stroke:'var(--muted)'}));
   var ud=uw.map(function(v,i){return(i?'L':'M')+X(i).toFixed(1)+' '+Y2(v).toFixed(1)}).join('');
   svg.appendChild(sv('path',{d:ud+'L'+X(s.length-1)+' '+Y2(0)+'L'+X(0)+' '+Y2(0)+'Z',fill:'var(--amber)','fill-opacity':.25}));
@@ -347,7 +412,11 @@ function detail(f){var box=el('div',{'class':'fu-detail','data-detail':f.code}),
   var right=el('div'),tb=el('table',{'class':'fu-ptab'}),th=el('tr');['时间段','收益','最大回撤'].forEach(function(h){th.appendChild(el('th',null,h))});tb.appendChild(th);
   ['w1','m1','ytd','y1'].forEach(function(p){var tr=el('tr'),r=ret(f,p),dv=dd(f,p);tr.appendChild(el('td',null,PL[p]));tr.appendChild(el('td',{'class':cls(r)},r==null?'上市不足':pct(r)));tr.appendChild(el('td',{'class':dv?'neg':'na'},r==null&&dv==null?'上市不足':pct(dv)));tb.appendChild(tr)});
   var tr=el('tr');tr.appendChild(el('td',null,'上市以来*'));tr.appendChild(el('td',{'class':cls(f.ret_all)},pct(f.ret_all)));tr.appendChild(el('td',{'class':f.dd_all?'neg':'na'},pct(f.dd_all)));tb.appendChild(tr);
-  right.appendChild(tb);right.appendChild(el('div',{'class':'fu-dnote'},'* 从 '+f.first+' 起（最多取一年）。最新价 '+fmtPx(f.last)+' '+(f.currency||'')+'，'+f.date+'，来源：'+srcName(f)));
+  right.appendChild(tb);
+  if(B)right.appendChild(el('div',{'class':'fu-dnote'},'未来 1 个月：大约 2/3 的可能在 '+pct(B[1],1)+' ～ '+pct(B[3],1)+'，大约 95% 在 '+pct(B[0],1)+' ～ '+pct(B[4],1)+'（按过去一年波动推算，不是预测）'));
+  else if(has(f))right.appendChild(el('div',{'class':'fu-dnote'},'未来 1 个月：上市不满两个月，算不出'));
+  if(f.yield)right.appendChild(el('div',{'class':'fu-dnote'},'预期年化 '+(f.yield.kind==='approx'?'≈':'')+f.yield.value.toFixed(2)+'%（'+f.yield.label+'，'+f.yield.asOf+(f.yield.stale?'，过期':'')+'）'));
+  right.appendChild(el('div',{'class':'fu-dnote'},'* 从 '+f.first+' 起（最多取一年）。最新价 '+fmtPx(f.last)+' '+(f.currency||'')+'，'+f.date+'，来源：'+srcName(f)));
   box.appendChild(right);return box;}
 
 function staleText(f){if(!f.error)return'';return'没取到，显示的是 '+f.date+' 的数据（'+f.error+'）'}
@@ -379,7 +448,44 @@ function list_(){var p=st.p,L=$('fu-list');L.replaceChildren();$('fu-colp').text
       r.addEventListener('click',tog);r.addEventListener('keydown',function(e){if(e.key==='Enter'||e.key===' '){e.preventDefault();tog()}});
       L.appendChild(r);if(ok&&st.open===f.code)L.appendChild(detail(f));});})});}
 
-function render(){meta();lede();mkcards();scatter();list_()}
+var CATK={'宽基':'fu-broad','债券':'fu-bond','红利':'fu-div'};
+/** 第二版 ①：未来 1 个月的可能区间（按 2/3 那段的宽度从宽到窄排） */
+function ranges(){var arr=shown().filter(band).sort(function(a,b){return(b.band[3]-b.band[1])-(a.band[3]-a.band[1])});
+  var L=$('fu-rg-list'),sc=$('fu-rg-scale').children[1];L.replaceChildren();sc.replaceChildren();
+  var young=shown().filter(function(f){return has(f)&&!band(f)}),none=shown().filter(function(f){return!has(f)}).length;
+  $('fu-rg-sub').textContent='按过去一年的波动推算，不是预测涨跌'+(young.length?' · '+young.length+' 只上市不满两个月，算不出':'')+(none?' · '+none+' 只没有数据':'');
+  var cov=D&&typeof D.band_coverage==='number'?D.band_coverage:null;
+  $('fu-rg-disc').textContent=(cov!=null?'回测：拿过去一年每一段 1 个月（21 个交易日）对照，平均 '+Math.round(cov*100)+'% 的时候真实涨跌落在深色段里（设计目标约 2/3）。':'')+'只说明波动有多大，不代表会涨或会跌；不是投资建议。';
+  if(!arr.length){L.appendChild(el('div',{'class':'fu-empty'},ITEMS.some(has)?'没有上市满两个月的产品，算不出':'还没有数据'));return}
+  var lim=Math.max.apply(null,arr.map(function(f){return Math.max(Math.abs(f.band[0]),Math.abs(f.band[4]))}));lim=Math.max(1,Math.ceil(lim/5)*5);
+  var X=function(v){return 50+v/lim*50};
+  [-lim,-lim/2,0,lim/2,lim].forEach(function(v){sc.appendChild(el('span',{style:'left:'+X(v)+'%'},(v>0?'+':v<0?'−':'')+Math.abs(v)+'%'))});
+  arr.forEach(function(f){var B=f.band,r=el('div',{'class':'fu-rg-row','data-rg':f.code}),nm=el('div',{'class':'nm'});nm.appendChild(document.createTextNode(f.name));nm.appendChild(el('small',null,f.code));r.appendChild(nm);
+    var col='var(--'+CATK[f.category]+')',t=el('div',{'class':'fu-rg-track',role:'img','aria-label':f.name+' 未来 1 个月：大约 2/3 的可能在 '+pct(B[1],1)+' 到 '+pct(B[3],1)+'，大约 95% 在 '+pct(B[0],1)+' 到 '+pct(B[4],1)});
+    t.appendChild(el('span',{'class':'axis'}));
+    t.appendChild(el('span',{'class':'b95',style:'left:'+X(B[0])+'%;width:'+Math.max(.4,X(B[4])-X(B[0]))+'%;background:'+col}));
+    t.appendChild(el('span',{'class':'b68',style:'left:'+X(B[1])+'%;width:'+Math.max(.4,X(B[3])-X(B[1]))+'%;background:'+col}));
+    t.appendChild(el('span',{'class':'zero',style:'left:50%'}));
+    t.appendChild(el('span',{'class':'mid',style:'left:calc('+X(B[2])+'% - 1px)'}));
+    r.appendChild(t);r.appendChild(el('div',{'class':'fu-rg-v'},pct(B[1],1)+' ～ '+pct(B[3],1)));L.appendChild(r)});
+  if(young.length)L.appendChild(el('div',{'class':'fu-miss'},'上市不满两个月，算不出：'+young.map(function(f){return f.name+'（'+f.code+'）'}).join('、')));}
+/** 第二版 ③：债券类预期年化（从高到低；没取到过的排最后） */
+var QL={auto:'每天自动',approx:'近似'};
+function bonds(){var all=shown().filter(function(f){return f.category==='债券'});$('fu-yb').hidden=!all.length;
+  var L=$('fu-yb-list');L.replaceChildren();if(!all.length)return;
+  var v=function(f){return f.yield&&typeof f.yield.value==='number'?f.yield.value:null};
+  var arr=all.slice().sort(function(a,b){var x=v(a),y=v(b);return x==null?(y==null?0:1):y==null?-1:y-x});
+  var mx=Math.max(1,Math.max.apply(null,arr.map(function(f){return v(f)||0})));
+  arr.forEach(function(f){var y=f.yield,val=v(f),r=el('div',{'class':'fu-yb','data-yb':f.code});
+    var nm=el('div',{'class':'nm'});nm.appendChild(el('b',null,f.name));nm.appendChild(el('span',{'class':'fu-code'},f.code+(f.currency?' · '+f.currency:'')));r.appendChild(nm);
+    var bw=el('div',{'class':'bar-w'});if(val!=null)bw.appendChild(el('div',{'class':'bar'+(y.kind==='approx'?' approx':'')+(y.stale?' stale':''),style:'width:'+Math.max(1,Math.max(0,val)/mx*100)+'%'}));r.appendChild(bw);
+    r.appendChild(el('div',{'class':'v num'+(val==null?' na':'')},val==null?'—':(y.kind==='approx'?'≈':'')+val.toFixed(2)+'%'));
+    var src=el('div',{'class':'src'});
+    if(y){src.appendChild(el('span',{'class':'fu-q '+(y.kind==='approx'?'approx':'auto')},QL[y.kind]||'近似'));if(y.stale)src.appendChild(el('span',{'class':'fu-q stale',title:y.error||''},'过期'));
+      src.appendChild(document.createTextNode(y.label+(y.duration!=null?' · 久期 '+y.duration+' 年':'')+' · '+(y.source||'')+' '+(y.asOf||'').slice(5)+(y.stale&&y.error?'（这次没取到：'+y.error+'）':'')))}
+    else src.appendChild(document.createTextNode('还没有收益率数据，点「刷新数据」时会一起取'));
+    r.appendChild(src);L.appendChild(r)});}
+function render(){meta();lede();mkcards();scatter();ranges();bonds();list_()}
 function showErr(m){$('fu-err').hidden=!m;$('fu-err-t').textContent=m||''}
 async function getJson(url,body){var r;try{r=await fetch(url,{method:body?'POST':'GET',headers:{'content-type':'application/json'},body:body?JSON.stringify(body):undefined,credentials:'same-origin'})}catch(e){throw new Error('网络断了或服务器没回应')}
   var j=await r.json().catch(function(){return{}});
@@ -387,10 +493,13 @@ async function getJson(url,body){var r;try{r=await fetch(url,{method:body?'POST'
   if(!r.ok)throw new Error(j.error||('服务器出错了（'+r.status+'）'));return j}
 async function load(){if(loading)return;loading=true;
   try{D=await getJson(BASE);ITEMS=D.items||[];pruneStale();showErr('');render();
+    // 直接打开 #/funds/rg 这类地址时，数据画出来以后板块的位置变了：画完再滚过去一次（只在进页后第一次读到时）
+    if(goMod){var gm=/^#\\/funds\\/([a-z0-9-]+)/.exec(location.hash),ge=gm&&$('fu-'+gm[1]);goMod=false;if(ge)ge.scrollIntoView({block:'start'})}
     // 上一次刷新的结果文字是按当时的数据写的；服务器的数据时间变了（别的设备 / 窗口刷过）就不再留着它，以服务器为准
     if(!busy&&$('fu-prog').textContent&&(D.fetched_at||null)!==progAt)prog([])}
   catch(e){showErr('基金数据读取失败：'+e.message+(D?'。下面是上次读到的。':'。'));if(!D){$('fu-meta').textContent='没读到';$('fu-lede').textContent='没读到数据，点上面的「再读一次」。'}}
   finally{loading=false}}
+var goMod=false;
 /** 刷新结果文字写下时的数据时间 */
 var progAt=null;
 function prog(parts,err){progAt=D&&D.fetched_at||null;var P=$('fu-prog');P.replaceChildren();P.className='fu-prog'+(err?' err':'');parts.forEach(function(x){P.appendChild(x[1]?el('b',null,x[0]):document.createTextNode(x[0]))})}
@@ -408,6 +517,11 @@ async function refresh(){if(busy)return;busy=true;var btn=$('fu-refresh');btn.di
       if(r.next!=null&&!(r.next>cur))throw new Error('服务器回的进度没有往前走（'+cur+' → '+r.next+'），先停下了，防止请求失控');
       cur=r.next;
       if(cur!=null)prog([['正在取 '],[mk(cur),1],[' · '+r.done+' / '+r.total]]);}
+    // 第二版 ③：45 只取完后再取一次债券收益率（单独一次 POST /api/funds/yields，≤ 45 个对外请求、约 25 秒）；它失败不影响上面的结果，只在债券那块写一句
+    prog([['正在取 '],['债券收益率',1],[' · '+total+' / '+total]]);
+    try{var yr=await getJson(BASE+'/yields',{});var yf=(yr&&yr.failed)||[];
+      $('fu-yb-msg').textContent=yf.length?'这次有 '+yf.length+' 只的收益率没取到（'+yf.map(function(x){return x.code}).join('、')+'），显示的是上次的值，标了"过期"。':''}
+    catch(e){$('fu-yb-msg').textContent='债券收益率这次没取到（'+e.message+'），显示的是上次的值。'}
     STALE=null;await load();
     if(!updated.length){prog([['这次没取到，'+was+'，可以再点一次']],true);return}
     var msg='已更新 '+updated.length+' / '+total+(D&&D.fetched_at?'，数据时间 '+tw(D.fetched_at):'');
@@ -439,6 +553,6 @@ $('fu-retry').addEventListener('click',load);
 // 只在**宽度**变了时重画：手机地址栏伸缩只改高度，重画会把散点的触屏抽屉关掉
 var rt,lastW=window.innerWidth;window.addEventListener('resize',function(){if(window.innerWidth===lastW)return;lastW=window.innerWidth;if($('v-funds').hidden||!D)return;clearTimeout(rt);rt=setTimeout(function(){scatter();if(st.open)list_()},120)});
 /** 每次进这一页（route() 调）都重新 GET /api/funds（不轮询）；已经有数据就先按当前宽度画出来，读到新的再重画。正在刷新时不读（刷完会读） */
-window.fundsOpen=function(){if(D)render();if(!busy)load()};
+window.fundsOpen=function(){goMod=true;if(D)render();if(!busy)load()};
 })();
 `;

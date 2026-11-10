@@ -91,6 +91,8 @@ async function open({ width = 1280, height = 900, colorScheme = 'light', snap = 
     if (res && res.__status) return r.fulfill({ status: res.__status, contentType: 'application/json', body: JSON.stringify(res.body ?? {}) });
     await r.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(res) });
   });
+  // 第二版（研发加的替身，不是断言）：刷完 45 只后页面会调一次 POST /api/funds/yields（债券收益率），这里替掉，免得 CI 里的本地服务真去外网取
+  await ctx.route(/\/api\/funds\/yields(\?.*)?$/, (r) => r.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ updated: [], failed: [], requests: 0, curves: {} }) }));
   await ctx.route(/\/api\/funds(\?.*)?$/, async (r) => {
     if (r.request().method() !== 'GET') return r.fallback();
     api.gets++;
