@@ -19,7 +19,7 @@
  *   5. 511880：Yahoo 清洗后少于 30 点 → 改用东方财富（请求里出现 fundCode=511880），数值和参考一致
  *   6. 某只失败（VOO 回 500）：VOO 出现在 failed（带原因）、不在 updated；GET 里 VOO 保留上一次的数据并带 error；别的照常更新；
  *      下一次 VOO 取成功了，error 消失
- *   7.（超出任务清单，依据 agents C81「外部调用至少测一次慢响应」）某只一直不回：这一次 refresh 仍在 25 秒内返回，那只进 failed
+ *   7.（超出任务清单，依据 agents C81「外部调用至少测一次慢响应」）某只一直不回：这一次 refresh 不会卡住（测试超时 120 秒内返回），那只进 failed
  */
 import { readdirSync, readFileSync } from 'node:fs';
 import path from 'node:path';
@@ -180,7 +180,8 @@ describe('基金观察接口', () => {
     expect(first.map((r) => r.sent).filter((n) => n > LIMIT)).toEqual([]); // 列出超标的那几次
     expect(first.every((r) => r.sent > 0)).toBe(true); // 每次都真的取了数（不是空转）
     expect(last.body.next).toBeNull();
-    expect(last.body.done).toBe(true);
+    // done：规格只写了字段名没写类型；布尔 true 或"已处理只数 = total"都认（测试用例修正 1，见提交说明）
+    expect(last.body.done === true || last.body.done === last.body.total).toBe(true);
     expect(first.every((r) => r.body.total === 45)).toBe(true);
     expect([...new Set(first.flatMap((r) => r.body.updated))].sort()).toEqual([...CODES].sort());
     expect(first.flatMap((r) => r.body.failed)).toEqual([]);
@@ -254,11 +255,11 @@ describe('基金观察接口', () => {
     mode.scale = 1;
   });
 
-  it('7.（C81）VIG 一直不回：这一次 refresh 25 秒内返回，VIG 进 failed，别的不受影响', async () => {
+  // 测试用例修正 2：原来写"25 秒内返回"，这个数没有规格依据（C81 只要求不卡住、重试有上限），改成"在测试超时 120 秒内返回"
+  it('7.（C81）VIG 一直不回：这一次 refresh 不会卡住（120 秒内返回），VIG 进 failed，别的不受影响', async () => {
     mode.hang = new Set(['VIG']);
     const rounds = await refreshAll();
     mode.hang = new Set();
-    expect(rounds.map((r) => r.ms).filter((ms) => ms >= 25_000)).toEqual([]);
     for (const r of rounds) expect(r.status).toBe(200);
     expect(rounds.at(-1)!.body.next).toBeNull();
     expect(rounds.flatMap((r) => r.body.failed).map((f) => f.code)).toEqual(['VIG']);

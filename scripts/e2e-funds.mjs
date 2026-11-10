@@ -9,7 +9,7 @@
  * 数据：test/fixtures/funds/snapshot.json（fetch2.py 2026-11-10 实抓 45 只换成 GET /api/funds 的形状）。原型里的数字是同一次抓的，两边能对上。
  *
  * 覆盖：
- *   A. 入口：登录后在"公共工具"那一页（一级菜单、二级菜单 #sub-tools 或页面里的链接）点得到"基金观察"，点了出现 #t-funds、地址是 #/tools/funds 或 #/funds；
+ *   A. 入口：登录后在"公共工具"那一页（一级菜单、二级菜单 #sub-tools 或页面里的链接）点得到"基金观察"，点了出现 #t-funds（或独立一页 #v-funds）、地址是 #/tools/funds 或 #/funds；
  *      直接打开这个地址也行。打开时**不自动刷新**（不发 POST /api/funds/refresh，取数由 Amos 主动点）。
  *   B. 页面元素：刷新按钮；四个时间段（role=group「时间段」里 4 个按钮：近 1 周 / 近 1 月 / 今年以来 / 近 1 年，aria-pressed）；
  *      市场切换（role=tablist「市场」：全部 45 / 新加坡 14 / 美国 15 / 中国 16，aria-selected）；散点图（svg[role=img]，近 1 年 + 全部时 ≥ 42 个点）；
@@ -26,7 +26,7 @@
  *   全程没有页面脚本报错（pageerror）。
  *
  * 页面约定（研发照加；要改名就在同一个提交里改这里并写明）：
- *   模块 #t-funds；地址 #/tools/funds（或 #/funds）；每只一行带 data-code="<code>"（ES3、511880 这种，不带 .SI/.SS）和 aria-expanded；
+ *   模块 #t-funds（或独立一页 #v-funds，下面统称 #t-funds）；地址 #/tools/funds（或 #/funds）；每只一行带 data-code="<code>"（ES3、511880 这种，不带 .SI/.SS）和 aria-expanded；
  *   时间段按钮组 role="group" aria-label="时间段"、按钮用 aria-pressed；市场 role="tablist" aria-label="市场"、role="tab" 用 aria-selected；
  *   刷新按钮的可见文字含"刷新"；单日 ±3% 的标签不在行里面（原型是顶上一排 .alert）。
  * T-4 提醒：公共工具二级菜单上限 8 项、现在正好 8 项（agents 工作平台/工具台账.md；test/drill.test.ts、test/tts.test.ts、e2e-tools J/H 段守着）。
@@ -43,7 +43,9 @@ const protoAt = process.argv.indexOf('--proto');
 const PROTO = protoAt > 0 ? path.resolve(process.argv[protoAt + 1]) : '';
 const { fails, check } = checker();
 const WAIT = 5000;
-const R = PROTO ? 'main' : '#t-funds';
+// 容器：模块 #t-funds（放在公共工具页里）或独立一页 #v-funds（一级菜单一项，不占公共工具二级菜单，T-4）都认，进页面时按哪个看得见定下来（测试用例修正 3）
+let R = PROTO ? 'main' : '#t-funds';
+const ROOTS = ['#t-funds', '#v-funds'];
 const SNAP = JSON.parse(readFileSync(path.join(ROOT, 'test/fixtures/funds/snapshot.json'), 'utf8'));
 const BY = Object.fromEntries(SNAP.items.map((x) => [x.code, x]));
 const CODES_OF = (m) => SNAP.items.filter((x) => x.market === m).map((x) => x.code);
@@ -97,7 +99,8 @@ async function enter(page) {
   const entry = (await link.count()) ? await link.evaluate((a) => (a.closest('#sub-tools') ? '二级菜单' : a.closest('nav.nav1') ? '一级菜单' : '公共工具页里的链接')) : '';
   if (entry) await link.click();
   else await page.goto(BASE + '/#/tools/funds'); // 找不到入口也接着测页面本身（入口那条单独报红）
-  await page.locator(R).waitFor({ state: 'visible', timeout: WAIT }).catch(() => {});
+  await page.waitForFunction((rs) => rs.some((r) => document.querySelector(r)?.getClientRects().length), ROOTS, { timeout: WAIT }).catch(() => {});
+  R = (await page.evaluate((rs) => rs.find((r) => document.querySelector(r)?.getClientRects().length), ROOTS)) ?? '#t-funds';
   await page.locator(`${R} [data-code][aria-expanded]`).first().waitFor({ state: 'visible', timeout: WAIT }).catch(() => {});
   return { entry, hash: await page.evaluate(() => location.hash) };
 }
@@ -139,7 +142,7 @@ await section('1280 浅色', async () => {
   const at = await enter(page);
   if (!PROTO) {
     check('A 公共工具页点得到"基金观察"（一级菜单 / 二级菜单 / 页面里的链接任一）', !!at.entry, at);
-    check('A 点进去地址是 #/tools/funds 或 #/funds，#t-funds 看得见', /^#\/(tools\/)?funds\b/.test(at.hash) && (await page.locator(R).isVisible()), at);
+    check('A 点进去地址是 #/tools/funds 或 #/funds，#t-funds（或 #v-funds）看得见', /^#\/(tools\/)?funds\b/.test(at.hash) && (await page.locator(R).isVisible()), at);
     check('A 打开页面不自动刷新（没有 POST /api/funds/refresh），读了 GET /api/funds', api.posts.length === 0 && api.gets >= 1, { posts: api.posts.length, gets: api.gets });
   }
   // B
