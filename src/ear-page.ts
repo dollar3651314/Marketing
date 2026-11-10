@@ -45,6 +45,8 @@ export const EAR_CSS = `
 .dr .dr-ear-cmp{font-size:var(--fs-aux);color:var(--muted);margin:var(--s3) 0 0}
 .dr .dr-ear-ex{font-size:var(--fs-body);color:var(--ink);margin:var(--s4) 0 0;overflow-wrap:anywhere}
 .dr .dr-ear-ipa{font-size:18px;color:var(--ink-2);margin:var(--s2) 0 0;overflow-wrap:anywhere}
+.dr .dr-ear-human{font-size:var(--fs-aux);color:var(--ink-2);margin:var(--s3) 0 0}
+.dr .dr-ear-human a{color:var(--teal-ink);font-weight:700;text-decoration:underline;display:inline-block;line-height:18px;padding:13px 6px}
 /* 小结：听对几组 / 错的几组 / 点过「两个听着一样」的几组 */
 .dr .dr-ear-sum{border:1px solid var(--teal);background:var(--teal-soft);border-radius:12px;padding:var(--s4);margin:0 0 var(--s3)}
 .dr .dr-ear-sum .e-t{font-size:var(--fs-mod);font-weight:700;color:var(--teal-ink);margin:0 0 var(--s3)}
@@ -87,6 +89,11 @@ export const EAR_MOD = `<div id="dr-ear" hidden>
       </div>
       <p class="dr-ear-ex" id="dr-ear-ex"></p>
       <p class="dr-ear-ipa" id="dr-ear-ipa"></p>
+      <!-- 上面那两个🔊是 melotts 合成的。合成音可能**把元音念歪**——他听得很清楚、却选错，
+           那是机器的错不是他的耳朵，而「两个听着一样」那个按钮**分不出这一种**（2026-11-10 他第一轮
+           三个元音组全错、辅音组全对，一次都没点那个按钮）。所以这里给真人录音做对照：
+           地址就是内容文件里那个词的「出处」（剑桥词条页，页面上有真人发音），不花一分钱。-->
+      <p class="dr-ear-human">机器念得对不对？<span id="dr-ear-human"></span></p>
     </div>
     <div class="dr-one"><button class="btn primary" type="button" id="dr-ear-next">下一组</button></div>
   </div>
@@ -181,10 +188,25 @@ function eRes(p,j){
   eText('dr-ear-wb','🔊 '+p.b['词']);
   eText('dr-ear-ex',j['差在哪']||p['差在哪']||'');
   eText('dr-ear-ipa',p.a['词']+' '+p.a['音标']+'　·　'+p.b['词']+' '+p.b['音标']);
+  eHuman(p);
   EA.res.push({p:p,对:!!j['对'],一样:!!j['两个听着一样']});
   eText('dr-ear-next',EA.i+1<EA.order.length?'下一组':'看这一轮的小结');
   eShow('dr-ear-play',false);eShow('dr-ear-res',true);
   var m=eq('dr-ear-msg');if(m)m.hidden=true;
+}
+/* 两个词各给一个「听真人念」的链接，跳内容文件里那个词的出处（剑桥词条页，有真人录音）。
+   用 createElement 建，不拼 HTML 字符串。没有出处就不画那个链接。*/
+function eHuman(p){
+  var box=eq('dr-ear-human');if(!box)return;
+  box.textContent='';
+  ['a','b'].forEach(function(k,i){
+    var w=p[k];if(!w||!w['出处'])return;
+    if(i&&box.childNodes.length)box.appendChild(document.createTextNode('　·　'));
+    var a=document.createElement('a');
+    a.href=w['出处'];a.target='_blank';a.rel='noopener noreferrer';
+    a.textContent='听真人念 '+w['词'];
+    box.appendChild(a);
+  });
 }
 function eNext(){EA.i++;if(EA.i<EA.order.length){eGroup();return;}eSum();}
 /* 一行：bad / bed —— 在分 /æ/ 和 /e/ */

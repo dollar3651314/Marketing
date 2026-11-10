@@ -1624,7 +1624,8 @@ try {
       const rs = await p.evaluate(() => {
         const g = (i) => document.getElementById(i);
         return { ver: g('dr-ear-ver').textContent, wa: g('dr-ear-wa').textContent, wb: g('dr-ear-wb').textContent, ex: g('dr-ear-ex').textContent,
-          ipa: g('dr-ear-ipa').textContent, next: g('dr-ear-next').textContent, h: Math.round(g('dr-ear-wa').getBoundingClientRect().height), playHidden: g('dr-ear-play').hidden };
+          ipa: g('dr-ear-ipa').textContent, next: g('dr-ear-next').textContent, h: Math.round(g('dr-ear-wa').getBoundingClientRect().height), playHidden: g('dr-ear-play').hidden,
+          human: [...g('dr-ear-human').querySelectorAll('a')].map((a) => ({ t: a.textContent, href: a.getAttribute('href'), rel: a.getAttribute('rel'), tgt: a.getAttribute('target'), h: Math.round(a.getBoundingClientRect().height) })) };
       });
       const 开头 = 期望 === 'ok' ? '✅ 对了' : 期望 === 'no' ? '❌ 不对' : '你说两个听着一样';
       check(`${tg}：第 ${k + 1} 组答完当场给结果，**点名刚才放的是 ${word}**（${rs.ver}）`,
@@ -1632,6 +1633,15 @@ try {
       check(`${tg}：第 ${k + 1} 组答完，两个词各一个按钮能单独点来听，一行"差在哪"，一行两个音标`,
         rs.wa === '🔊 ' + z.a['词'] && rs.wb === '🔊 ' + z.b['词'] && rs.h >= 52 && rs.ex === z['差在哪'] && rs.ipa.includes(z.a['音标']) && rs.ipa.includes(z.b['音标']),
         { wa: rs.wa, wb: rs.wb, ex: rs.ex, ipa: rs.ipa });
+      // 「听真人念」：两个词各一个外链，地址就是内容文件里那个词的出处（剑桥词条页有真人录音）。
+      // 为什么要它：上面那两个🔊是 melotts 合成的，**合成音可能把元音念歪**——他听得清楚却选错，
+      // 那是机器的错不是他的耳朵，而「两个听着一样」那个按钮分不出这一种（2026-11-10 两轮 16 题他一次都没点）。
+      check(`${tg}：第 ${k + 1} 组答完，两个词各给一个「听真人念」的外链（新标签页 + noopener，点得到 ≥44px）`,
+        rs.human.length === 2
+        && rs.human[0].t === '听真人念 ' + z.a['词'] && rs.human[1].t === '听真人念 ' + z.b['词']
+        && rs.human[0].href === z.a['出处'] && rs.human[1].href === z.b['出处']
+        && rs.human.every((a) => /^https:\/\//.test(a.href) && a.tgt === '_blank' && /noopener/.test(a.rel || '') && a.h >= 44),
+        rs.human);
       if (k === 0) {
         // 两个词都真的点得响（学习就发生在这一刻）
         await p.click('#dr-ear-wa'); await p.click('#dr-ear-wb');
