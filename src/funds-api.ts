@@ -2,13 +2,15 @@
  * 公共工具「基金观察」的服务端：取数（Yahoo / 东方财富）+ 存 D1（迁移 0014 表 fund_snapshot）+ 两个接口。计算口径在 src/funds.ts。
  *
  *   GET  /api/funds          → { fetched_at, items }：45 只按 FUNDS 的顺序，每只是上次取到的快照 + 清单里的名字 / 标签；
- *                              这一只最近一次没取到时带 stale: { reason, at }（页面写"没取到，显示的是 <日期> 的数据"），从没取到过带 error。
- *   POST /api/funds/refresh  {cursor?} → { next|null, done, total, updated, failed:[{code, reason}], requests }
+ *                              这一只最近一次没取到时带 error（原因）和 error_at：有旧快照的照样带着旧数值（页面写"没取到，显示的是 <日期> 的数据"），
+ *                              从没取到过的只有清单字段 + error。
+ *   POST /api/funds/refresh  {cursor?} → { next|null, done, total, updated:[这一批更新了的 code], failed:[{code, reason}], requests }
  *                              从第 cursor 只开始往下取，**这一次对外请求不超过 45 个**（Cloudflare 免费版一次请求最多 50 个对外子请求，留 5 个余量；
  *                              翻页、2y→1y、.SS 回退东方财富、重试都算），取不完就回 next，页面接着调，直到 next 为 null。
  * 和其他 /api 一样要登录（queue.ts adminApi 先验会话再转到这里）。
  *
- * 外部调用（C81）：每次连接 + 读取 15 秒超时；失败（网络错、超时、429、5xx）最多重试 2 次、间隔 1 秒 / 2 秒（照 fetch2.py 的 get）；
+ * 外部调用（C81）：单次请求连接 + 读取 8 秒超时，失败（网络错、超时、429、5xx）最多试 2 次、间隔 1 秒；一次 refresh 调用总时长控制在约 25 秒内
+ * （CALL_BUDGET_MS；15 秒后不再开新的一只，到点还没处理的留给下一批，next 指向它；已经发出的请求照样计入 ≤45）；
  * 404 之类不重试。取不到的那只**保留上次的数据**，只记原因。不在任何事务里调外部接口（先取完，再写库）。
  * 不花钱（底线 8）：两个来源都是公开免费接口，不用密钥。
  */
@@ -21,7 +23,14 @@ export const MAX_REQUESTS = 45;
 export const MAX_FUNDS_PER_CALL = 12;
 /** 东方财富翻页上限（每页 20 条，400 天约 14 页） */
 const EM_MAX_PAGES = 25;
-const TIMEOUT_MS = 15_000;
+/** 单次外部请求超时（连接 + 读取） */
+export const TIMEOUT_MS = 8_000;
+/** 每个外部请求最多试几次（含第一次） */
+export const TRIES = 2;
+/** 一次 refresh 调用的总时长上限（墙钟）：到点还没处理的留给下一批（next 指向它）；已经发出的请求照样计入 ≤45 */
+export const CALL_BUDGET_MS = 25_000;
+/** 过了这么久就不再开新的一只（剩下的时间留给手上这只收尾） */
+const START_CUTOFF_MS = 15_000;
 const UA = 'Mozilla/5.0';
 const EM_REFERER = 'https://fundf10.eastmoney.com/';
 
@@ -34,21 +43,34 @@ export class BudgetOut extends Error {
   constructor() { super('这一批的对外请求数用完了'); }
 }
 
+/** 这一次调用的时间用完了（总时长上限 CALL_BUDGET_MS） */
+export class TimeUp extends Error {
+  constructor() { super('这一批的时间用完了'); }
+}
+
 /** 取数失败的中文原因（页面直接显示） */
 export class FetchFail extends Error {}
 
-/** 带计数、超时、重试的 GET。每发一次（含重试）计一个 */
+/** 带计数、超时、重试的 GET。每发一次（含重试）计一个；deadline 之后不再发新请求，单次超时也不超过离 deadline 剩下的时间 */
 export class Http {
   used = 0;
-  constructor(private f: FetchLike, public max = MAX_REQUESTS, private sleep: (ms: number) => Promise<unknown> = (ms) => new Promise((r) => setTimeout(r, ms))) {}
+  constructor(
+    private f: FetchLike,
+    public max = MAX_REQUESTS,
+    private sleep: (ms: number) => Promise<unknown> = (ms) => new Promise((r) => setTimeout(r, ms)),
+    public deadline = Infinity,
+  ) {}
   get left() { return this.max - this.used; }
   async get(url: string, headers: Record<string, string>, what: string): Promise<unknown> {
     let last = '';
-    for (let i = 0; i < 3; i++) {
+    for (let i = 0; i < TRIES; i++) {
       if (this.used >= this.max) throw new BudgetOut();
+      const rest = this.deadline - Date.now();
+      if (rest <= 0) throw new TimeUp();
+      const limit = Math.min(TIMEOUT_MS, rest);
       this.used++;
       const ac = new AbortController();
-      const timer = setTimeout(() => ac.abort(), TIMEOUT_MS);
+      const timer = setTimeout(() => ac.abort(), limit);
       try {
         const r = await this.f(url, { headers, signal: ac.signal });
         if (r.ok) {
@@ -59,13 +81,16 @@ export class Http {
         if (r.status !== 429 && r.status < 500) throw new FetchFail(last);
       } catch (e) {
         if (e instanceof FetchFail || e instanceof BudgetOut) throw e;
-        last = ac.signal.aborted ? `${what} ${TIMEOUT_MS / 1000} 秒没回应` : `连不上${what}`;
+        last = ac.signal.aborted ? `${what} ${Math.round(limit / 1000)} 秒没回应` : `连不上${what}`;
       } finally {
         clearTimeout(timer);
       }
-      if (i < 2) await this.sleep(1000 * (i + 1));
+      if (i < TRIES - 1) {
+        if (this.deadline - Date.now() <= 1000) break;
+        await this.sleep(1000);
+      }
     }
-    throw new FetchFail(last + '（重试 2 次仍失败）');
+    throw new FetchFail(last + `（试了 ${TRIES} 次）`);
   }
 }
 
@@ -115,7 +140,7 @@ export async function fetchFund(def: FundDef, http: Http, now: number): Promise<
     cur = r.currency;
     pts = cleanPoints(r.points);
   } catch (e) {
-    if (e instanceof BudgetOut) throw e;
+    if (e instanceof BudgetOut || e instanceof TimeUp) throw e;
     yErr = e;
   }
   if (pts.length < MIN_POINTS && def.symbol.endsWith('.SS')) {
@@ -131,7 +156,8 @@ export interface RefreshResult {
   next: number | null;
   done: number;
   total: number;
-  updated: number;
+  /** 这一批更新了的 code */
+  updated: string[];
   failed: { code: string; reason: string }[];
   /** 这一次实际发了几个对外请求 */
   requests: number;
@@ -139,22 +165,24 @@ export interface RefreshResult {
 
 /** 从第 cursor 只开始取一批（≤ 45 个对外请求、≤ 12 只），取到的写 D1，没取到的只记原因 */
 export async function refreshBatch(env: Env, cursor: number, now: number, f: FetchLike = (u, i) => fetch(u, i), sleep?: (ms: number) => Promise<unknown>): Promise<RefreshResult> {
-  const http = new Http(f, MAX_REQUESTS, sleep);
+  const t0 = Date.now();
+  const http = new Http(f, MAX_REQUESTS, sleep, t0 + CALL_BUDGET_MS);
   const total = FUNDS.length;
   const ok: FundSnapshot[] = [];
   const failed: { code: string; reason: string }[] = [];
   let i = cursor, n = 0;
   while (i < total && n < MAX_FUNDS_PER_CALL) {
     const def = FUNDS[i];
-    if (n > 0 && http.left < estimateRequests(def)) break;
+    if (n > 0 && (http.left < estimateRequests(def) || Date.now() - t0 > START_CUTOFF_MS)) break;
     try {
       ok.push(await fetchFund(def, http, now));
     } catch (e) {
-      if (e instanceof BudgetOut && n > 0) {
-        // 额度在这只中途用完：这只整只留给下一批（不算失败）
+      if ((e instanceof BudgetOut || e instanceof TimeUp) && n > 0) {
+        // 额度或时间在这只中途用完：这只整只留给下一批（不算失败）
         break;
       }
-      failed.push({ code: def.code, reason: e instanceof BudgetOut ? '一批的请求数不够取完这一只' : e instanceof Error ? e.message : String(e) });
+      const reason = e instanceof BudgetOut ? '一批的请求数不够取完这一只' : e instanceof TimeUp ? '数据源一直没回应（超过 25 秒）' : e instanceof Error ? e.message : String(e);
+      failed.push({ code: def.code, reason });
     }
     i++; n++;
   }
@@ -164,7 +192,7 @@ export async function refreshBatch(env: Env, cursor: number, now: number, f: Fet
     ...failed.map((x) => env.DB.prepare('INSERT INTO fund_snapshot (code, data, ok_at, err, err_at) VALUES (?1, NULL, NULL, ?2, ?3) ON CONFLICT (code) DO UPDATE SET err = ?2, err_at = ?3').bind(x.code, x.reason.slice(0, 200), now)),
   ];
   if (stmts.length) await env.DB.batch(stmts);
-  return { next: i < total ? i : null, done: i, total, updated: ok.length, failed, requests: http.used };
+  return { next: i < total ? i : null, done: i, total, updated: ok.map((x) => x.code), failed, requests: http.used };
 }
 
 interface Row { code: string; data: string | null; ok_at: number | null; err: string | null; err_at: number | null }
@@ -182,7 +210,8 @@ export async function fundsList(env: Env): Promise<{ fetched_at: string | null; 
     // 名字、标签、市场、类别以代码里的清单为准（改名后旧快照也跟着变）；source 用快照里实际用的
     const item: Record<string, unknown> = { ...(snap ?? {}), market: def.market, category: def.category, name: def.name, code: def.code, symbol: def.symbol, tag: def.tag, source: (snap?.source as string) ?? def.source };
     if (!snap) item.error = r?.err ?? '还没取过';
-    else if (r?.err && (r.err_at ?? 0) > (r.ok_at ?? 0)) item.stale = { reason: r.err, at: new Date(r.err_at!).toISOString() };
+    // 取到时会把 err 清空，所以 err 还在 = 最近一次没取到（不比时间：同一毫秒先成功后失败也算失败，C106）
+    else if (r?.err) { item.error = r.err; if (r.err_at) item.error_at = new Date(r.err_at).toISOString(); }
     return item;
   });
   return { fetched_at: latest ? new Date(latest).toISOString() : null, items };

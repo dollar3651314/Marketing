@@ -172,12 +172,12 @@ function tw(iso){if(!iso)return'';var d=new Date(Date.parse(iso)+8*3600e3).toISO
 function cnt(m){return ITEMS.filter(function(f){return!m||f.market===m}).length}
 
 function meta(){var ok=ITEMS.filter(has).length;
-  $('fu-meta').textContent=D&&D.fetched_at?('数据时间 '+tw(D.fetched_at)+'（台湾时间）· '+ITEMS.length+' 只 · 新加坡、美国、中国'+(ok<ITEMS.length?' · '+(ITEMS.length-ok)+' 只还没有数据':'')):'还没取过数据，点右边「刷新数据」去取（大约半分钟）';
+  $('fu-meta').textContent=D&&D.fetched_at?('数据时间 '+tw(D.fetched_at)+'（台湾时间）· '+ITEMS.length+' 只 · 新加坡、美国、中国'+(ok<ITEMS.length?' · '+(ITEMS.length-ok)+' 只还没有数据':'')):'还没取过数据，点「刷新数据」去取（大约半分钟）';
   document.querySelectorAll('#fu-markets .fu-chip').forEach(function(b){var m=b.dataset.m;b.textContent=(m||'全部')+' '+cnt(m)});}
 
 function lede(){var p=st.p,L=$('fu-lede'),A=$('fu-alerts');L.replaceChildren();A.replaceChildren();
   var list=shown().filter(function(f){return ret(f,p)!=null});
-  if(!list.length){L.textContent=ITEMS.some(has)?(PL[p]+'：'+(st.m||'这几个市场')+'没有上市满这段时间的产品。'):'还没有数据。点右上角「刷新数据」，服务器会分几批去取 45 只的价格。';return}
+  if(!list.length){L.textContent=ITEMS.some(has)?(PL[p]+'：'+(st.m||'这几个市场')+'没有上市满这段时间的产品。'):'还没有数据。点「刷新数据」，服务器会分几批去取 45 只的价格。';return}
   var up=0,down=0;list.forEach(function(f){if(ret(f,p)>0)up++;else if(ret(f,p)<0)down++});
   var best=list.slice().sort(function(a,b){return ret(b,p)-ret(a,p)})[0];
   var wl=list.filter(function(f){return dd(f,p)!=null}),worst=wl.slice().sort(function(a,b){return dd(a,p)-dd(b,p)})[0];
@@ -246,7 +246,9 @@ function spark(f){var s=f.series,W=120,H=36,vals=s.map(function(x){return x[1]})
   return svg;}
 
 function srcName(f){return f.source==='eastmoney'?'东方财富累计净值':'Yahoo 复权价'}
-function detail(f){var box=el('div',{'class':'fu-detail','data-detail':f.code}),s=f.series,W=640,H1=170,H2=80,g=10;
+// 画布宽度按实际可用宽度算（不靠 viewBox 缩放），手机上字也是 12px，不会缩成看不清
+function detailW(){var lw=$('fu-list').clientWidth||700,narrow=matchMedia('(max-width:760px)').matches;return Math.round(Math.max(280,Math.min(760,narrow?lw-16:lw-16-260-24)))}
+function detail(f){var box=el('div',{'class':'fu-detail','data-detail':f.code}),s=f.series,W=detailW(),H1=W<480?150:170,H2=W<480?70:80,g=10;
   var vals=s.map(function(x){return x[1]}),mn=Math.min.apply(null,vals),mx=Math.max.apply(null,vals);if(mx===mn){mx+=1;mn-=1}
   var peak=-Infinity,uw=s.map(function(x){peak=Math.max(peak,x[1]);return(x[1]/peak-1)*100});
   var umin=Math.min(-1,Math.min.apply(null,uw)),n=Math.max(1,s.length-1);
@@ -259,7 +261,7 @@ function detail(f){var box=el('div',{'class':'fu-detail','data-detail':f.code}),
   // 最深的一次回撤：从哪天的高点跌到哪天
   var pk=0,best=0,bp=0,bt=0;for(var i=0;i<s.length;i++){if(s[i][1]>s[pk][1])pk=i;var r=s[i][1]/s[pk][1]-1;if(r<best){best=r;bp=pk;bt=i}}
   if(best<0){svg.appendChild(sv('circle',{cx:X(bp),cy:Y1(s[bp][1]),r:4,fill:'var(--surface)',stroke:'var(--amber)','stroke-width':2}));svg.appendChild(sv('circle',{cx:X(bt),cy:Y1(s[bt][1]),r:4,fill:'var(--amber)'}));
-    var t=sv('text',{x:Math.min(X(bt)+8,W-250),y:Math.min(Y1(s[bt][1])+16,H1-4),'font-size':12,fill:'var(--amber)','font-weight':700,'class':'fu-deep'});t.textContent='最深 '+pct(best*100)+'（'+s[bp][0]+' → '+s[bt][0]+'）';svg.appendChild(t)}
+    var t=sv('text',{x:Math.min(X(bt)+8,W-250),y:Math.min(Y1(s[bt][1])+16,H1-4),'font-size':12,fill:'var(--amber)','font-weight':700,'class':'fu-deep',stroke:'var(--surface-2)','stroke-width':3,'paint-order':'stroke','stroke-linejoin':'round'});t.textContent='最深 '+pct(best*100)+'（'+s[bp][0]+' → '+s[bt][0]+'）';svg.appendChild(t)}
   svg.appendChild(sv('line',{x1:ml,x2:W-mr,y1:Y2(0),y2:Y2(0),stroke:'var(--muted)'}));
   var ud=uw.map(function(v,i){return(i?'L':'M')+X(i).toFixed(1)+' '+Y2(v).toFixed(1)}).join('');
   svg.appendChild(sv('path',{d:ud+'L'+X(s.length-1)+' '+Y2(0)+'L'+X(0)+' '+Y2(0)+'Z',fill:'var(--amber)','fill-opacity':.25}));
@@ -274,7 +276,7 @@ function detail(f){var box=el('div',{'class':'fu-detail','data-detail':f.code}),
   right.appendChild(tb);right.appendChild(el('div',{'class':'fu-dnote'},'* 从 '+f.first+' 起（最多取一年）。最新价 '+fmtPx(f.last)+' '+(f.currency||'')+'，'+f.date+'，来源：'+srcName(f)));
   box.appendChild(right);return box;}
 
-function staleText(f){if(!f.stale)return'';return'这次没取到（'+f.stale.reason+'），显示的是 '+f.date+' 的数据'}
+function staleText(f){if(!f.error)return'';return'没取到，显示的是 '+f.date+' 的数据（'+f.error+'）'}
 function list_(){var p=st.p,L=$('fu-list');L.replaceChildren();$('fu-colp').textContent=PL[p]+'：收益 / 最大回撤';
   var arr=shown();if(!arr.length){L.appendChild(el('div',{'class':'fu-empty'},'暂无'));return}
   var lim=Math.max(1,Math.max.apply(null,arr.map(function(f){return Math.max(Math.abs(ret(f,p)||0),Math.abs(dd(f,p)||0))})));
@@ -284,7 +286,7 @@ function list_(){var p=st.p,L=$('fu-list');L.replaceChildren();$('fu-colp').text
     g.forEach(function(f){var ok=has(f);
       var r=el('div',{'class':'fu-row',role:'button',tabindex:0,'data-code':f.code,'aria-expanded':ok&&st.open===f.code?'true':'false'});
       var nm=el('div',{'class':'fu-nm'});nm.appendChild(el('b',null,f.name));var sub=el('div');sub.appendChild(el('span',{'class':'fu-code'},f.code));if(f.tag)sub.appendChild(el('span',{'class':'fu-tag'},f.tag));nm.appendChild(sub);
-      if(ok&&f.stale)nm.appendChild(el('span',{'class':'fu-stale'},staleText(f)));
+      if(ok&&f.error)nm.appendChild(el('span',{'class':'fu-stale'},staleText(f)));
       if(!ok)nm.appendChild(el('span',{'class':'fu-stale'},'没取到数据'+(f.error&&f.error!=='还没取过'?'：'+f.error:'，点「刷新数据」去取')));
       r.appendChild(nm);
       var px=el('div',{'class':'fu-px'},fmtPx(ok?f.last:null));if(ok)px.appendChild(el('small',null,(f.currency||'')+' · '+f.date.slice(5)));r.appendChild(px);
@@ -315,14 +317,14 @@ async function load(){if(loading)return;loading=true;
 function prog(parts,err){var P=$('fu-prog');P.replaceChildren();P.className='fu-prog'+(err?' err':'');parts.forEach(function(x){P.appendChild(x[1]?el('b',null,x[0]):document.createTextNode(x[0]))})}
 var MK_OF=null;
 async function refresh(){if(busy)return;busy=true;var btn=$('fu-refresh');btn.disabled=true;btn.textContent='正在刷新…';
-  var cur=0,total=ITEMS.length||45,updated=0,failed=[];
+  var cur=0,total=ITEMS.length||45,updated=[],failed=[];
   var mk=function(i){var f=ITEMS[i];return f?f.market:''};
   prog([['正在取 '],[mk(0)||'第一批',1],[' · 0 / '+total]]);
-  try{while(cur!=null){var r=await getJson(BASE+'/refresh',{cursor:cur});total=r.total;updated+=r.updated;failed=failed.concat(r.failed||[]);cur=r.next;
+  try{while(cur!=null){var r=await getJson(BASE+'/refresh',{cursor:cur});total=r.total;updated=updated.concat(r.updated||[]);failed=failed.concat(r.failed||[]);cur=r.next;
       if(cur!=null)prog([['正在取 '],[mk(cur),1],[' · '+r.done+' / '+r.total]]);}
     await load();
-    var msg='已更新 '+updated+' / '+total+(D&&D.fetched_at?'，数据时间 '+tw(D.fetched_at):'');
-    if(failed.length)msg+='；'+failed.length+' 只没取到（'+failed.map(function(x){return x.code}).join('、')+'），那几行显示的是上次的数据';
+    var msg='已更新 '+updated.length+' / '+total+(D&&D.fetched_at?'，数据时间 '+tw(D.fetched_at):'');
+    if(failed.length)msg+='；'+failed.length+' 只没取到（'+failed.map(function(x){return x.code}).join('、')+'），那几行显示的是上次的数据，行里写了原因';
     prog([[msg]],failed.length>0);}
   catch(e){prog([['刷新到 '+(cur||0)+' / '+total+' 停了：'+e.message+'。已取到的已经存好，可以再点一次「刷新数据」（会从头取）。']],true);load();}
   finally{busy=false;btn.disabled=false;btn.textContent='↻ 刷新数据'}}
@@ -330,7 +332,7 @@ document.querySelectorAll('#fu-periods .fu-chip').forEach(function(b){b.addEvent
 document.querySelectorAll('#fu-markets .fu-chip').forEach(function(b){b.addEventListener('click',function(){st.m=b.dataset.m;document.querySelectorAll('#fu-markets .fu-chip').forEach(function(x){x.setAttribute('aria-selected',x===b?'true':'false')});render()})});
 $('fu-refresh').addEventListener('click',refresh);
 $('fu-retry').addEventListener('click',load);
-var rt;window.addEventListener('resize',function(){if($('v-funds').hidden)return;clearTimeout(rt);rt=setTimeout(scatter,120)});
+var rt;window.addEventListener('resize',function(){if($('v-funds').hidden||!D)return;clearTimeout(rt);rt=setTimeout(function(){scatter();if(st.open)list_()},120)});
 /** 进这一页时读一次（route() 调）；已经读到就只按当前宽度重画散点图 */
 window.fundsOpen=function(){if(D){render();return}load()};
 })();
