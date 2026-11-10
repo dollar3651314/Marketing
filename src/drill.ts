@@ -33,10 +33,23 @@
  * **全程不让他打字**（agents #92 把用户当小白）：整块里**一个 `<input>` 都没有**（测试守着），
  * 页面上不出现命令行；进度一眼看得到（第几段 / 这一段第几个 / 还剩几个）。
  *
- * 入口只有 `/api/drill/*`（state、answer），走后台登录（queue.ts 的 sessionOk）；后台密码没填时整个后台 404。
+ * **v2（2026-11-10，Amos 用完 18 项的原话：「没有音标，没有词意解释，做完后不知道该干什么」「不只是加音标 还得有发音 让我可以照着学」）**：
+ *   - **内容（音标 / 重音、词义、用法、第三段「对方先说一句」）全部在 `src/drill-content.ts`**，由产品会话写、研发一个字都不编；
+ *     这里只管结构和逻辑。**内容是 `null` 就整行不显示**（不显示「暂无」、不显示占位符，底线 3）。
+ *   - **第三段改成「对方先说一句，你来接」**：卡片上显示 `STAGE3[id].prompt_en`（对方那句，可点🔊）+ `prompt_zh`（中文情境），
+ *     他要说出 `STAGE3[id].en`。为什么改：原来第三段是第二段 6 条词组加个尾巴，他刚背完立刻考同一句，
+ *     6/6 全对测的是「刚看过」不是「学会了」。**第三段的英文答案以 `STAGE3` 为准**（盖掉下面 `STAGES` 里 s1～s6 的 `en`；
+ *     `STAGES` 留着当底本，`test/drill.test.ts` 第 1 组照旧逐字守着它）。
+ *   - **发音**在 `src/drill-audio.ts`（Workers AI melotts，第一次需要时生成一次、存 D1 永久复用，表 `drill_audio` / 迁移 0014）；
+ *     **复考**在 `src/drill-review.ts`（表 `drill_review` / 迁移 0015）。**这个文件本身仍然一个 AI 都不调、不记一分钱的账、只读写 `drill_item`**
+ *     （测试守着：import 只有 `./env` 和 `./drill-content` 两条，SQL 只出现 `drill_item`）。
+ *
+ * 入口只有 `/api/drill/*`（state、answer；发音 `audio/*` 和复考 `review*` 由 queue.ts 直接分给上面那两个文件），
+ * 走后台登录（queue.ts 的 sessionOk）；后台密码没填时整个后台 404。
  * **不碰密钥**（底线 1）：这里读写的只有场景号、项目编号和三个数字。
  */
 import type { Env } from './env';
+import { CONTENT, STAGE3, W1_KEY } from './drill-content';
 
 // ======================================================================
 // 一、内容：场景 0 的前三段，三段各 6 项（**写死，不从接口来、不从 AI 来**）
@@ -61,7 +74,8 @@ export const STAGES: DrillStage[] = [
     name: '单词',
     ask: '看中文，先在嘴上说出那个英文单词',
     items: [
-      { id: 'w1', zh: '听清', en: 'catch', key: '没听清用 catch，不要用 understand' },
+      // 关键点从内容文件读（W1_KEY，Amos 2026-11-10 定稿），**两边不各存一份**
+      { id: 'w1', zh: '听清', en: 'catch', key: W1_KEY },
       { id: 'w2', zh: '跟得上', en: 'follow', key: "I'm not following = 我跟不上你的思路" },
       { id: 'w3', zh: '意思是', en: 'mean', key: 'What do you mean by X —— by 不能丢' },
       { id: 'w4', zh: '换个说法再说', en: 'rephrase', key: 'repeat 是再说一遍，rephrase 是换种说法' },
@@ -85,15 +99,12 @@ export const STAGES: DrillStage[] = [
   {
     n: 3,
     name: '例句',
-    ask: '看情境，先在嘴上说出一整句英文',
-    items: [
-      { id: 's1', zh: '对方说了个 scope 你不懂', en: 'What do you mean by "scope"?' },
-      { id: 's2', zh: '整句没听清，想让他再说一遍', en: "Sorry, I didn't catch that. Could you say it again?" },
-      { id: 's3', zh: '他说太快了', en: 'Could you slow down a bit? I want to get this right.' },
-      { id: 's4', zh: '他那句话绕，想让他换个说法', en: "Could you rephrase that? I'm not sure I follow." },
-      { id: 's5', zh: '确认他是不是要周五之前要', en: 'Just to make sure I understand — you need it by Friday?' },
-      { id: 's6', zh: '复述他的结论：先上简单版本', en: "So what you're saying is we should ship the simple version first." },
-    ],
+    ask: '先听对方说的那一句，再接出一整句英文',
+    // **第三段的内容不在这里**：6 项全部从 `src/drill-content.ts` 的 STAGE3 读（对方那句 prompt_en、
+    // 中文情境 prompt_zh、他要说出来的 en），**两边不各存一份**。
+    // 为什么改成「对方先说一句，你来接」：旧版 s1～s6 是第二段 6 条词组加个尾巴，他刚背完立刻考同一句，
+    // 2026-11-09 第二段 6/6、第三段 6/6——全对测的是「刚看过」不是「学会了」。
+    items: ['s1', 's2', 's3', 's4', 's5', 's6'].map((id) => ({ id, zh: STAGE3[id].prompt_zh, en: STAGE3[id].en })),
   },
 ];
 
@@ -104,6 +115,93 @@ export const STAGE4_NOTE = '第四段对话还没做，下一版加';
 export const ALL_IDS: string[] = STAGES.flatMap((s) => s.items.map((i) => i.id));
 /** 项目编号 → 它在哪一段（1 / 2 / 3） */
 export const STAGE_OF = new Map<string, number>(STAGES.flatMap((s) => s.items.map((i) => [i.id, s.n] as [string, number])));
+
+// ======================================================================
+// 一·二、内容文件（src/drill-content.ts）贴上来：音标 / 重音、词义、用法、第三段「对方先说一句」
+//   **研发不编内容**：下面只做"有就显示、null 就整行不显示"的合并，一个字都不在这里写死。
+// ======================================================================
+
+/** 内容里的一项：有字就原样给（去掉首尾空白），**空的 / 没给的一律 null**——页面照这个整行不显示，不造占位词（底线 3） */
+export const orNull = (v: string | null | undefined): string | null => {
+  const t = (v ?? '').trim();
+  return t ? t : null;
+};
+/** 这一项的关键点（只有第一段有；w1 那条在内容文件里，见上面 `STAGES`） */
+export const keyOf = (item: DrillItem): string => (item.key ?? '').trim();
+
+/** 第三段「对方先说一句」：两段都是空字符串就当**没有**（占位版就是空的，页面上什么都不显示） */
+export function promptOf(id: string): { en: string; zh: string } | null {
+  const p = STAGE3[id];
+  if (!p) return null;
+  const en = (p.prompt_en ?? '').trim();
+  const zh = (p.prompt_zh ?? '').trim();
+  return en || zh ? { en, zh } : null;
+}
+
+/** 他要说出来的那句英文：**第三段以 `STAGE3` 为准**（盖掉 `STAGES` 里原来的 s1～s6） */
+export const enOf = (item: DrillItem): string => (STAGE3[item.id]?.en ?? '').trim() || item.en;
+/** 卡片上先显示的中文：第三段用 `prompt_zh`，没有就退回 `STAGES` 的中文情境 */
+export const zhOf = (item: DrillItem): string => promptOf(item.id)?.zh || item.zh;
+
+/**
+ * 发音的编号：18 项各一段，**另加第三段 6 句「对方说的那句」**（`s1p`～`s6p`）。
+ * 一共 24 段，第一次需要时生成一次就存 D1（src/drill-audio.ts、表 `drill_audio`）。
+ */
+export const AUDIO_IDS: string[] = [...ALL_IDS, ...STAGES[2].items.map((i) => i.id + 'p')];
+
+/** 念出来之前只去掉"给眼睛看的符号"（填空的 ___、破折号），**不改一个词** */
+export const sayText = (en: string): string => en.replace(/_+/g, ' ').replace(/[—–-]+$/g, ' ').replace(/\s+/g, ' ').trim();
+
+/** 某一段发音要念的英文；编号不认识回 null（内容文件没给「对方说的那句」时，`s#p` 也回 null） */
+export function audioTextOf(audioId: string): string | null {
+  if (/^s[1-6]p$/.test(audioId)) {
+    const pr = promptOf(audioId.slice(0, -1));
+    return pr?.en ? sayText(pr.en) : null;
+  }
+  const item = STAGES.flatMap((s) => s.items).find((i) => i.id === audioId);
+  return item ? sayText(enOf(item)) : null;
+}
+
+/**
+ * 两句话有没有 **n 个词以上**的连续重合。
+ * 第三段「对方说的那句」会**显示在卡片上**（那是对方的话，不是答案），所以它里面不许藏着答案；
+ * `test/drill.test.ts` 用这个守着内容文件（产品换内容也得过这一关）。
+ */
+export function sharesWordRun(a: string, b: string, n = 4): boolean {
+  const words = (t: string) => t.toLowerCase().replace(/[^a-z0-9' ]+/g, ' ').split(/\s+/).filter(Boolean);
+  const [A, B] = [words(a), words(b)];
+  if (A.length < n || B.length < n) return false;
+  const runs = new Set<string>();
+  for (let i = 0; i + n <= A.length; i++) runs.add(A.slice(i, i + n).join(' '));
+  for (let i = 0; i + n <= B.length; i++) if (runs.has(B.slice(i, i + n).join(' '))) return true;
+  return false;
+}
+
+/**
+ * 卡片上要的一整项。**null 的一律不显示那一行**（页面照这个画，不自己造"暂无"）。
+ *   音标：只有第一段给（`CONTENT[id].ipa`）；重音提示：第二、三段给（`CONTENT[id].stress`）。
+ *   发音：`发音` 是他要说的那句，`对方发音` 是第三段对方说的那句（没有就 null）。
+ */
+export function cardOf(item: DrillItem): Record<string, unknown> {
+  const n = STAGE_OF.get(item.id) ?? 0;
+  const c = CONTENT[item.id];
+  const pr = promptOf(item.id);
+  return {
+    id: item.id,
+    段: n,
+    中文: zhOf(item),
+    英文: enOf(item),
+    关键点: keyOf(item),
+    音标: n === 1 ? orNull(c?.ipa) : null,
+    重音: n === 1 ? null : orNull(c?.stress),
+    字面意思: orNull(c?.meaning),
+    什么场合用: orNull(c?.usage),
+    对方说的: pr?.en || null,
+    对方说的中文: pr?.zh || null,
+    发音: item.id,
+    对方发音: n === 3 && pr?.en ? item.id + 'p' : null,
+  };
+}
 
 // ======================================================================
 // 二、纯函数：进度、队列、门禁（服务端和测试共用，不碰数据库）
@@ -185,11 +283,11 @@ export function drillState(rows: DrillRow[]): Record<string, unknown> {
       // 「看全部」：这一段 6 项都列出来；**没练到的不剧透**（英文给 null，页面写"还没练到"）
       六项: show.items.map((i) => {
         const r = by.get(i.id);
-        return { id: i.id, 中文: i.zh, 英文: passed(r) ? i.en : null, 关键点: passed(r) ? i.key ?? '' : null, 会了: passed(r), 第一次就会: !!r && r.pass_try === 1 };
+        return { id: i.id, 中文: zhOf(i), 英文: passed(r) ? enOf(i) : null, 关键点: passed(r) ? keyOf(i) : null, 会了: passed(r), 第一次就会: !!r && r.pass_try === 1 };
       }),
     },
-    // 现在考哪一项（英文和关键点一起给，页面先藏着，点「看答案」当场显示，不用再跑一趟接口）
-    当前: now ? { id: now.id, 段: show.n, 中文: now.zh, 英文: now.en, 关键点: now.key ?? '' } : null,
+    // 现在考哪一项（英文、关键点、音标 / 重音、词义、用法一起给，页面先藏着，点「看答案」当场显示，不用再跑一趟接口）
+    当前: now ? cardOf(now) : null,
     全部走完: done,
     小结: done ? stats.map((s) => ({ 段: s.段, 名字: s.名字, 会了: s.会了, 一共: s.一共, 第一次就会: s.第一次就会 })) : null,
     第四段: STAGE4_NOTE,
