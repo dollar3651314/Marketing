@@ -4,12 +4,12 @@
  */
 import { readdirSync, readFileSync } from 'node:fs';
 import path from 'node:path';
-import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { getPlatformProxy } from 'wrangler';
 import type { Env } from '../src/env';
 import { handle } from '../src/index';
 import { cleanPoints, FUNDS, maxDrawdown, parseEastmoney, parseYahoo, periodReturn, summarize, type Point } from '../src/funds';
-import { Http, MAX_REQUESTS, refreshBatch, type FetchLike } from '../src/funds-api';
+import { Http, MAX_REQUESTS, refreshBatch, TimeUp, type FetchLike } from '../src/funds-api';
 import { ROOT } from './helpers';
 
 const PASS = 'ci_only_copilot_password_01';
@@ -169,5 +169,63 @@ describe('4. 取数：额度、重试、回退', () => {
     expect(g.items.find((x: any) => x.code === 'ES3').error).toBe('还没取过');
     const bad = await handle(new Request(HOST + '/api/funds/refresh', { method: 'POST', headers: { 'content-type': 'application/json', origin: HOST, cookie: ck }, body: JSON.stringify({ cursor: 45 }) }), env(), NOW);
     expect(bad.status).toBe(400);
+  });
+});
+
+describe('5. 截止打断和失败原因（第二轮修改 9、10）', () => {
+  const good = series(300, '2026-11-09', (i) => 100 + i * 0.01);
+  /** 一直不回、直到被 abort 的替身 */
+  const hang: FetchLike = (_u, init) => new Promise((_res, rej) => init?.signal?.addEventListener('abort', () => rej(new DOMException('aborted', 'AbortError'))));
+  it('Http：被截止截短的请求抛 TimeUp（不当成数据源没回应），来不及再试一次也抛 TimeUp', async () => {
+    vi.useFakeTimers({ now: NOW, toFake: ['setTimeout', 'clearTimeout', 'Date'] });
+    try {
+      const h = new Http(hang, 45, noSleep, Date.now() + 3_000); // 只剩 3 秒：第一次就被截短
+      const p = h.get('https://x', {}, 'Yahoo').catch((e) => e);
+      await vi.advanceTimersByTimeAsync(3_100);
+      const e = await p;
+      expect(e).toBeInstanceOf(TimeUp);
+      expect(h.used).toBe(1);
+      const h2 = new Http(hang, 45, noSleep, Date.now() + 8_500); // 第一次等满 8 秒，剩 0.5 秒不够再试
+      const p2 = h2.get('https://x', {}, 'Yahoo').catch((e) => e);
+      await vi.advanceTimersByTimeAsync(8_600);
+      const e2 = await p2;
+      expect(e2).toBeInstanceOf(TimeUp);
+      expect((e2 as TimeUp).detail).toBe('Yahoo 8 秒没回应（试了 1 次）');
+    } finally { vi.useRealTimers(); }
+  });
+  it('Http：两次都等满才算失败，原因写实际秒数和次数（不出现 0 秒 / 1 秒）', async () => {
+    vi.useFakeTimers({ now: NOW, toFake: ['setTimeout', 'clearTimeout', 'Date'] });
+    try {
+      const h = new Http(hang, 45, noSleep);
+      const p = h.get('https://x', {}, 'Yahoo').catch((e) => e);
+      await vi.advanceTimersByTimeAsync(17_000);
+      expect(String(((await p) as Error).message)).toBe('Yahoo 8 秒没回应（试了 2 次）');
+    } finally { vi.useRealTimers(); }
+  });
+  it('批中被 25 秒截止打断的那只留给下一批：不进 failed、不写 err', async () => {
+    vi.useFakeTimers({ now: NOW, toFake: ['setTimeout', 'clearTimeout', 'Date'] });
+    try {
+      const i = FUNDS.findIndex((x) => x.code === 'VOO');
+      const second = FUNDS[i + 1].symbol;
+      // 第一只 14 秒才回（还没到 15 秒，会开第二只）；第二只一直不回 → 8 秒 + 1 秒 + 被截止截短
+      const f: FetchLike = (u, init) => (u.includes(encodeURIComponent(second)) ? hang(u, init) : new Promise((res) => setTimeout(() => res(ok(yahooJson(good))), 14_000)));
+      let out: any;
+      const p = refreshBatch(env(), i, NOW, f).then((r) => (out = r));
+      for (let k = 0; k < 4000 && !out; k++) await vi.advanceTimersByTimeAsync(10);
+      await p;
+      expect(out.updated).toEqual(['VOO']);
+      expect(out.failed).toEqual([]);
+      expect(out.next).toBe(i + 1);
+      const row = await db.prepare('SELECT err FROM fund_snapshot WHERE code = ?1').bind(FUNDS[i + 1].code).first();
+      expect(row).toBeNull();
+    } finally { vi.useRealTimers(); }
+  });
+  it('Yahoo 回 chart.error：失败原因带上 description', async () => {
+    const i = FUNDS.findIndex((x) => x.code === 'VOO');
+    const body = { chart: { result: null, error: { code: 'Not Found', description: 'No data found, symbol may be delisted' } } };
+    const r404 = await refreshBatch(env(), i, NOW, async () => new Response(JSON.stringify(body), { status: 404 }), noSleep);
+    expect(r404.failed[0]).toEqual({ code: 'VOO', reason: 'Yahoo回 404：No data found, symbol may be delisted' });
+    const r200 = await refreshBatch(env(), i, NOW, async () => ok(body), noSleep);
+    expect(r200.failed[0].reason).toBe('Yahoo 没有这只的数据：No data found, symbol may be delisted');
   });
 });

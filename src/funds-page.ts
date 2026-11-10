@@ -18,8 +18,9 @@ export const FUNDS_CSS = `
 #v-funds .fu-head{display:flex;flex-wrap:wrap;align-items:flex-end;justify-content:space-between;gap:var(--s3)}
 #v-funds .fu-head h1{margin:0;font-size:var(--fs-page);line-height:1.3}
 #v-funds .fu-meta{color:var(--muted);font-size:var(--fs-aux)}
-#v-funds .fu-refresh{display:flex;align-items:center;gap:var(--s3);flex-wrap:wrap;justify-content:flex-end}
-#v-funds .fu-prog{font-size:var(--fs-aux);color:var(--muted);min-width:0}
+#v-funds .fu-refresh{display:flex;align-items:center;flex:0 0 auto}
+#v-funds .fu-prog{font-size:var(--fs-aux);color:var(--muted);min-width:0;margin-top:calc(var(--s3) * -1);line-height:1.6;overflow-wrap:anywhere}
+#v-funds .fu-prog:empty{display:none}
 #v-funds .fu-prog b{color:var(--teal-ink)}
 #v-funds .fu-prog.err{color:var(--err)}
 #v-funds .btn{display:inline-flex;align-items:center;gap:6px;min-height:38px;padding:0 16px;font-size:14px;border-radius:var(--r-btn);white-space:nowrap}
@@ -61,6 +62,12 @@ export const FUNDS_CSS = `
 #v-funds .fu-scbox{position:relative;margin-top:var(--s2)}
 #v-funds .fu-scbox svg{display:block;width:100%;height:auto}
 #v-funds .fu-tip{position:absolute;pointer-events:none;background:var(--surface);border:1px solid var(--line);box-shadow:0 8px 24px rgba(0,0,0,.14);border-radius:10px;padding:8px 12px;font-size:var(--fs-aux);white-space:nowrap;z-index:5}
+#v-funds .fu-tip.touch{pointer-events:auto;white-space:normal;width:min(300px,calc(100% - 8px));padding:4px 10px;max-height:216px;overflow-y:auto;overscroll-behavior:contain}
+#v-funds .fu-tip .it{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:center;gap:2px 8px;padding:6px 0}#v-funds .fu-tip .it+.it{border-top:1px solid var(--line)}
+#v-funds .fu-tip .it b{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+#v-funds .fu-tip .it .num{grid-column:1;font-size:12px;color:var(--ink-2)}
+#v-funds .fu-tip .go{grid-column:2;grid-row:1 / span 2;display:inline-flex;align-items:center;min-height:36px;padding:0 10px;border:1px solid var(--line);border-radius:99px;background:var(--surface-2);color:var(--teal-ink);font:inherit;font-size:var(--fs-aux);font-weight:700;cursor:pointer;white-space:nowrap}
+#v-funds .fu-tip .more{color:var(--muted);font-size:12px;padding:4px 0}
 #v-funds .fu-empty{padding:var(--s5) 0;text-align:center;color:var(--muted)}
 #v-funds .fu-group{display:flex;align-items:center;gap:var(--s2);font-size:var(--fs-aux);color:var(--muted);font-weight:700;padding:var(--s4) 0 var(--s2);border-bottom:1px solid var(--line)}
 #v-funds .fu-group i{width:10px;height:10px;border-radius:50%}
@@ -75,9 +82,11 @@ export const FUNDS_CSS = `
 #v-funds .fu-code{font-size:12px;color:var(--muted);margin-right:6px;font-family:var(--mono)}
 #v-funds .fu-tag{display:inline-block;font-size:12px;color:var(--amber);background:var(--amber-soft);border-radius:4px;padding:0 6px;margin-right:4px;line-height:18px}
 #v-funds .fu-stale{display:block;font-size:12px;color:var(--err);margin-top:2px}
+#v-funds .fu-old{display:inline-block;font-size:12px;color:var(--ink-2);background:var(--gray-soft);border-radius:4px;padding:0 6px;line-height:18px}
 #v-funds .fu-px{text-align:right;font-variant-numeric:tabular-nums}#v-funds .fu-px small{display:block;color:var(--muted);font-size:12px}
 #v-funds .fu-d1{text-align:right;font-variant-numeric:tabular-nums;font-size:var(--fs-aux)}
 #v-funds .fu-d1.hot{font-weight:700}#v-funds .fu-d1.hot::before{content:"⚑ ";font-size:12px}
+#v-funds .fu-d1 .k{display:none;color:var(--muted);font-weight:400;font-size:12px;margin-right:4px}
 #v-funds .pos{color:var(--ok)}#v-funds .neg{color:var(--err)}#v-funds .na{color:var(--muted)}
 #v-funds .fu-bars{display:flex;flex-direction:column;gap:5px;min-width:0}
 #v-funds .fu-bl{display:grid;grid-template-columns:52px minmax(0,1fr) 62px;align-items:center;gap:6px;font-size:12px}
@@ -103,6 +112,7 @@ export const FUNDS_CSS = `
   #v-funds .fu-row{grid-template-columns:minmax(0,1fr) auto;grid-template-areas:"nm px" "bars bars" "spark d1"}
   #v-funds .fu-row .fu-nm{grid-area:nm}#v-funds .fu-row .fu-px{grid-area:px}#v-funds .fu-row .fu-d1{grid-area:d1;align-self:end}#v-funds .fu-row .fu-bars{grid-area:bars}#v-funds .fu-row .fu-spark{grid-area:spark}
   #v-funds .fu-detail{grid-template-columns:minmax(0,1fr)}
+  #v-funds .fu-d1 .k{display:inline}
 }
 @media (prefers-reduced-motion:no-preference){#v-funds .fu-track i{transition:width .35s ease,left .35s ease}}
 `;
@@ -111,8 +121,9 @@ export const FUNDS_CSS = `
 export const FUNDS_MOD = `<section class="page plat" id="v-funds" hidden>
   <div class="fu-head">
     <div><h1>基金观察</h1><div class="fu-meta num" id="fu-meta">读取中…</div></div>
-    <div class="fu-refresh"><span class="fu-prog" id="fu-prog" aria-live="polite"></span><button class="btn primary" id="fu-refresh" type="button">↻ 刷新数据</button></div>
+    <div class="fu-refresh"><button class="btn primary" id="fu-refresh" type="button">↻ 刷新数据</button></div>
   </div>
+  <div class="fu-prog" id="fu-prog" aria-live="polite"></div>
   <div class="fu-errbar" id="fu-err" role="alert" hidden><span id="fu-err-t"></span><span class="sp"></span><button class="btn small" type="button" id="fu-retry">再读一次</button></div>
   <section class="fu-card" aria-label="总结">
     <p class="fu-lede" id="fu-lede">读取中…</p>
@@ -144,7 +155,7 @@ export const FUNDS_MOD = `<section class="page plat" id="v-funds" hidden>
       <li><b>最大回撤</b>：所选时间段里，从最高点跌到之后最低点的最大跌幅。比如"近 1 年 −10.9%"表示这一年里最多从高点回落过 10.9%。</li>
       <li>收益和回撤都按含分红的复权价算。场内 ETF 和新加坡场外基金来自 Yahoo Finance；000171、217003 和 Yahoo 缺历史的上交所 ETF（例如 511880）来自东方财富累计净值。</li>
       <li>"刷新数据"由服务器分几批去取（每批最多 45 个请求），全部取完大约半分钟；某只没取到时保留上次的数据，并在那一行标出"没取到，显示的是哪天的数据"。</li>
-      <li>上市不满某段时间的，那一段的格子是空的（写"上市不足"）；展开那一行看"上市以来"（最多一年）。</li>
+      <li>上市不满某段时间的，那一段写"上市不足"；展开那一行看"上市以来"（最多一年）。</li>
       <li>0P00006FY6 是按名称推断的代码，净值比场内产品晚几天。511990、511880 是货币 ETF，几乎不动。</li>
     </ul>
   </details>
@@ -168,11 +179,19 @@ function ret(f,p){return has(f)?(f[p]==null?null:f[p]):null}
 function dd(f,p){return has(f)?(f['dd_'+p]==null?null:f['dd_'+p]):null}
 function shown(){return ITEMS.filter(function(f){return!st.m||f.market===st.m})}
 function fmtPx(v){return v==null?'—':v.toFixed(v<10?3:2)}
+/** ISO → UTC+8 的 "2026-11-10 17:43"（新加坡时间） */
 function tw(iso){if(!iso)return'';var d=new Date(Date.parse(iso)+8*3600e3).toISOString();return d.slice(0,10)+' '+d.slice(11,16)}
 function cnt(m){return ITEMS.filter(function(f){return!m||f.market===m}).length}
+var TZ='（新加坡时间）';
+/** 刷新中途断了时，没轮到的那几只（code → 刷新前的数据时间），整次刷完成功才清掉 */
+var STALE=null;
+/** 显示的是上次数据的那几只：这次刷新中途断了没轮到的，或者服务器记的 ok_at 比标题的数据时间早 30 分钟以上 → 那几行标"上次数据"，标题也写明 */
+function oldAt(f){if(!has(f))return null;if(STALE&&STALE.codes[f.code])return STALE.at||f.ok_at||null;if(f.ok_at&&D&&D.fetched_at&&Date.parse(D.fetched_at)-Date.parse(f.ok_at)>18e5)return f.ok_at;return null}
+function isOld(f){return!!(has(f)&&((STALE&&STALE.codes[f.code])||oldAt(f)))}
+function oldest(list){var t=null;list.forEach(function(f){var a=oldAt(f);if(a&&(!t||a<t))t=a});return t}
 
-function meta(){var ok=ITEMS.filter(has).length;
-  $('fu-meta').textContent=D&&D.fetched_at?('数据时间 '+tw(D.fetched_at)+'（台湾时间）· '+ITEMS.length+' 只 · 新加坡、美国、中国'+(ok<ITEMS.length?' · '+(ITEMS.length-ok)+' 只还没有数据':'')):'还没取过数据，点「刷新数据」去取（大约半分钟）';
+function meta(){var ok=ITEMS.filter(has).length,old=ITEMS.filter(isOld);
+  $('fu-meta').textContent=D&&D.fetched_at?('数据时间 '+tw(D.fetched_at)+TZ+(old.length?'，其中 '+old.length+' 只还是上次'+(oldest(old)?' '+tw(oldest(old)):'')+' 的数据':'')+' · '+ITEMS.length+' 只 · 新加坡、美国、中国'+(ok<ITEMS.length?' · '+(ITEMS.length-ok)+' 只还没有数据':'')):'还没取过数据，点「刷新数据」去取（大约半分钟）';
   document.querySelectorAll('#fu-markets .fu-chip').forEach(function(b){var m=b.dataset.m;b.textContent=(m||'全部')+' '+cnt(m)});}
 
 function lede(){var p=st.p,L=$('fu-lede'),A=$('fu-alerts');L.replaceChildren();A.replaceChildren();
@@ -201,17 +220,19 @@ function mkcards(){var C=$('fu-mkcards'),p=st.p;C.replaceChildren();
     var bar=el('div',{'class':'fu-updown',role:'img','aria-label':up+' 只涨，'+down+' 只跌'}),n=list.length||1;
     bar.appendChild(el('i',{style:'width:'+up/n*100+'%;background:var(--ok)'}));bar.appendChild(el('i',{style:'width:'+(list.length?(n-up-down)/n*100:0)+'%;background:var(--muted);opacity:.4'}));bar.appendChild(el('i',{style:'width:'+down/n*100+'%;background:var(--err)'}));
     c.appendChild(bar);
-    var miss=all.length-list.length;
-    c.appendChild(el('div',{'class':'fu-note num'},up+' 只涨 · '+down+' 只跌'+(miss?' · '+miss+' 只上市不满这段时间或没有数据':'')));
+    var young=all.filter(function(f){return has(f)&&ret(f,p)==null}).length,none=all.filter(function(f){return!has(f)}).length;
+    c.appendChild(el('div',{'class':'fu-note num'},up+' 只涨 · '+down+' 只跌'+(young?' · '+young+' 只上市不满这段时间':'')+(none?' · '+none+' 只没有数据':'')));
     C.appendChild(c);});}
 
 function ticks(a,b,n){var step=Math.pow(10,Math.floor(Math.log10((b-a)/n)));var e=(b-a)/n/step;step*=e>5?10:e>2?5:e>1?2:1;var t=[];for(var v=Math.ceil(a/step)*step;v<=b+1e-9;v+=step)t.push(+v.toFixed(6));return t}
 function scatter(){var p=st.p,list=shown().filter(function(f){return ret(f,p)!=null&&dd(f,p)!=null});
-  var svg=$('fu-scatter'),box=$('fu-scbox'),tip=$('fu-tip');tip.hidden=true;
-  var W=Math.max(300,box.clientWidth||600),H=Math.round(Math.min(420,Math.max(240,W*.5)));
+  var svg=$('fu-scatter'),box=$('fu-scbox'),tip=$('fu-tip');tip.hidden=true;tip.className='fu-tip';
+  // 手机上画高一点（点分得更开，左下那一团也点得开）
+  var W=Math.max(300,box.clientWidth||600),H=Math.round(Math.min(420,Math.max(W<600?360:240,W*.5)));
   svg.replaceChildren();svg.setAttribute('viewBox','0 0 '+W+' '+H);
   svg.setAttribute('aria-label',PL[p]+'各产品收益与最大回撤散点图，共 '+list.length+' 只');
-  $('fu-sc-sub').textContent='横轴：'+PL[p]+'最大回撤（越往右跌得越深）；纵轴：'+PL[p]+'收益';
+  var young=shown().filter(function(f){return has(f)&&ret(f,p)==null}).length;
+  $('fu-sc-sub').textContent='横轴：'+PL[p]+'最大回撤（越往右跌得越深）；纵轴：'+PL[p]+'收益'+(young?'；'+young+' 只上市不满这段时间':'');
   if(!list.length){var t0=sv('text',{x:W/2,y:H/2,'text-anchor':'middle','font-size':13,fill:'var(--muted)'});t0.textContent='还没有数据';svg.appendChild(t0);return}
   var xs=list.map(function(f){return-dd(f,p)}),ys=list.map(function(f){return ret(f,p)});
   var xmax=Math.max(1,Math.max.apply(null,xs))*1.08,ymin=Math.min(0,Math.min.apply(null,ys)),ymax=Math.max(0,Math.max.apply(null,ys));var pad=(ymax-ymin)*.08||1;ymin-=pad;ymax+=pad;
@@ -221,15 +242,33 @@ function scatter(){var p=st.p,list=shown().filter(function(f){return ret(f,p)!=n
   ticks(ymin,ymax,5).forEach(function(v){g.appendChild(sv('line',{x1:m.l,x2:W-m.r,y1:Y(v),y2:Y(v),stroke:v===0?'var(--muted)':'var(--fu-grid)'}));var t=sv('text',{x:m.l-8,y:Y(v)+4,'text-anchor':'end','font-size':12,fill:'var(--muted)'});t.textContent=(v>0?'+':v<0?'−':'')+Math.abs(v)+'%';g.appendChild(t)});
   ticks(0,xmax,5).forEach(function(v){g.appendChild(sv('line',{x1:X(v),x2:X(v),y1:m.t,y2:H-m.b,stroke:'var(--fu-grid)'}));var t=sv('text',{x:X(v),y:H-m.b+16,'text-anchor':'middle','font-size':12,fill:'var(--muted)'});t.textContent=v===0?'0':'−'+v+'%';g.appendChild(t)});
   var lab=sv('text',{x:W-m.r,y:H-2,'text-anchor':'end','font-size':12,fill:'var(--muted)'});lab.textContent='最大回撤 →';g.appendChild(lab);
+  var dots=[];
+  function go(f){hide();st.open=f.code;list_();var r=document.querySelector('#fu-list [data-code="'+f.code+'"]');if(r){r.scrollIntoView({block:'center'});r.classList.add('flash');setTimeout(function(){r.classList.remove('flash')},1200);r.focus({preventScroll:true})}}
+  function line(f){return f.market+' · '+f.category+' · 收益 '+pct(ret(f,p))+' · 最大回撤 '+pct(dd(f,p))}
+  function place(c){var bx=box.getBoundingClientRect(),r=c.getBoundingClientRect();var x=r.left-bx.left+12,y=r.top-bx.top-tip.offsetHeight-8;tip.style.left=Math.max(0,Math.min(x,bx.width-tip.offsetWidth-4))+'px';tip.style.top=(y<0?r.bottom-bx.top+8:y)+'px'}
+  function hide(){tip.hidden=true;tip.className='fu-tip';dots.forEach(function(d){d.c.setAttribute('r',6)})}
+  /** 鼠标悬停 / 键盘聚焦：只显示一只 */
+  function show(d){hide();tip.replaceChildren();tip.appendChild(el('b',null,d.f.name));tip.appendChild(el('div',{'class':'num'},line(d.f)));tip.hidden=false;place(d.c);d.c.setAttribute('r',8)}
+  /** 触屏点一下：先出浮框（离手指最近的一只 + 附近挤在一起的几只），点「看这一只 →」才跳到那一行 */
+  function showTouch(near){hide();tip.replaceChildren();tip.className='fu-tip touch';
+    if(near.length>3)tip.appendChild(el('div',{'class':'more'},'这里挤了 '+near.length+' 只，按远近排，往下滑看全部（也可以切到单个市场）'));
+    near.forEach(function(d){var it=el('div',{'class':'it'});it.appendChild(el('b',null,d.f.name));it.appendChild(el('div',{'class':'num'},'收益 '+pct(ret(d.f,p))+' · 回撤 '+pct(dd(d.f,p))));
+      var b=el('button',{type:'button','class':'go','data-go':d.f.code},'看这一只 →');b.addEventListener('click',function(e){e.stopPropagation();go(d.f)});it.appendChild(b);tip.appendChild(it)});
+    tip.hidden=false;place(near[0].c);near[0].c.setAttribute('r',8)}
   list.forEach(function(f){
     var c=sv('circle',{cx:X(-dd(f,p)),cy:Y(ret(f,p)),r:6,fill:CAT[f.category],'fill-opacity':.8,stroke:'var(--surface)','stroke-width':1.5,tabindex:0,'data-code':f.code,'aria-label':f.name+' 收益 '+pct(ret(f,p))+' 最大回撤 '+pct(dd(f,p))});
-    c.style.cursor='pointer';
-    function show(){tip.replaceChildren();tip.appendChild(el('b',null,f.name));tip.appendChild(el('div',{'class':'num'},f.market+' · '+f.category+' · 收益 '+pct(ret(f,p))+' · 最大回撤 '+pct(dd(f,p))));tip.hidden=false;var bx=box.getBoundingClientRect(),r=c.getBoundingClientRect();var x=r.left-bx.left+12,y=r.top-bx.top-52;tip.style.left=Math.max(0,Math.min(x,bx.width-tip.offsetWidth-4))+'px';tip.style.top=(y<0?r.bottom-bx.top+8:y)+'px';c.setAttribute('r',8)}
-    function hide(){tip.hidden=true;c.setAttribute('r',6)}
-    c.addEventListener('mouseenter',show);c.addEventListener('focus',show);c.addEventListener('mouseleave',hide);c.addEventListener('blur',hide);
-    function go(){st.open=f.code;list_();var r=document.querySelector('#fu-list [data-code="'+f.code+'"]');if(r){r.scrollIntoView({block:'center'});r.classList.add('flash');setTimeout(function(){r.classList.remove('flash')},1200);r.focus({preventScroll:true})}}
-    c.addEventListener('click',go);c.addEventListener('keydown',function(e){if(e.key==='Enter'||e.key===' '){e.preventDefault();go()}});
-    svg.appendChild(c);});}
+    c.style.cursor='pointer';var d={f:f,c:c};dots.push(d);
+    c.addEventListener('mouseenter',function(){if(!tip.classList.contains('touch'))show(d)});c.addEventListener('focus',function(){if(!tip.classList.contains('touch'))show(d)});
+    c.addEventListener('mouseleave',function(){if(!tip.classList.contains('touch'))hide()});c.addEventListener('blur',function(){if(!tip.classList.contains('touch'))hide()});
+    c.addEventListener('keydown',function(e){if(e.key==='Enter'||e.key===' '){e.preventDefault();go(f)}});
+    svg.appendChild(c);});
+  // 点击统一在整张图上判断：取离点击处最近的点（触屏 22px 内，鼠标 10px 内）；触屏时浮框按远近列出这一圈里的所有点，挤在一起的也点得开
+  var ptr='mouse';svg.onpointerdown=function(e){ptr=e.pointerType||'mouse'};
+  svg.onclick=function(e){var R0=ptr==='mouse'?10:22,near=[];
+    dots.forEach(function(d){var r=d.c.getBoundingClientRect(),dx=r.left+r.width/2-e.clientX,dy=r.top+r.height/2-e.clientY,dist=Math.sqrt(dx*dx+dy*dy);if(dist<=R0)near.push({f:d.f,c:d.c,dist:dist})});
+    near.sort(function(a,b){return a.dist-b.dist});
+    if(!near.length){hide();return}
+    if(ptr==='mouse')go(near[0].f);else showTouch(near)};}
 
 function sliceFrom(f,p){var s=f.series,last=Date.parse(s[s.length-1][0]+'T00:00:00Z'),start;
   if(p==='ytd')start=Date.UTC(new Date(last).getUTCFullYear()-1,11,31);else start=last-({w1:7,m1:30,y1:365}[p])*864e5;
@@ -261,7 +300,9 @@ function detail(f){var box=el('div',{'class':'fu-detail','data-detail':f.code}),
   // 最深的一次回撤：从哪天的高点跌到哪天
   var pk=0,best=0,bp=0,bt=0;for(var i=0;i<s.length;i++){if(s[i][1]>s[pk][1])pk=i;var r=s[i][1]/s[pk][1]-1;if(r<best){best=r;bp=pk;bt=i}}
   if(best<0){svg.appendChild(sv('circle',{cx:X(bp),cy:Y1(s[bp][1]),r:4,fill:'var(--surface)',stroke:'var(--amber)','stroke-width':2}));svg.appendChild(sv('circle',{cx:X(bt),cy:Y1(s[bt][1]),r:4,fill:'var(--amber)'}));
-    var t=sv('text',{x:Math.min(X(bt)+8,W-250),y:Math.min(Y1(s[bt][1])+16,H1-4),'font-size':12,fill:'var(--amber)','font-weight':700,'class':'fu-deep',stroke:'var(--surface-2)','stroke-width':3,'paint-order':'stroke','stroke-linejoin':'round'});t.textContent='最深 '+pct(best*100)+'（'+s[bp][0]+' → '+s[bt][0]+'）';svg.appendChild(t)}
+    // 标注放在谷底下方；谷底贴着底边时放到上方，免得压在横轴日期上（手机上历史短的 XUS 就是这样）
+    var ty=Y1(s[bt][1])+16;if(ty>H1-22)ty=Math.max(14,Y1(s[bt][1])-10);
+    var t=sv('text',{x:Math.max(ml+4,Math.min(X(bt)+8,W-mr-250)),y:ty,'font-size':12,fill:'var(--amber)','font-weight':700,'class':'fu-deep',stroke:'var(--surface-2)','stroke-width':3,'paint-order':'stroke','stroke-linejoin':'round'});t.textContent='最深 '+pct(best*100)+'（'+s[bp][0]+' → '+s[bt][0]+'）';svg.appendChild(t)}
   svg.appendChild(sv('line',{x1:ml,x2:W-mr,y1:Y2(0),y2:Y2(0),stroke:'var(--muted)'}));
   var ud=uw.map(function(v,i){return(i?'L':'M')+X(i).toFixed(1)+' '+Y2(v).toFixed(1)}).join('');
   svg.appendChild(sv('path',{d:ud+'L'+X(s.length-1)+' '+Y2(0)+'L'+X(0)+' '+Y2(0)+'Z',fill:'var(--amber)','fill-opacity':.25}));
@@ -271,7 +312,7 @@ function detail(f){var box=el('div',{'class':'fu-detail','data-detail':f.code}),
   [0,s.length-1].forEach(function(i){var t=sv('text',{x:X(i),y:H1+4,'text-anchor':i?'end':'start','font-size':12,fill:'var(--muted)'});t.textContent=s[i][0];svg.appendChild(t)});
   var left=el('div');left.appendChild(svg);box.appendChild(left);
   var right=el('div'),tb=el('table',{'class':'fu-ptab'}),th=el('tr');['时间段','收益','最大回撤'].forEach(function(h){th.appendChild(el('th',null,h))});tb.appendChild(th);
-  ['w1','m1','ytd','y1'].forEach(function(p){var tr=el('tr');tr.appendChild(el('td',null,PL[p]));tr.appendChild(el('td',{'class':cls(ret(f,p))},pct(ret(f,p))));tr.appendChild(el('td',{'class':dd(f,p)?'neg':'na'},pct(dd(f,p))));tb.appendChild(tr)});
+  ['w1','m1','ytd','y1'].forEach(function(p){var tr=el('tr'),r=ret(f,p),dv=dd(f,p);tr.appendChild(el('td',null,PL[p]));tr.appendChild(el('td',{'class':cls(r)},r==null?'上市不足':pct(r)));tr.appendChild(el('td',{'class':dv?'neg':'na'},r==null&&dv==null?'上市不足':pct(dv)));tb.appendChild(tr)});
   var tr=el('tr');tr.appendChild(el('td',null,'上市以来*'));tr.appendChild(el('td',{'class':cls(f.ret_all)},pct(f.ret_all)));tr.appendChild(el('td',{'class':f.dd_all?'neg':'na'},pct(f.dd_all)));tb.appendChild(tr);
   right.appendChild(tb);right.appendChild(el('div',{'class':'fu-dnote'},'* 从 '+f.first+' 起（最多取一年）。最新价 '+fmtPx(f.last)+' '+(f.currency||'')+'，'+f.date+'，来源：'+srcName(f)));
   box.appendChild(right);return box;}
@@ -287,10 +328,11 @@ function list_(){var p=st.p,L=$('fu-list');L.replaceChildren();$('fu-colp').text
       var r=el('div',{'class':'fu-row',role:'button',tabindex:0,'data-code':f.code,'aria-expanded':ok&&st.open===f.code?'true':'false'});
       var nm=el('div',{'class':'fu-nm'});nm.appendChild(el('b',null,f.name));var sub=el('div');sub.appendChild(el('span',{'class':'fu-code'},f.code));if(f.tag)sub.appendChild(el('span',{'class':'fu-tag'},f.tag));nm.appendChild(sub);
       if(ok&&f.error)nm.appendChild(el('span',{'class':'fu-stale'},staleText(f)));
+      else if(isOld(f)){var oa=oldAt(f);sub.appendChild(el('span',{'class':'fu-old',title:'这一只还是上次'+(oa?' '+tw(oa)+TZ:'')+'的数据，比标题的数据时间早'},'上次数据'+(oa?' '+tw(oa).slice(5):'')))}
       if(!ok)nm.appendChild(el('span',{'class':'fu-stale'},'没取到数据'+(f.error&&f.error!=='还没取过'?'：'+f.error:'，点「刷新数据」去取')));
       r.appendChild(nm);
       var px=el('div',{'class':'fu-px'},fmtPx(ok?f.last:null));if(ok)px.appendChild(el('small',null,(f.currency||'')+' · '+f.date.slice(5)));r.appendChild(px);
-      var hot=ok&&f.d1!=null&&Math.abs(f.d1)>=TH;r.appendChild(el('div',{'class':'fu-d1 '+cls(ret(f,'d1'))+(hot?' hot':'')},pct(ret(f,'d1'))));
+      var hot=ok&&f.d1!=null&&Math.abs(f.d1)>=TH;var d1=el('div',{'class':'fu-d1 '+cls(ret(f,'d1'))+(hot?' hot':'')});d1.appendChild(el('span',{'class':'k'},'1 日'));d1.appendChild(document.createTextNode(pct(ret(f,'d1'))));r.appendChild(d1);
       var bars=el('div',{'class':'fu-bars'}),rv=ret(f,p),dv=dd(f,p);
       function line(k,v,color,txtCls){var b=el('div',{'class':'fu-bl'});b.appendChild(el('span',{'class':'k'},k));var t=el('div',{'class':'fu-track'});
         t.appendChild(el('span',{'class':'zero',style:'left:50%'}));
@@ -315,25 +357,39 @@ async function load(){if(loading)return;loading=true;
   catch(e){showErr('基金数据读取失败：'+e.message+(D?'。下面是上次读到的。':'。'));if(!D){$('fu-meta').textContent='没读到';$('fu-lede').textContent='没读到数据，点上面的「再读一次」。'}}
   finally{loading=false}}
 function prog(parts,err){var P=$('fu-prog');P.replaceChildren();P.className='fu-prog'+(err?' err':'');parts.forEach(function(x){P.appendChild(x[1]?el('b',null,x[0]):document.createTextNode(x[0]))})}
-var MK_OF=null;
+function names(codes){return codes.length<=5?'（'+codes.join('、')+'）':''}
 async function refresh(){if(busy)return;busy=true;var btn=$('fu-refresh');btn.disabled=true;btn.textContent='正在刷新…';
-  var cur=0,total=ITEMS.length||45,updated=[],failed=[];
+  var cur=0,total=ITEMS.length||45,updated=[],failed=[],before=D&&D.fetched_at;
   var mk=function(i){var f=ITEMS[i];return f?f.market:''};
+  var was=before?'显示的还是 '+tw(before)+' 的数据':'还没有数据';
   prog([['正在取 '],[mk(0)||'第一批',1],[' · 0 / '+total]]);
   try{while(cur!=null){var r=await getJson(BASE+'/refresh',{cursor:cur});total=r.total;updated=updated.concat(r.updated||[]);failed=failed.concat(r.failed||[]);cur=r.next;
       if(cur!=null)prog([['正在取 '],[mk(cur),1],[' · '+r.done+' / '+r.total]]);}
-    await load();
+    STALE=null;await load();
+    if(!updated.length){prog([['这次没取到，'+was+'，可以再点一次']],true);return}
     var msg='已更新 '+updated.length+' / '+total+(D&&D.fetched_at?'，数据时间 '+tw(D.fetched_at):'');
-    if(failed.length)msg+='；'+failed.length+' 只没取到（'+failed.map(function(x){return x.code}).join('、')+'），那几行显示的是上次的数据，行里写了原因';
+    if(failed.length){
+      // 有旧数据的和从没取到过的分开说（后者那几行是空的，不是"上次的数据"）
+      var by={};ITEMS.forEach(function(f){by[f.code]=f});
+      var keep=failed.filter(function(x){return has(by[x.code])}).map(function(x){return x.code}),never=failed.filter(function(x){return!has(by[x.code])}).map(function(x){return x.code});
+      if(keep.length)msg+='；'+keep.length+' 只没取到'+names(keep)+'，'+(keep.length>1?'那几行':'那一行')+'显示的是上次的数据，行里写了原因';
+      if(never.length)msg+='；'+never.length+' 只没取到数据'+names(never)+'，以前也没取到过，'+(never.length>1?'那几行':'那一行')+'还是空的';}
     prog([[msg]],failed.length>0);}
-  catch(e){prog([['刷新到 '+(cur||0)+' / '+total+' 停了：'+e.message+'。已取到的已经存好，可以再点一次「刷新数据」（会从头取）。']],true);load();}
+  catch(e){
+    // 中途断了：只有已经回了结果的那几批算数（写库失败的那一批不算"已存好"）
+    var why='（'+e.message+'）',codes={};
+    ITEMS.forEach(function(f){if(updated.indexOf(f.code)<0)codes[f.code]=1});
+    STALE=updated.length?{at:before,codes:codes}:null;
+    await load();
+    if(!updated.length)prog([['这次没取到，'+was+'，可以再点一次'+why]],true);
+    else prog([['前 '+updated.length+' 只已更新，其余 '+(total-updated.length)+' 只'+(before?'还是 '+tw(before)+' 的数据':'还没有数据')+'，再点会从头取'+why]],true);}
   finally{busy=false;btn.disabled=false;btn.textContent='↻ 刷新数据'}}
 document.querySelectorAll('#fu-periods .fu-chip').forEach(function(b){b.addEventListener('click',function(){st.p=b.dataset.p;document.querySelectorAll('#fu-periods .fu-chip').forEach(function(x){x.setAttribute('aria-pressed',x===b?'true':'false')});render()})});
 document.querySelectorAll('#fu-markets .fu-chip').forEach(function(b){b.addEventListener('click',function(){st.m=b.dataset.m;document.querySelectorAll('#fu-markets .fu-chip').forEach(function(x){x.setAttribute('aria-selected',x===b?'true':'false')});render()})});
 $('fu-refresh').addEventListener('click',refresh);
 $('fu-retry').addEventListener('click',load);
 var rt;window.addEventListener('resize',function(){if($('v-funds').hidden||!D)return;clearTimeout(rt);rt=setTimeout(function(){scatter();if(st.open)list_()},120)});
-/** 进这一页时读一次（route() 调）；已经读到就只按当前宽度重画散点图 */
-window.fundsOpen=function(){if(D){render();return}load()};
+/** 每次进这一页（route() 调）都重新 GET /api/funds（不轮询）；已经有数据就先按当前宽度画出来，读到新的再重画。正在刷新时不读（刷完会读） */
+window.fundsOpen=function(){if(D)render();if(!busy)load()};
 })();
 `;
