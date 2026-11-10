@@ -14,7 +14,7 @@ import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { getPlatformProxy } from 'wrangler';
 import type { Env } from '../src/env';
 import { handle } from '../src/index';
-import { yieldHost, yieldResponse, YIELD_HOSTS } from './funds-yield-fake';
+import { CGB_OK_PARAMS, yieldHost, yieldResponse, YIELD_HOSTS } from './funds-yield-fake';
 import { ROOT } from './helpers';
 
 const PASS = 'ci_only_copilot_password_01';
@@ -108,14 +108,14 @@ const getItems = async (): Promise<Record<string, Item>> => {
   return Object.fromEntries(b.items.map((x) => [x.code, x]));
 };
 async function refreshAll() {
-  const rounds: { sent: number; ms: number; status: number; body: any; yieldSent: number }[] = [];
+  const rounds: { sent: number; ms: number; status: number; body: any; yieldSent: number; urls: string[] }[] = [];
   let cursor: number | undefined;
   for (let i = 0; i < 30; i++) {
     outbound = [];
     const t0 = Date.now();
     const r = await handle(req('/api/funds/refresh', { method: 'POST', cookie: ck, body: JSON.stringify(cursor === undefined ? {} : { cursor }) }), env(), NOW, fake as never);
     const body = await r.json() as any;
-    rounds.push({ sent: outbound.length, ms: Date.now() - t0, status: r.status, body, yieldSent: outbound.filter((u) => yieldHost(u)).length });
+    rounds.push({ sent: outbound.length, ms: Date.now() - t0, status: r.status, body, yieldSent: outbound.filter((u) => yieldHost(u)).length, urls: outbound.slice() });
     if (r.status !== 200 || body.next == null) break;
     cursor = body.next;
   }
@@ -159,6 +159,13 @@ describe('基金观察第二版接口', () => {
     expect(first.map((r) => r.ms).filter((ms) => ms > BUDGET_MS + 2_000)).toEqual([]);
     const hit = first.reduce((a, r) => a + r.yieldSent, 0);
     expect(hit, `债券收益率来源（${YIELD_HOSTS.join('、')}）一个都没请求`).toBeGreaterThan(0);
+  });
+
+  it('1b. 中债：请求 searchYc 用的是实测取得到曲线的那组参数（xyzSelect=txy、dxbj=0、qxll=0,、yqqxN=N、yqqxK=K、ycDefIds、wrjxCBFlag=0、locale=zh_CN，workTimes 写日期）', () => {
+    const cgb = first.flatMap((r) => r.urls).filter((u) => yieldHost(u) === 'chinabond.com.cn');
+    expect(cgb.length, '没有请求中债').toBeGreaterThan(0);
+    const good = cgb.filter((u) => { const q = new URL(u).searchParams; return /^\d{4}-\d{2}-\d{2}$/.test(q.get('workTimes') ?? '') && Object.entries(CGB_OK_PARAMS).every(([k, v]) => q.get(k) === v); });
+    expect(good.length, `中债请求的参数和实测能取到的不一样：${cgb[0]}`).toBeGreaterThan(0);
   });
 
   it('2. GET：每只都有 band 字段；股票类（c = 0）和规格公式一致；上市不满两个月的（XWR）是 null；债券类是 5 个从小到大的数或 null', async () => {

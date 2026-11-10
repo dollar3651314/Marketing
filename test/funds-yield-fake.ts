@@ -21,6 +21,14 @@ const fx = (f: string) => {
   return cache.get(f)!;
 };
 
+/**
+ * 中债 searchYc 实测取得到曲线的那组参数（测试会话 2026-11-10 实际执行，HTTP 200、7126 字节，即夹具 chinabond-txy-2026-11-10.json）：
+ *   POST https://yield.chinabond.com.cn/cbweb-mn/yc/searchYc?xyzSelect=txy&&workTimes=2026-11-10&&dxbj=0&&qxll=0,&&yqqxN=N&&yqqxK=K&&ycDefIds=2c9081e50a2f9606010a3068cae70001&&wrjxCBFlag=0&&locale=zh_CN
+ *   请求头：User-Agent 浏览器 UA、Referer https://yield.chinabond.com.cn/cbweb-mn/yield_main?locale=zh_CN；没有请求体。
+ *   同一组参数 workTimes 留空 → 回 []。
+ */
+export const CGB_OK_PARAMS: Record<string, string> = { xyzSelect: 'txy', dxbj: '0', qxll: '0,', yqqxN: 'N', yqqxK: 'K', ycDefIds: '2c9081e50a2f9606010a3068cae70001', wrjxCBFlag: '0', locale: 'zh_CN' };
+
 export const YIELD_HOSTS = ['ishares.com', 'vanguard.com', 'blackrock.com', 'treasury.gov', 'mas.gov.sg', 'chinabond.com.cn'] as const;
 
 /** 这个地址是不是债券收益率来源（按主机名后缀） */
@@ -42,7 +50,12 @@ export function yieldResponse(url: string, init: RequestInit | undefined, down: 
     case 'blackrock.com': return html(fx('blackrock-sg-251722-403.html'), 403);
     case 'treasury.gov': return new Response(fx('treasury-daily-2026.csv'), { status: 200, headers: { 'content-type': 'text/csv' } });
     case 'mas.gov.sg': return html(String(init?.method ?? 'GET').toUpperCase() === 'POST' ? fx('mas-benchmark-2026-10-11.html') : fx('mas-form.html'));
-    case 'chinabond.com.cn': return new Response(fx('chinabond-txy-2026-11-10.json'), { status: 200, headers: { 'content-type': 'application/json' } });
+    case 'chinabond.com.cn': {
+      // 照实抓：只有下面这组参数（CGB_OK_PARAMS）、POST、workTimes 写了日期才回曲线；别的参数组合回 []（2026-11-10 实测：workTimes 留空回 []；研发用 dsmSelect=1&locale=cn_ZH 那组也回 []）
+      const q = new URL(url).searchParams;
+      const ok = String(init?.method ?? 'GET').toUpperCase() === 'POST' && /^\d{4}-\d{2}-\d{2}$/.test(q.get('workTimes') ?? '') && Object.entries(CGB_OK_PARAMS).every(([k, v]) => q.get(k) === v);
+      return new Response(ok ? fx('chinabond-txy-2026-11-10.json') : '[]', { status: 200, headers: { 'content-type': 'application/json' } });
+    }
   }
   return null;
 }

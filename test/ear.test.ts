@@ -394,8 +394,10 @@ describe('9. 迁移 0017 只 CREATE（旧表一行不动）', () => {
     const old = await db.prepare("SELECT COUNT(*) AS n FROM sqlite_master WHERE type = 'table' AND name IN ('events','queue','en_word','drill_item','drill_audio','drill_review','fund_snapshot')").first<{ n: number }>();
     expect(old?.n).toBe(7);
     expect((await db.prepare('SELECT COUNT(*) AS n FROM ear_pair').first<{ n: number }>())?.n).toBe(0);
-    // 0017 是最后一个迁移，前面 16 个一个都没被改名 / 删掉
-    expect(migs()).toEqual(['0001_init.sql', '0002_queue.sql', '0003_workers_ai.sql', '0004_v03.sql', '0005_company.sql', '0006_platform_reports.sql', '0007_usage_by_project.sql',
+    // 0001～0017 一个都没被改名 / 删掉（原来写死"0017 是最后一个"；基金观察第二版加了 0018_fund_yield.sql，之后的迁移只检查编号唯一、连续）
+    const all = migs();
+    expect(all.map((f) => Number(f.slice(0, 4)))).toEqual(all.map((_, i) => i + 1));
+    expect(all.slice(0, 17)).toEqual(['0001_init.sql', '0002_queue.sql', '0003_workers_ai.sql', '0004_v03.sql', '0005_company.sql', '0006_platform_reports.sql', '0007_usage_by_project.sql',
       '0008_active.sql', '0009_asset_gen.sql', '0010_usage_by_purpose.sql', '0011_account_limit.sql', '0012_english_memory.sql', '0013_drill.sql', '0014_drill_audio.sql',
       '0015_drill_review.sql', '0016_funds.sql', M0017]);
   });
