@@ -209,6 +209,8 @@ export interface RefreshResult {
   failed: { code: string; reason: string }[];
   /** 这一次实际发了几个对外请求 */
   requests: number;
+  /** 第二版：最后一批（45 只都过了一遍的那一批）顺带取债券收益率的结果 */
+  yields?: YieldsResult;
 }
 
 /** 批首那只被截止打断（只有它会因为时间用完记失败）：写实际等了几秒，有前面的情况一起写 */
@@ -228,6 +230,8 @@ export async function refreshBatch(env: Env, cursor: number, now: number, f: Fet
   while (i < total && n < MAX_FUNDS_PER_CALL) {
     const def = FUNDS[i];
     if (n > 0 && (http.left < estimateRequests(def) || Date.now() - t0 > START_CUTOFF_MS)) break;
+    // 第二版 ③：最后一只之后要在同一次调用里取债券收益率——额度或时间不够留给它，就把最后一只留给下一批（下一批 = 最后一只 + 收益率）
+    if (n > 0 && i === total - 1 && (http.left - estimateRequests(def) < YIELD_RESERVE || Date.now() - t0 > YIELD_START_MS)) break;
     try {
       ok.push(await fetchFund(def, http, now));
     } catch (e) {
@@ -240,13 +244,19 @@ export async function refreshBatch(env: Env, cursor: number, now: number, f: Fet
     }
     i++; n++;
   }
+  // 第二版 ③：45 只都过了一遍（这是最后一批）→ 用这一次剩下的额度和时间取债券收益率（同一个计数器：价格 + 收益率合计 ≤ 45、25 秒截止照旧）。
+  // 收益率那边各自兜底、只写 fund_yield，不影响上面价格的 updated / failed
+  let yields: YieldsResult | undefined;
+  if (i >= total) {
+    try { yields = await refreshYields(env, now, f, sleep, http); } catch (e) { yields = { updated: [], failed: [{ code: '*', reason: why(e) }], requests: 0, curves: { ust: why(e), sgs: why(e), cgb: why(e) } }; }
+  }
   // 先取完再写库（不在事务里调外部接口）
   const stmts = [
     ...ok.map((s) => env.DB.prepare('INSERT INTO fund_snapshot (code, data, ok_at, err, err_at) VALUES (?1, ?2, ?3, NULL, NULL) ON CONFLICT (code) DO UPDATE SET data = ?2, ok_at = ?3, err = NULL, err_at = NULL').bind(s.code, JSON.stringify(s), now)),
     ...failed.map((x) => env.DB.prepare('INSERT INTO fund_snapshot (code, data, ok_at, err, err_at) VALUES (?1, NULL, NULL, ?2, ?3) ON CONFLICT (code) DO UPDATE SET err = ?2, err_at = ?3').bind(x.code, x.reason.slice(0, 200), now)),
   ];
   if (stmts.length) await env.DB.batch(stmts);
-  return { next: i < total ? i : null, done: i, total, updated: ok.map((x) => x.code), failed, requests: http.used };
+  return { next: i < total ? i : null, done: i, total, updated: ok.map((x) => x.code), failed, requests: http.used, ...(yields ? { yields } : {}) };
 }
 
 interface Row { code: string; data: string | null; ok_at: number | null; err: string | null; err_at: number | null }
@@ -281,11 +291,16 @@ export async function fundsList(env: Env): Promise<{ fetched_at: string | null; 
       const yr = yby.get(def.code);
       let y: BondYield | null = null;
       if (yr?.data) { try { y = JSON.parse(yr.data); } catch { y = null; } }
-      if (y && typeof y.value === 'number') {
+      const cfg = BOND_YIELDS.find((d) => d.code === def.code);
+      // kind 按配置（auto / approx）；自动的这次退回了国债近似时 approx = true（页面照样标"近似"、加"≈"）
+      if (y && typeof y.value === 'number' && y.value !== 0) {
         yv = y.value;
         const stale = !!yr?.err || (!!yr?.ok_at && ylatest - yr.ok_at > YIELD_OLD_MS);
-        item.yield = { value: y.value, kind: y.kind, label: y.label, duration: y.duration ?? null, asOf: y.asOf, source: y.source, stale, ...(yr?.err ? { error: yr.err } : {}) };
-      } else item.yield = null;
+        item.yield = { value: y.value, kind: cfg?.kind ?? y.kind, approx: y.kind === 'approx', label: y.label, duration: y.duration ?? null, asOf: y.asOf, source: y.source, stale, ...(yr?.err ? { error: yr.err } : {}) };
+      } else {
+        // 从没取到过：value 为 null（不显示 0），带上口径和没取到的原因
+        item.yield = { value: null, kind: cfg?.kind ?? 'approx', approx: cfg?.kind === 'approx', label: cfg?.label ?? '', duration: cfg?.duration ?? null, asOf: null, source: '', stale: !!yr?.err, ...(yr?.err ? { error: yr.err } : {}) };
+      }
     }
     // 第二版 ①：未来 1 个月的可能区间（股票类中心 0；债券类中心 = ln(1+预期年化)/12）
     const series = Array.isArray(snap?.series) ? (snap!.series as [string, number][]) : [];
@@ -302,7 +317,11 @@ export async function fundsList(env: Env): Promise<{ fetched_at: string | null; 
   };
 }
 
-// ---------------------------------------------------------------- 第二版 ③：债券类预期年化（POST /api/funds/yields，页面在"刷新数据"取完 45 只之后调一次）
+// ---------------------------------------------------------------- 第二版 ③：债券类预期年化（"刷新数据"循环的最后一批里、45 只取完之后顺带取）
+/** 最后一批给收益率留的对外请求数（首轮约 16 个：8 个页面 + 美国 1～2 + MAS 2 + 中债 1～4） */
+export const YIELD_RESERVE = 20;
+/** 最后一批过了这么久还没轮到最后一只，就把它留给下一批（留约 15 秒给收益率） */
+const YIELD_START_MS = 10_000;
 const BROWSER_UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120 Safari/537.36';
 const HTML_HEADERS = { 'user-agent': BROWSER_UA, accept: 'text/html,application/xhtml+xml', 'accept-language': 'en-US,en;q=0.9' };
 const MAS_URL = 'https://eservices.mas.gov.sg/statistics/fdanet/BenchmarkPricesAndYields.aspx';
@@ -386,8 +405,9 @@ function why(e: unknown): string {
  * 取 16 只债券的预期年化，写 fund_yield。一次调用对外请求 ≤ 45（同一个 Http 计数）、约 25 秒截止（CALL_BUDGET_MS）；
  * 三条曲线和 9 个自动页面并行取。某只没取到：自动的退回"美国同期限国债 + 利差"（标近似），还不行就只记原因、保留上次的值（页面标"过期"）。
  */
-export async function refreshYields(env: Env, now: number, f: FetchLike = (u, i) => fetch(u, i), sleep?: (ms: number) => Promise<unknown>): Promise<YieldsResult> {
-  const http = new Http(f, MAX_REQUESTS, sleep, Date.now() + CALL_BUDGET_MS);
+export async function refreshYields(env: Env, now: number, f: FetchLike = (u, i) => fetch(u, i), sleep?: (ms: number) => Promise<unknown>, shared?: Http): Promise<YieldsResult> {
+  const http = shared ?? new Http(f, MAX_REQUESTS, sleep, Date.now() + CALL_BUDGET_MS);
+  const used0 = http.used;
   const curveErr: Record<Curve, string> = { ust: 'ok', sgs: 'ok', cgb: 'ok' };
   const curve = <K extends Curve>(k: K, p: Promise<CurvePoints>) => p.catch((e) => { curveErr[k] = why(e); return null; });
   const autos = BOND_YIELDS.filter((d) => d.kind === 'auto' && d.url);
@@ -400,9 +420,9 @@ export async function refreshYields(env: Env, now: number, f: FetchLike = (u, i)
         const headers = d.source.startsWith('em-') ? { 'user-agent': 'Mozilla/5.0', referer: EM_REFERER } : HTML_HEADERS;
         const t = (await http.text(d.url!, { headers }, PAGE_NAME[d.source] ?? d.source)).text;
         const p = PARSE[d.source]?.(t) ?? null;
-        return { code: d.code, p, err: p ? '' : `${PAGE_NAME[d.source] ?? d.source}页面认不出收益率` };
+        return { code: d.code, p, err: p ? '' : `${PAGE_NAME[d.source] ?? d.source}页面认不出收益率`, fetched: true };
       } catch (e) {
-        return { code: d.code, p: null, err: why(e) };
+        return { code: d.code, p: null, err: why(e), fetched: false };
       }
     })),
   ]);
@@ -410,12 +430,16 @@ export async function refreshYields(env: Env, now: number, f: FetchLike = (u, i)
   const got = new Map(pages.map((x) => [x.code, x]));
   const ok: { code: string; y: BondYield }[] = [];
   const failed: { code: string; reason: string }[] = [];
+  /** 页面没取到（网络错、超时、4xx/5xx）：有上次的值就保留上次的（标过期）；从没取到过才用美国国债近似顶上 */
+  const keepOld: { code: string; y: BondYield; reason: string }[] = [];
   for (const d of BOND_YIELDS) {
     if (d.kind === 'auto') {
       const g = got.get(d.code);
       if (g?.p) { ok.push({ code: d.code, y: autoYield(d, g.p) }); continue; }
       const a = approxYield(d, curves, true);
-      if (a) { ok.push({ code: d.code, y: a }); continue; }
+      // 取到了页面但认不出（页面改版，或免费版 CPU 不够解析大页面）→ 退回近似；页面根本没取到 → 优先保留上次的值
+      if (a && g?.fetched) { ok.push({ code: d.code, y: a }); continue; }
+      if (a) { keepOld.push({ code: d.code, y: a, reason: g?.err || '没取到' }); failed.push({ code: d.code, reason: g?.err || '没取到' }); continue; }
       failed.push({ code: d.code, reason: (g?.err || '没取到') + (d.curve ? `；${d.curve === 'ust' ? '美国国债' : '国债'}也没取到（${curveErr[d.curve]}）` : '') });
     } else {
       const a = approxYield(d, curves);
@@ -426,13 +450,15 @@ export async function refreshYields(env: Env, now: number, f: FetchLike = (u, i)
   // 先取完再写库（不在事务里调外部接口）
   const stmts = [
     ...ok.map((x) => env.DB.prepare('INSERT INTO fund_yield (code, data, ok_at, err, err_at) VALUES (?1, ?2, ?3, NULL, NULL) ON CONFLICT (code) DO UPDATE SET data = ?2, ok_at = ?3, err = NULL, err_at = NULL').bind(x.code, JSON.stringify(x.y), now)),
-    ...failed.map((x) => env.DB.prepare('INSERT INTO fund_yield (code, data, ok_at, err, err_at) VALUES (?1, NULL, NULL, ?2, ?3) ON CONFLICT (code) DO UPDATE SET err = ?2, err_at = ?3').bind(x.code, x.reason.slice(0, 200), now)),
+    // 没有上次的值（data 为空）时写近似值、算取到；有上次的值就留着它、只记原因（UPDATE 里右边读的都是旧行）
+    ...keepOld.map((x) => env.DB.prepare('INSERT INTO fund_yield (code, data, ok_at, err, err_at) VALUES (?1, ?2, ?3, NULL, NULL) ON CONFLICT (code) DO UPDATE SET data = CASE WHEN fund_yield.data IS NULL THEN ?2 ELSE fund_yield.data END, ok_at = CASE WHEN fund_yield.data IS NULL THEN ?3 ELSE fund_yield.ok_at END, err = CASE WHEN fund_yield.data IS NULL THEN NULL ELSE ?4 END, err_at = CASE WHEN fund_yield.data IS NULL THEN NULL ELSE ?3 END').bind(x.code, JSON.stringify(x.y), now, x.reason.slice(0, 200))),
+    ...failed.filter((x) => !keepOld.some((k) => k.code === x.code)).map((x) => env.DB.prepare('INSERT INTO fund_yield (code, data, ok_at, err, err_at) VALUES (?1, NULL, NULL, ?2, ?3) ON CONFLICT (code) DO UPDATE SET err = ?2, err_at = ?3').bind(x.code, x.reason.slice(0, 200), now)),
   ];
   if (stmts.length) await env.DB.batch(stmts);
-  return { updated: ok.map((x) => x.code), failed, requests: http.used, curves: curveErr };
+  return { updated: ok.map((x) => x.code), failed, requests: http.used - used0, curves: curveErr };
 }
 
-/** /api/funds、/api/funds/refresh 和 /api/funds/yields（第二版）；别的地址回 null（由 adminApi 回 404） */
+/** /api/funds 和 /api/funds/refresh（第二版：最后一批顺带取债券收益率）；别的地址回 null（由 adminApi 回 404） */
 export async function fundsApi(env: Env, req: Request, now: number, sub: string, f?: FetchLike): Promise<Response | null> {
   if (sub === '' && req.method === 'GET') return json(await fundsList(env));
   if (sub === 'refresh' && req.method === 'POST') {
@@ -441,6 +467,5 @@ export async function fundsApi(env: Env, req: Request, now: number, sub: string,
     if (typeof c !== 'number' || !Number.isInteger(c) || c < 0 || c >= FUNDS.length) return json({ error: '刷新进度不对，请重新点一次「刷新数据」' }, 400);
     return json(await refreshBatch(env, c, now, f));
   }
-  if (sub === 'yields' && req.method === 'POST') return json(await refreshYields(env, now, f));
   return null;
 }

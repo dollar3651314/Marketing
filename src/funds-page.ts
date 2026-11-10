@@ -127,7 +127,8 @@ export const FUNDS_CSS = `
 #v-funds .fu-rg-scale{font-size:12px;color:var(--muted);padding:0 var(--s2)}
 #v-funds .fu-rg-scale div{position:relative;height:16px}#v-funds .fu-rg-scale span{position:absolute;transform:translateX(-50%);white-space:nowrap}
 #v-funds .fu-disc{font-size:12px;color:var(--muted);margin:var(--s3) 0 0;line-height:1.6}
-#v-funds .fu-miss{font-size:12px;color:var(--muted);padding:var(--s2) var(--s2) 0}
+#v-funds .fu-rg-na{grid-column:2 / -1;font-size:12px;color:var(--muted)}
+@media (max-width:760px){#v-funds .fu-rg-na{grid-column:1 / -1}}
 /* 第二版 ③ 债券类预期年化（近似的条用斜纹） */
 #v-funds .fu-yb{display:grid;grid-template-columns:minmax(0,1.6fr) minmax(0,2fr) 76px minmax(0,1.8fr);gap:var(--s3);align-items:center;padding:8px var(--s2);border-bottom:1px solid var(--line)}
 #v-funds .fu-yb .nm{min-width:0}#v-funds .fu-yb .nm b{font-weight:600;display:block;line-height:1.35;overflow-wrap:anywhere}
@@ -389,7 +390,7 @@ function detail(f){var box=el('div',{'class':'fu-detail','data-detail':f.code}),
   svg.appendChild(sv('path',{d:d+'L'+X(s.length-1)+' '+(H1-8)+'L'+X(0)+' '+(H1-8)+'Z',fill:'var(--fu-broad)','fill-opacity':.08}));
   svg.appendChild(sv('path',{d:d,fill:'none',stroke:'var(--fu-broad)','stroke-width':1.6}));
   if(B){var lv=s[s.length-1][1],x0=X(s.length-1),x1=W-mr;
-    var cone=function(lo,hi,op,k){svg.appendChild(sv('path',{'class':'fu-cone','data-k':k,d:'M'+x0.toFixed(1)+' '+Y1(lv).toFixed(1)+'L'+x1+' '+Y1(lv*(1+hi/100)).toFixed(1)+'L'+x1+' '+Y1(lv*(1+lo/100)).toFixed(1)+'Z',fill:'var(--fu-broad)','fill-opacity':op}))};
+    var cone=function(lo,hi,op,k){svg.appendChild(sv('path',{'class':'fu-cone','data-band':k,d:'M'+x0.toFixed(1)+' '+Y1(lv).toFixed(1)+'L'+x1+' '+Y1(lv*(1+hi/100)).toFixed(1)+'L'+x1+' '+Y1(lv*(1+lo/100)).toFixed(1)+'Z',fill:'var(--fu-broad)','fill-opacity':op}))};
     cone(B[0],B[4],.14,'95');cone(B[1],B[3],.32,'68');
     var ct=sv('text',{x:x1,y:12,'text-anchor':'end','font-size':12,fill:'var(--muted)'});ct.textContent='未来 1 个月';svg.appendChild(ct)}
   // 最深的一次回撤：从哪天的高点跌到哪天
@@ -415,7 +416,7 @@ function detail(f){var box=el('div',{'class':'fu-detail','data-detail':f.code}),
   right.appendChild(tb);
   if(B)right.appendChild(el('div',{'class':'fu-dnote'},'未来 1 个月：大约 2/3 的可能在 '+pct(B[1],1)+' ～ '+pct(B[3],1)+'，大约 95% 在 '+pct(B[0],1)+' ～ '+pct(B[4],1)+'（按过去一年波动推算，不是预测）'));
   else if(has(f))right.appendChild(el('div',{'class':'fu-dnote'},'未来 1 个月：上市不满两个月，算不出'));
-  if(f.yield)right.appendChild(el('div',{'class':'fu-dnote'},'预期年化 '+(f.yield.kind==='approx'?'≈':'')+f.yield.value.toFixed(2)+'%（'+f.yield.label+'，'+f.yield.asOf+(f.yield.stale?'，过期':'')+'）'));
+  if(f.yield&&typeof f.yield.value==='number')right.appendChild(el('div',{'class':'fu-dnote'},'预期年化 '+(f.yield.kind==='approx'||f.yield.approx?'≈':'')+f.yield.value.toFixed(2)+'%（'+f.yield.label+'，'+f.yield.asOf+(f.yield.stale?'，过期':'')+'）'));
   right.appendChild(el('div',{'class':'fu-dnote'},'* 从 '+f.first+' 起（最多取一年）。最新价 '+fmtPx(f.last)+' '+(f.currency||'')+'，'+f.date+'，来源：'+srcName(f)));
   box.appendChild(right);return box;}
 
@@ -456,11 +457,11 @@ function ranges(){var arr=shown().filter(band).sort(function(a,b){return(b.band[
   $('fu-rg-sub').textContent='按过去一年的波动推算，不是预测涨跌'+(young.length?' · '+young.length+' 只上市不满两个月，算不出':'')+(none?' · '+none+' 只没有数据':'');
   var cov=D&&typeof D.band_coverage==='number'?D.band_coverage:null;
   $('fu-rg-disc').textContent=(cov!=null?'回测：拿过去一年每一段 1 个月（21 个交易日）对照，平均 '+Math.round(cov*100)+'% 的时候真实涨跌落在深色段里（设计目标约 2/3）。':'')+'只说明波动有多大，不代表会涨或会跌；不是投资建议。';
-  if(!arr.length){L.appendChild(el('div',{'class':'fu-empty'},ITEMS.some(has)?'没有上市满两个月的产品，算不出':'还没有数据'));return}
-  var lim=Math.max.apply(null,arr.map(function(f){return Math.max(Math.abs(f.band[0]),Math.abs(f.band[4]))}));lim=Math.max(1,Math.ceil(lim/5)*5);
+  if(!ITEMS.some(has)){L.appendChild(el('div',{'class':'fu-empty'},'还没有数据'));return}
+  var lim=5;if(arr.length){lim=Math.max.apply(null,arr.map(function(f){return Math.max(Math.abs(f.band[0]),Math.abs(f.band[4]))}));lim=Math.max(1,Math.ceil(lim/5)*5)}
   var X=function(v){return 50+v/lim*50};
   [-lim,-lim/2,0,lim/2,lim].forEach(function(v){sc.appendChild(el('span',{style:'left:'+X(v)+'%'},(v>0?'+':v<0?'−':'')+Math.abs(v)+'%'))});
-  arr.forEach(function(f){var B=f.band,r=el('div',{'class':'fu-rg-row','data-rg':f.code}),nm=el('div',{'class':'nm'});nm.appendChild(document.createTextNode(f.name));nm.appendChild(el('small',null,f.code));r.appendChild(nm);
+  arr.forEach(function(f){var B=f.band,r=el('div',{'class':'fu-rg-row','data-band-code':f.code}),nm=el('div',{'class':'nm'});nm.appendChild(document.createTextNode(f.name));nm.appendChild(el('small',null,f.code));r.appendChild(nm);
     var col='var(--'+CATK[f.category]+')',t=el('div',{'class':'fu-rg-track',role:'img','aria-label':f.name+' 未来 1 个月：大约 2/3 的可能在 '+pct(B[1],1)+' 到 '+pct(B[3],1)+'，大约 95% 在 '+pct(B[0],1)+' 到 '+pct(B[4],1)});
     t.appendChild(el('span',{'class':'axis'}));
     t.appendChild(el('span',{'class':'b95',style:'left:'+X(B[0])+'%;width:'+Math.max(.4,X(B[4])-X(B[0]))+'%;background:'+col}));
@@ -468,22 +469,24 @@ function ranges(){var arr=shown().filter(band).sort(function(a,b){return(b.band[
     t.appendChild(el('span',{'class':'zero',style:'left:50%'}));
     t.appendChild(el('span',{'class':'mid',style:'left:calc('+X(B[2])+'% - 1px)'}));
     r.appendChild(t);r.appendChild(el('div',{'class':'fu-rg-v'},pct(B[1],1)+' ～ '+pct(B[3],1)));L.appendChild(r)});
-  if(young.length)L.appendChild(el('div',{'class':'fu-miss'},'上市不满两个月，算不出：'+young.map(function(f){return f.name+'（'+f.code+'）'}).join('、')));}
+  // 算不出的也各占一行（排在最后），写明原因
+  shown().filter(function(f){return!band(f)}).forEach(function(f){var r=el('div',{'class':'fu-rg-row','data-band-code':f.code}),nm=el('div',{'class':'nm'});nm.appendChild(document.createTextNode(f.name));nm.appendChild(el('small',null,f.code));r.appendChild(nm);
+    r.appendChild(el('div',{'class':'fu-rg-na'},has(f)?'上市不满两个月，算不出':'没有数据'));L.appendChild(r)});}
 /** 第二版 ③：债券类预期年化（从高到低；没取到过的排最后） */
-var QL={auto:'每天自动',approx:'近似'};
 function bonds(){var all=shown().filter(function(f){return f.category==='债券'});$('fu-yb').hidden=!all.length;
   var L=$('fu-yb-list');L.replaceChildren();if(!all.length)return;
   var v=function(f){return f.yield&&typeof f.yield.value==='number'?f.yield.value:null};
+  var apx=function(y){return!!y&&(y.kind==='approx'||!!y.approx)};
   var arr=all.slice().sort(function(a,b){var x=v(a),y=v(b);return x==null?(y==null?0:1):y==null?-1:y-x});
   var mx=Math.max(1,Math.max.apply(null,arr.map(function(f){return v(f)||0})));
-  arr.forEach(function(f){var y=f.yield,val=v(f),r=el('div',{'class':'fu-yb','data-yb':f.code});
+  arr.forEach(function(f){var y=f.yield,val=v(f),r=el('div',{'class':'fu-yb','data-yield-code':f.code});
     var nm=el('div',{'class':'nm'});nm.appendChild(el('b',null,f.name));nm.appendChild(el('span',{'class':'fu-code'},f.code+(f.currency?' · '+f.currency:'')));r.appendChild(nm);
-    var bw=el('div',{'class':'bar-w'});if(val!=null)bw.appendChild(el('div',{'class':'bar'+(y.kind==='approx'?' approx':'')+(y.stale?' stale':''),style:'width:'+Math.max(1,Math.max(0,val)/mx*100)+'%'}));r.appendChild(bw);
-    r.appendChild(el('div',{'class':'v num'+(val==null?' na':'')},val==null?'—':(y.kind==='approx'?'≈':'')+val.toFixed(2)+'%'));
+    var bw=el('div',{'class':'bar-w'});if(val!=null)bw.appendChild(el('div',{'class':'bar'+(apx(y)?' approx':'')+(y.stale?' stale':''),style:'width:'+Math.max(1,Math.max(0,val)/mx*100)+'%'}));r.appendChild(bw);
+    r.appendChild(el('div',{'class':'v num'+(val==null?' na':'')},val==null?'—':(apx(y)?'≈':'')+val.toFixed(2)+'%'));
     var src=el('div',{'class':'src'});
-    if(y){src.appendChild(el('span',{'class':'fu-q '+(y.kind==='approx'?'approx':'auto')},QL[y.kind]||'近似'));if(y.stale)src.appendChild(el('span',{'class':'fu-q stale',title:y.error||''},'过期'));
+    if(y&&val!=null){src.appendChild(el('span',{'class':'fu-q '+(apx(y)?'approx':'auto')},apx(y)?'近似':'每天自动'));if(y.stale)src.appendChild(el('span',{'class':'fu-q stale',title:y.error||''},'过期'));
       src.appendChild(document.createTextNode(y.label+(y.duration!=null?' · 久期 '+y.duration+' 年':'')+' · '+(y.source||'')+' '+(y.asOf||'').slice(5)+(y.stale&&y.error?'（这次没取到：'+y.error+'）':'')))}
-    else src.appendChild(document.createTextNode('还没有收益率数据，点「刷新数据」时会一起取'));
+    else src.appendChild(document.createTextNode(y&&y.error?'还没有收益率数据（'+y.error+'）':'还没有收益率数据，点「刷新数据」时会一起取'));
     r.appendChild(src);L.appendChild(r)});}
 function render(){meta();lede();mkcards();scatter();ranges();bonds();list_()}
 function showErr(m){$('fu-err').hidden=!m;$('fu-err-t').textContent=m||''}
@@ -515,13 +518,10 @@ async function refresh(){if(busy)return;busy=true;var btn=$('fu-refresh');btn.di
   try{while(cur!=null){if(posts>=maxPosts())throw new Error('已经发了 '+maxPosts()+' 次请求还没取完，先停下了，防止请求失控');posts++;
       var r=await getJson(BASE+'/refresh',{cursor:cur});total=r.total;updated=updated.concat(r.updated||[]);failed=failed.concat(r.failed||[]);
       if(r.next!=null&&!(r.next>cur))throw new Error('服务器回的进度没有往前走（'+cur+' → '+r.next+'），先停下了，防止请求失控');
+      // 第二版 ③：最后一批顺带取了债券收益率；它没取到的不算刷新失败（价格照样存好了），只在债券那块写一句
+      if(r.yields){var yf=r.yields.failed||[];$('fu-yb-msg').textContent=yf.length?'这次有 '+yf.length+' 只的收益率没取到'+(yf.length<=6?'（'+yf.map(function(x){return x.code}).join('、')+'）':'')+'，有上次的值就显示上次的，标了"过期"。':''}
       cur=r.next;
       if(cur!=null)prog([['正在取 '],[mk(cur),1],[' · '+r.done+' / '+r.total]]);}
-    // 第二版 ③：45 只取完后再取一次债券收益率（单独一次 POST /api/funds/yields，≤ 45 个对外请求、约 25 秒）；它失败不影响上面的结果，只在债券那块写一句
-    prog([['正在取 '],['债券收益率',1],[' · '+total+' / '+total]]);
-    try{var yr=await getJson(BASE+'/yields',{});var yf=(yr&&yr.failed)||[];
-      $('fu-yb-msg').textContent=yf.length?'这次有 '+yf.length+' 只的收益率没取到（'+yf.map(function(x){return x.code}).join('、')+'），显示的是上次的值，标了"过期"。':''}
-    catch(e){$('fu-yb-msg').textContent='债券收益率这次没取到（'+e.message+'），显示的是上次的值。'}
     STALE=null;await load();
     if(!updated.length){prog([['这次没取到，'+was+'，可以再点一次']],true);return}
     var msg='已更新 '+updated.length+' / '+total+(D&&D.fetched_at?'，数据时间 '+tw(D.fetched_at):'');
