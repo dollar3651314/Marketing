@@ -33,6 +33,11 @@
  *   Q. 每次进入 #/funds 都重新 GET /api/funds（约定 7）。
  *   R. 刷完汇总里从没取到过的那只单独说"没取到数据"，不算进"那几行显示的是上次的数据"（约定 10）。
  *   S. 400 宽：每行的"1 日"有标签（约定 11）。
+ *   第二版（Amos 2026-11-10 已定；数据 test/fixtures/funds/snapshot-v2.json；页面约定见 V 段开头）：
+ *   V1. 1280 浅色："未来 1 个月的可能区间"板块每只一行、算不出的写"上市不满两个月"、ES3 / QQQ 写 68% 区间；"债券类：未来 1～3 年预期年化"16 行、
+ *       近似的带"近似"和"≈"；写"不是投资建议"；展开 ES3 看得到"未来 1 个月"区间和喇叭区域；43 只详情里"最深 …"和喇叭区域包围盒不重叠；
+ *       子菜单在主菜单下方一排、7 项（总结 / 市场 / 散点 / 可能区间 / 债券预期 / 逐只对比 / 说明）、点了滚到对应板块、滚动后高亮跟着变；对比度。
+ *   V2. 400 深色：子菜单可横滑（或放得下）、页面不横向溢出、详情里"最深"不压喇叭、对比度。
  *   全程没有页面脚本报错（pageerror）。
  *
  * 页面约定（研发照加；要改名就在同一个提交里改这里并写明）：
@@ -481,6 +486,205 @@ if (!PROTO) {
     await enter(page);
     const t = (await rowText(page, 'QQQ')).replace(/\s+/g, ' ');
     check('S 400 宽：每行的"1 日"有标签可读（QQQ 那行读得到"1 日 +3.54%"）', /1 ?日[：: ]*\+?3\.54%/.test(t), t.slice(0, 160));
+    await ctx.close();
+  });
+}
+
+if (!PROTO) {
+  // ================================================================ 第二版（Amos 2026-11-10 已定：① 未来 1 个月可能区间 ③ 债券类预期年化、展开详情的喇叭形区间、页面子菜单）
+  // 测试先写（C154）。数据：test/fixtures/funds/snapshot-v2.json（snapshot.json + 每只 band + 16 只债券 yield，替身数据）。
+  // 页面约定（研发照加；要改名就在同一个提交里改这里并写明）：
+  //   可能区间板块：标题含"未来 1 个月的可能区间"，每只一行带 data-band-code="<code>"；
+  //   债券板块：标题含"债券类：未来 1～3 年预期年化"，每只一行带 data-yield-code="<code>"；
+  //   展开详情 [data-detail="<code>"]（现有）里写"未来 1 个月"和 68% 区间；喇叭区域的图形元素带 data-band（例如 data-band="68" / "95"）；
+  //   子菜单：主菜单下方一排，<nav>（或 role=navigation，不是 #nav1），每项是 a 或 button，用 data-target="<板块 id>"（或 href="#<id>" / aria-controls）指到板块；
+  //     当前板块那一项带 aria-current（或 class on / active / current）。
+  const SNAP2 = JSON.parse(readFileSync(path.join(ROOT, 'test/fixtures/funds/snapshot-v2.json'), 'utf8'));
+  const BY2 = Object.fromEntries(SNAP2.items.map((x) => [x.code, x]));
+  const BONDS = SNAP2.items.filter((x) => x.category === '债券').map((x) => x.code);
+  const AUTO8 = ['AGG', 'TLT', 'LQD', 'BND', 'BSV', 'O9P', '511990', '511880'];
+  const APPROX8 = ['A35', 'MBH', '0P00006FY6', 'SBO', '511010', '511360', '000171', '217003'];
+  const SUBS = [['总结', /总结/], ['市场', /市场/], ['散点', /散点|赚了多少/], ['可能区间', /区间/], ['债券预期', /债券/], ['逐只对比', /逐只/], ['说明', /说明/]];
+  const pct1 = (v) => { const a = Math.abs(v).toFixed(1).replace('.', '\\.'); return new RegExp(`(^|[^\\d.])${v > 0 ? '\\+?' : v < 0 ? '[−-]' : '[+−-]?'}${a}%`); };
+  const bandRows = (page) => page.locator(`${R} [data-band-code]`).filter({ visible: true });
+  const yieldRows = (page) => page.locator(`${R} [data-yield-code]`).filter({ visible: true });
+  const headingVisible = (page, re) => page.locator(R).getByRole('heading', { name: re }).first().isVisible().catch(() => false);
+  /** 找子菜单：看得见的 nav / [role=navigation]（不是一级菜单），里面的 a / button 文字能对上 7 个板块；找到就打上 data-qa-subnav */
+  const findSub = (page) => page.evaluate((pats) => {
+    const res = pats.map(([, src]) => new RegExp(src));
+    for (const n of document.querySelectorAll('nav, [role="navigation"]')) {
+      if (n.id === 'nav1' || n.closest('#nav1') || !n.getClientRects().length) continue;
+      const items = [...n.querySelectorAll('a, button')];
+      const texts = items.map((a) => (a.textContent || '').replace(/\s+/g, ' ').trim());
+      const idx = res.map((re) => texts.findIndex((t) => re.test(t)));
+      if (idx.every((i) => i >= 0)) {
+        n.setAttribute('data-qa-subnav', '');
+        items.forEach((a, i) => a.setAttribute('data-qa-i', String(i)));
+        const top = document.getElementById('nav1')?.getBoundingClientRect();
+        const r = n.getBoundingClientRect();
+        const tops = idx.map((i) => Math.round(items[i].getBoundingClientRect().top));
+        return { idx, texts, belowMain: !top || r.top >= top.bottom - 1, oneRow: Math.max(...tops) - Math.min(...tops) <= 4, tops, rect: [r.left, r.top, r.width, r.height] };
+      }
+    }
+    return null;
+  }, SUBS.map(([n, re]) => [n, re.source]));
+  /** 子菜单第 i 项指到的板块元素（data-target / href="#id" / aria-controls），打上 data-qa-target=<i> */
+  const markTarget = (page, i) => page.evaluate((i) => {
+    const a = document.querySelector(`[data-qa-subnav] [data-qa-i="${i}"]`);
+    if (!a) return null;
+    const href = a.getAttribute('href') || '';
+    const id = a.getAttribute('data-target') || a.getAttribute('aria-controls') || (href.startsWith('#') && !href.startsWith('#/') ? href.slice(1) : '');
+    const t = id && (document.getElementById(id.replace(/^#/, '')) || document.querySelector(id));
+    if (!t) return { id, found: false };
+    document.querySelectorAll('[data-qa-target]').forEach((x) => x.removeAttribute('data-qa-target'));
+    t.setAttribute('data-qa-target', String(i));
+    return { id, found: true, text: (t.innerText || '').replace(/\s+/g, ' ').trim().slice(0, 60) };
+  }, i);
+  const targetPos = (page) => page.evaluate(() => {
+    const t = document.querySelector('[data-qa-target]');
+    if (!t) return null;
+    const r = t.getBoundingClientRect();
+    return { top: Math.round(r.top), bottom: Math.round(r.bottom), vh: innerHeight, atBottom: scrollY + innerHeight >= document.documentElement.scrollHeight - 2, hash: location.hash };
+  });
+  const activeIdx = (page) => page.evaluate(() => [...document.querySelectorAll('[data-qa-subnav] [data-qa-i]')]
+    .filter((a) => { const c = a.getAttribute('aria-current'); return (c && c !== 'false') || /\b(on|active|current|is-active|cur)\b/.test(a.className && a.className.baseVal !== undefined ? a.className.baseVal : a.className); })
+    .map((a) => Number(a.getAttribute('data-qa-i'))));
+  /** 展开 code 的详情：量"最深 …"文字和喇叭区域（[data-band]）的包围盒有没有重叠 */
+  async function deepVsCone(page, code) {
+    const row = page.locator(`${R} [data-code="${code}"][aria-expanded]`).first();
+    await row.scrollIntoViewIfNeeded().catch(() => {});
+    await row.click();
+    await page.locator(`${R} [data-detail="${code}"]`).first().waitFor({ state: 'visible', timeout: 2000 }).catch(() => {});
+    const r = await page.evaluate(({ R, code }) => {
+      const d = document.querySelector(`${R} [data-detail="${code}"]`);
+      if (!d) return { err: '没有展开详情' };
+      const cone = [...d.querySelectorAll('[data-band]')].filter((e) => e.getClientRects().length).map((e) => e.getBoundingClientRect());
+      const deep = [...d.querySelectorAll('text, span, div')].filter((e) => e.getClientRects().length && /^最深/.test((e.textContent || '').trim()) && e.children.length === 0).map((e) => e.getBoundingClientRect());
+      const hit = deep.some((a) => cone.some((b) => a.left < b.right - 0.5 && b.left < a.right - 0.5 && a.top < b.bottom - 0.5 && b.top < a.bottom - 0.5));
+      return { cone: cone.length, deep: deep.length, hit, text: (d.innerText || '').replace(/\s+/g, ' ').slice(0, 300) };
+    }, { R, code });
+    await row.click().catch(() => {});
+    return r;
+  }
+
+  // ---------------------------------------------------------------- V1：1280 浅色
+  await section('V1 第二版 1280 浅色', async () => {
+    const { page, ctx } = await open({ snap: SNAP2 });
+    await enter(page);
+    // 可能区间
+    check('V1 有"未来 1 个月的可能区间"板块', await headingVisible(page, /未来 ?1 ?个月的可能区间/), null);
+    const bcodes = await bandRows(page).evaluateAll((es) => es.map((e) => e.getAttribute('data-band-code')));
+    check('V1 可能区间：全部时每只一行（45 行，[data-band-code]）', bcodes.length === 45 && SNAP2.items.every((x) => bcodes.includes(x.code)), { n: bcodes.length, missing: SNAP2.items.map((x) => x.code).filter((c) => !bcodes.includes(c)) });
+    const rt = async (sel) => (await page.locator(`${R} ${sel}`).first().innerText({ timeout: 1500 }).catch(() => '')).replace(/\s+/g, ' ');
+    const short = [];
+    for (const c of ['XUS', 'XWR']) short.push([c, await rt(`[data-band-code="${c}"]`)]);
+    check('V1 可能区间：算不出的（XUS、XWR）那行写"上市不满两个月"', short.every(([, t]) => /上市不满两个月/.test(t)), short);
+    for (const c of ['ES3', 'QQQ']) {
+      const t = await rt(`[data-band-code="${c}"]`), b = BY2[c].band;
+      check(`V1 可能区间：${c} 那行写 68% 区间 ${b[1].toFixed(1)}% ～ +${b[3].toFixed(1)}%`, pct1(b[1]).test(t) && pct1(b[3]).test(t), t.slice(0, 160));
+    }
+    // 债券
+    check('V1 有"债券类：未来 1～3 年预期年化"板块', await headingVisible(page, /债券类[：:]\s*未来 ?1 ?[～~-] ?3 ?年预期年化/), null);
+    const ycodes = await yieldRows(page).evaluateAll((es) => es.map((e) => e.getAttribute('data-yield-code')));
+    check('V1 债券板块 16 行（[data-yield-code]），就是 16 只债券', ycodes.length === 16 && BONDS.every((c) => ycodes.includes(c)), { n: ycodes.length, ycodes });
+    const badA = [], badB = [];
+    for (const c of APPROX8) { const t = await rt(`[data-yield-code="${c}"]`); const v = BY2[c].yield.value; if (!(/近似/.test(t) && /≈/.test(t) && (t.includes(v.toFixed(2)) || t.includes(v.toFixed(1))))) badA.push([c, t.slice(0, 120)]); }
+    for (const c of AUTO8) { const t = await rt(`[data-yield-code="${c}"]`); const v = BY2[c].yield.value; if (/≈/.test(t) || !(t.includes(v.toFixed(2)) || t.includes(v.toFixed(1)))) badB.push([c, t.slice(0, 120)]); }
+    check('V1 债券：近似的 8 只带"近似"标签和"≈"，并写出数值', badA.length === 0, badA);
+    check('V1 债券：自动取的 8 只写出数值、不带"≈"', badB.length === 0, badB);
+    // 不是投资建议
+    const all = await page.locator(R).innerText().catch(() => '');
+    check('V1 页面写"不是投资建议"（看得见的文字）', /不是投资建议/.test(all), null);
+    // 展开详情
+    const es3 = page.locator(`${R} [data-code="ES3"][aria-expanded]`).first();
+    await es3.scrollIntoViewIfNeeded().catch(() => {});
+    await es3.click();
+    const dt = (await page.locator(`${R} [data-detail="ES3"]`).first().innerText({ timeout: 2000 }).catch(() => '')).replace(/\s+/g, ' ');
+    const cones = await page.locator(`${R} [data-detail="ES3"] svg [data-band]`).count();
+    const b = BY2.ES3.band;
+    check(`V1 展开 ES3：详情写"未来 1 个月"和区间 ${b[1].toFixed(1)}% ～ +${b[3].toFixed(1)}%，图上有喇叭区域（[data-band]）`, /未来 ?1 ?个月/.test(dt) && pct1(b[1]).test(dt) && pct1(b[3]).test(dt) && cones >= 1, { cones, dt: dt.slice(0, 200) });
+    await es3.click();
+    // "最深 …" 和喇叭区域不重叠（每只有区间的都量）
+    const over = [], miss = [];
+    for (const x of SNAP2.items.filter((x) => x.band)) {
+      const r = await deepVsCone(page, x.code);
+      if (r.err || !r.cone) miss.push([x.code, r.err || '没有 [data-band]']);
+      else if (r.hit) over.push(x.code);
+    }
+    check('V1 1280 宽：43 只的详情里都有喇叭区域', miss.length === 0, miss.slice(0, 6));
+    check('V1 1280 宽：每只详情里"最深 …"标注和喇叭区域的包围盒不重叠', over.length === 0, over);
+    // 子菜单
+    await page.evaluate(() => scrollTo(0, 0));
+    const sub = await findSub(page);
+    check('V1 子菜单：有一排（不是一级菜单）包含 总结 / 市场 / 散点 / 可能区间 / 债券预期 / 逐只对比 / 说明 7 项', !!sub, sub);
+    if (sub) {
+      check('V1 子菜单在主菜单下方、排成一排', sub.belowMain && sub.oneRow, sub);
+      const badClick = [];
+      for (let k = 0; k < SUBS.length; k++) {
+        const i = sub.idx[k];
+        const tg = await markTarget(page, i);
+        if (!tg?.found) { badClick.push([SUBS[k][0], '找不到指向的板块', tg]); continue; }
+        await page.evaluate((top) => scrollTo(0, top), k === 0 ? 99999 : 0);
+        await page.waitForTimeout(200);
+        await page.locator(`[data-qa-subnav] [data-qa-i="${i}"]`).click();
+        await page.waitForTimeout(900);
+        const p = await targetPos(page);
+        const ok = !!p && /^#\/(tools\/)?funds/.test(p.hash) && p.top < p.vh && p.bottom > 0 && (p.top >= -4 && p.top <= p.vh * 0.4 || p.atBottom);
+        if (!ok) badClick.push([SUBS[k][0], tg.id, p]);
+      }
+      check('V1 子菜单：点每一项都滚到对应板块（板块顶在视口上部 40% 内，或已到页底），地址仍是 #/funds', badClick.length === 0, badClick);
+      const badHl = [];
+      let n = 0;
+      for (let k = 0; k < SUBS.length; k++) {
+        const i = sub.idx[k];
+        const tg = await markTarget(page, i);
+        if (!tg?.found) continue;
+        await page.evaluate(() => { const t = document.querySelector('[data-qa-target]'); scrollTo(0, scrollY + t.getBoundingClientRect().top - 140); });
+        await page.waitForTimeout(500);
+        const p = await targetPos(page);
+        if (!p || Math.abs(p.top - 140) > 40) continue; // 页底够不着的板块不量
+        n++;
+        const act = await activeIdx(page);
+        if (!(act.length === 1 && act[0] === i)) badHl.push([SUBS[k][0], act.map((a) => sub.texts[a])]);
+      }
+      check('V1 子菜单：滚动（不点）到某个板块，高亮跟着变成那一项（至少量到 4 个板块）', n >= 4 && badHl.length === 0, { n, badHl });
+      const lc = await lowContrast(page, [R, '[data-qa-subnav]']);
+      check('V1 浅色：#v-funds 和子菜单文字对比度 ≥ 4.5', lc.bad.length === 0, lc.bad);
+    }
+    await ctx.close();
+  });
+
+  // ---------------------------------------------------------------- V2：400 深色
+  await section('V2 第二版 400 深色', async () => {
+    const { page, ctx } = await open({ snap: SNAP2, width: 400, height: 860, colorScheme: 'dark' });
+    await enter(page);
+    check('V2 400 宽：有可能区间 45 行、债券 16 行', (await bandRows(page).count()) === 45 && (await yieldRows(page).count()) === 16, { band: await bandRows(page).count(), yld: await yieldRows(page).count() });
+    const sub = await findSub(page);
+    check('V2 400 宽：子菜单在（7 项）', !!sub, sub);
+    if (sub) {
+      const sw = await page.evaluate(() => {
+        const n = document.querySelector('[data-qa-subnav]');
+        const items = [...n.querySelectorAll('[data-qa-i]')];
+        const inView = items.every((a) => { const r = a.getBoundingClientRect(); return r.left >= 0 && r.right <= innerWidth; });
+        // 可横滑：nav 自己或里面某一层能横向滚动
+        const sc = [n, ...n.querySelectorAll('*')].find((e) => e.scrollWidth > e.clientWidth + 1 && /(auto|scroll)/.test(getComputedStyle(e).overflowX));
+        let moved = false;
+        if (sc) { const s0 = sc.scrollLeft; sc.scrollLeft = s0 + 200; moved = sc.scrollLeft > s0; sc.scrollLeft = s0; }
+        return { inView, scrollable: !!sc, moved };
+      });
+      check('V2 400 宽：子菜单放不下时可以横滑（或 7 项都在屏幕里）', sw.inView || (sw.scrollable && sw.moved), sw);
+    }
+    check('V2 400 宽：页面不横向溢出', await noHScroll(page), await page.evaluate(() => [document.documentElement.scrollWidth, document.documentElement.clientWidth]));
+    const over = [], miss = [];
+    for (const c of ['ES3', 'QQQ', 'HST', '588000', 'TLT', 'UPD', 'BYJ']) {
+      const r = await deepVsCone(page, c);
+      if (r.err || !r.cone) miss.push([c, r.err || '没有 [data-band]']); else if (r.hit) over.push(c);
+    }
+    check('V2 400 宽：详情里有喇叭区域，"最深 …"和它不重叠（ES3、QQQ、HST、588000、TLT、UPD、BYJ）', miss.length === 0 && over.length === 0, { miss, over });
+    await page.locator(`${R} [data-code="ES3"][aria-expanded]`).first().click();
+    check('V2 400 宽：展开 ES3 后页面不横向溢出', await noHScroll(page), await page.evaluate(() => [document.documentElement.scrollWidth, document.documentElement.clientWidth]));
+    const lc = await lowContrast(page, sub ? [R, '[data-qa-subnav]'] : [R]);
+    check('V2 深色：#v-funds（含新板块、展开详情）和子菜单文字对比度 ≥ 4.5', lc.bad.length === 0, lc.bad);
     await ctx.close();
   });
 }

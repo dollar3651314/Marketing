@@ -27,6 +27,7 @@ import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { getPlatformProxy } from 'wrangler';
 import type { Env } from '../src/env';
 import { handle } from '../src/index';
+import { yieldResponse } from './funds-yield-fake';
 import { ROOT } from './helpers';
 
 const PASS = 'ci_only_copilot_password_01';
@@ -95,6 +96,9 @@ const fake = vi.fn(async (input: unknown, init?: RequestInit): Promise<Response>
   const u = new URL(url);
   if (u.hostname === '127.0.0.1' || u.hostname === 'localhost') return realFetch(input as RequestInfo, init);
   outbound.push(url);
+  // 第二版：债券收益率的 6 个来源回实抓夹具（test/funds-yield-fake.ts），不算 unknown；对外请求照样计数（≤ 45 包含它们）
+  const yr = yieldResponse(url, init);
+  if (yr) return yr;
   const y = /finance\.yahoo\.com\/v[78]\/finance\/chart\/([^/?]+)/.exec(url);
   const e = /eastmoney\.com/.test(u.hostname) && /lsjz/i.test(url) ? u.searchParams.get('fundCode') : null;
   const key = y ? decodeURIComponent(y[1]) : e;
