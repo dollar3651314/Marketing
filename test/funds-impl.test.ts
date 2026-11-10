@@ -1,5 +1,5 @@
 /**
- * 基金观察（src/funds.ts、src/funds-api.ts、migrations/0014_funds.sql）研发自测：口径、清洗、分批额度、取不到保留上次数据、要登录。
+ * 基金观察（src/funds.ts、src/funds-api.ts、migrations/0016_funds.sql）研发自测：口径、清洗、分批额度、取不到保留上次数据、要登录。
  * 外部接口一律用替身（不连网）；D1 用 getPlatformProxy 的本地真实 SQLite。测试会话另写的测试见同目录其他 funds 测试文件。
  */
 import { readdirSync, readFileSync } from 'node:fs';

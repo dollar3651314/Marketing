@@ -25,13 +25,33 @@ import type { Env } from '../src/env';
 import { handle } from '../src/index';
 import { ADMIN_PAGE } from '../src/admin-page';
 import { DRILL_CSS, DRILL_JS, DRILL_MOD } from '../src/drill-page';
-import { ALL_IDS, currentStage, drillState, queueOf, SCENE, STAGE4_NOTE, STAGES, stageStats, type DrillRow } from '../src/drill';
+import { ALL_IDS, audioTextOf, AUDIO_IDS, cardOf, orNull, currentStage, drillState, enOf, queueOf, sayText, SCENE, sharesWordRun, STAGE4_NOTE, STAGES, stageStats, zhOf, type DrillRow } from '../src/drill';
+import { CONTENT, STAGE3 } from '../src/drill-content';
+import { DRILL_PROJECT, DRILL_PURPOSE } from '../src/drill-audio';
+import { dayText, DAY, REVIEW_MODE, REVIEW_N, reviewLine, shuffleIds } from '../src/drill-review';
+import { TTS_MELOTTS } from '../src/tts';
+import { PURPOSES } from '../src/usage';
 import { ROOT, T0 } from './helpers';
 
 const PASS = 'ci_only_copilot_password_01';
 const HOST = 'https://copilot.example.test';
 const MIG = path.join(ROOT, 'migrations');
 const M0013 = '0013_drill.sql';
+const M0014 = '0014_drill_audio.sql';
+const M0015 = '0015_drill_review.sql';
+
+/** 揭晓那一整块（#dr-ans）的 HTML：按 <div> 配对数出来，不靠"后面第一个 </div>"（那会切早） */
+function ansBlock(): string {
+  const start = DRILL_MOD.indexOf('<div id="dr-ans"');
+  const re = /<div\b|<\/div>/g;
+  re.lastIndex = start;
+  let depth = 0;
+  for (let m = re.exec(DRILL_MOD); m; m = re.exec(DRILL_MOD)) {
+    depth += m[0] === '</div>' ? -1 : 1;
+    if (depth === 0) return DRILL_MOD.slice(start, re.lastIndex);
+  }
+  return '';
+}
 
 const stmtsOf = (files: string[]) =>
   files.map((f) => readFileSync(path.join(MIG, f), 'utf8').split('\n').map((l) => l.replace(/--.*$/, '')).join('\n'))
@@ -48,7 +68,7 @@ beforeAll(async () => {
 });
 afterAll(async () => dispose());
 beforeEach(async () => {
-  await db.batch(['drill_item', 'auth_fail', 'auth_lock'].map((t) => db.prepare(`DELETE FROM ${t}`)));
+  await db.batch(['drill_item', 'drill_audio', 'drill_review', 'ai_usage', 'model_usage', 'usage_by_project', 'usage_by_purpose', 'auth_fail', 'auth_lock'].map((t) => db.prepare(`DELETE FROM ${t}`)));
 });
 
 const env = (): Env => ({ DB: db, ENVIRONMENT: 'test', COPILOT_PASSWORD: PASS });
@@ -63,6 +83,25 @@ const api = async (p: string, body?: unknown, now = T0) => {
   const r = await handle(req('/api/drill/' + p, body === undefined ? { cookie: ck } : { method: 'POST', cookie: ck, body: JSON.stringify(body) }), env(), now);
   return { status: r.status, body: (await r.json()) as Record<string, any> };
 };
+/** 假的 Workers AI：melotts 回 {audio: base64}，顺便记下被调了几次、每次什么参数 */
+const MP3 = Uint8Array.from([0x49, 0x44, 0x33, 0x04, 0x00, 0x11, 0x22, 0x33]);
+const b64 = (a: Uint8Array) => btoa(String.fromCharCode(...a));
+function fakeAi(fn?: (model: string, inp: unknown) => Promise<unknown>) {
+  const calls: { model: string; inp: Record<string, unknown> }[] = [];
+  const AI = {
+    run: async (model: string, inp: unknown) => {
+      calls.push({ model, inp: inp as Record<string, unknown> });
+      return fn ? await fn(model, inp) : { audio: b64(MP3) };
+    },
+  };
+  return { calls, env: (): Env => ({ ...env(), AI }) };
+}
+/** 直接拿 Response（发音回的是 audio/mpeg，不是 JSON） */
+const getRaw = (p: string, e: Env = env(), now = T0) => handle(req('/api/drill/' + p, { cookie: ck }), e, now);
+
+/** 直接按到期时间排一笔复考（后台登录的会话只有几个钟头，测"到期"不能把"现在"往后拨一天） */
+const planAt = (due: number) => db.prepare('INSERT INTO drill_review (scene, due_at, mode) VALUES (?1, ?2, ?3) ON CONFLICT (scene) DO UPDATE SET due_at = ?2, mode = ?3').bind(SCENE, due, REVIEW_MODE).run();
+
 /** 把一项答成"会了"；返回最新状态 */
 const yes = (id: string, now = T0) => api('answer', { item: id, known: true }, now);
 const no = (id: string, now = T0) => api('answer', { item: id, known: false }, now);
@@ -78,7 +117,7 @@ async function passStage(n: number, t = T0) {
 describe('1. 内容：场景 0 三段各 6 项，和定稿逐字一致（防手滑；哪几项还没审见 src/drill.ts）', () => {
   it('第一段 单词：6 个词的中文、英文、关键点逐字对得上', () => {
     expect(STAGES[0].items.map((i) => [i.zh, i.en, i.key])).toEqual([
-      ['听清', 'catch', '没听清用 catch，不要用 understand'],
+      ['听清', 'catch', 'catch 是耳朵没收到；understand 是听清了但没懂。说错了对方会帮错忙'],
       ['跟得上', 'follow', "I'm not following = 我跟不上你的思路"],
       ['意思是', 'mean', 'What do you mean by X —— by 不能丢'],
       ['换个说法再说', 'rephrase', 'repeat 是再说一遍，rephrase 是换种说法'],
@@ -98,15 +137,29 @@ describe('1. 内容：场景 0 三段各 6 项，和定稿逐字一致（防手�
     ]);
   });
 
-  it('第三段 例句：6 条的中文情境、英文答案逐字对得上', () => {
-    expect(STAGES[2].items.map((i) => [i.zh, i.en])).toEqual([
-      ['对方说了个 scope 你不懂', 'What do you mean by "scope"?'],
-      ['整句没听清，想让他再说一遍', "Sorry, I didn't catch that. Could you say it again?"],
-      ['他说太快了', 'Could you slow down a bit? I want to get this right.'],
-      ['他那句话绕，想让他换个说法', "Could you rephrase that? I'm not sure I follow."],
-      ['确认他是不是要周五之前要', 'Just to make sure I understand — you need it by Friday?'],
-      ['复述他的结论：先上简单版本', "So what you're saying is we should ship the simple version first."],
+  it('第三段 例句：6 条的「对方说的那句 / 中文情境 / 英文答案」逐字对得上（内容在 src/drill-content.ts 的 STAGE3）', () => {
+    // 2026-11-10：第三段整段重做成「对方先说一句，你来接」（旧版是第二段词组加个尾巴，刚背完立刻考同一句）。
+    // 这一组照旧**逐字写死**（改一个字就红，防手滑），只是钉的是现在真正显示的那三样，而且比以前多钉一样（对方说的那句）。
+    expect(ALL_IDS.slice(12).map((id) => [STAGE3[id].prompt_en, STAGE3[id].prompt_zh, STAGE3[id].en])).toEqual([
+      ['Before we sign anything, legal wants us to de-risk the whole merchant onboarding flow first.', '他蹦出一个你没听过的词', 'What do you mean by "de-risk"?'],
+      ['Right, and the settlement window moves to T plus one for all the European corridors.', '他语速快，网又卡了一下', "Sorry, I didn't catch that."],
+      ['Okay, so the three options are net thirty, net sixty, or prepay with a two percent discount.', '他一口气报了三个方案', 'Could you slow down a bit? I want to get all three.'],
+      ["I think we're directionally aligned, but the sequencing of the rollout still worries me a lot.", '他那句话绕，你没抓到重点', "Could you rephrase that? I'm not sure I follow."],
+      ["Let's get the deck over to them tonight and the full model can land Friday morning.", '两个时间点，你要确认一下', 'Just to make sure I understand — the deck goes out tonight, the model on Friday?'],
+      ['Honestly, if we cut the reconciliation dashboard, we can hit the pilot date without adding headcount.', '他绕了一圈，你复述他的结论', "So what you're saying is we drop the dashboard to make the pilot date."],
     ]);
+    // 第三段**两边不各存一份**：STAGES 第三段就是从 STAGE3 读的（卡片上的中文 = prompt_zh，答案 = en）
+    expect(STAGES[2].items.map((i) => [i.id, zhOf(i), enOf(i)])).toEqual(ALL_IDS.slice(12).map((id) => [id, STAGE3[id].prompt_zh, STAGE3[id].en]));
+  });
+
+  it('第三段「对方说的那句」里不许藏着答案：没有 4 个词以上的连续重合（产品换内容也得过这一关）', () => {
+    for (const id of ALL_IDS.slice(12)) {
+      const p = STAGE3[id];
+      expect([id, p.prompt_en.trim().length > 0]).toEqual([id, true]);
+      expect([id, sharesWordRun(p.prompt_en, p.en, 4)]).toEqual([id, false]);
+    }
+    // 反过来验这个检查真的会抓人：把答案原样抄进对方那句就必须被抓到
+    expect(sharesWordRun("He said: Sorry, I didn't catch that. Again?", "Sorry, I didn't catch that.", 4)).toBe(true);
   });
 
   it('三段、每段 6 项、编号不重复；只有第一段有关键点（第二、三段没有）', () => {
@@ -117,9 +170,15 @@ describe('1. 内容：场景 0 三段各 6 项，和定稿逐字一致（防手�
     expect([...STAGES[1].items, ...STAGES[2].items].every((i) => i.key === undefined)).toBe(true);
   });
 
-  it('内容写死在代码里：模块结构里不带任何一条英文答案（界面是现场画的，不是服务端拼 HTML）', () => {
+  it('内容写死在内容文件里：模块结构里不带任何一条英文答案、也不带第三段对方说的那句（界面是现场画的，不是服务端拼 HTML）', () => {
     for (const i of ALL_IDS) expect([i, DRILL_MOD.includes(i)]).toEqual([i, false]);
-    for (const en of STAGES.flatMap((s) => s.items.map((x) => x.en))) expect([en, DRILL_MOD.includes(en)]).toEqual([en, false]);
+    for (const en of STAGES.flatMap((s) => s.items.map((x) => enOf(x)))) expect([en, DRILL_MOD.includes(en)]).toEqual([en, false]);
+    // v2 多钉一样：对方说的那句虽然**要显示在卡片上**，也得是现场画的，不许写死在模块里
+    for (const id of ALL_IDS.slice(12)) expect([id, DRILL_MOD.includes(STAGE3[id].prompt_en)]).toEqual([id, false]);
+    // 词义、用法、音标同理
+    for (const id of ALL_IDS) for (const v of [CONTENT[id].ipa, CONTENT[id].stress, CONTENT[id].meaning, CONTENT[id].usage]) {
+      if (v) expect([id, v, DRILL_MOD.includes(v)]).toEqual([id, v, false]);
+    }
   });
 });
 
@@ -162,10 +221,16 @@ describe('3. 三步交互：先回想 → 揭晓 → 自己判', () => {
     expect(DRILL_MOD).toContain('id="dr-show">看答案</button>');
     expect(DRILL_MOD).toContain('id="dr-yes">会了</button>');
     expect(DRILL_MOD).toContain('id="dr-no">不会</button>');
-    // 卡片上先只有中文：英文 #dr-en 在藏起来的 #dr-ans 里面
-    const ans = DRILL_MOD.slice(DRILL_MOD.indexOf('id="dr-ans"'), DRILL_MOD.indexOf('</div>', DRILL_MOD.indexOf('id="dr-en"')));
-    expect(ans).toContain('id="dr-en"');
-    expect(ans).toContain('id="dr-key"');
+    // 卡片上先只有中文：**揭晓那一整块**（#dr-ans，默认 hidden）里面装着英文、音标 / 重音、词义、用法、关键点和两个发音按钮。
+    // 以前这里只切到 #dr-en 后面第一个 </div> 为止（切早了，#dr-key 根本没被看），现在整块都看，而且多钉了 4 个元素。
+    const ans = ansBlock();
+    for (const id of ['dr-en', 'dr-ipa', 'dr-zimian', 'dr-use', 'dr-key', 'dr-au']) expect([id, ans.includes('id="' + id + '"')]).toEqual([id, true]);
+    // 中文、「对方说的那句」、**发音出错的提示**都在块外面。
+    // `dr-aumsg` 原来钉在块**里面**——那条断言把一个真 bug 钉死了：第三段揭晓前 #dr-ans 还带 hidden，
+    // 他点「🔊 听他这句」失败时 dAuErr 把 hidden=false 设在一个父元素还 hidden 的节点上，**页面一动不动、什么都看不到**
+    // （2026-11-10 审查 🔴1）。现在反过来钉：它必须在块外面，否则那个 bug 回来就红。
+    for (const id of ['dr-zh', 'dr-pr', 'dr-aumsg']) expect([id, ans.includes('id="' + id + '"')]).toEqual([id, false]);
+    expect(DRILL_MOD).toContain('id="dr-aumsg"');
   });
 
   it('点「看答案」才揭晓：dReveal 把答案显示出来、换掉按钮；换下一项时 dPaint 又藏回去', () => {
@@ -176,7 +241,7 @@ describe('3. 三步交互：先回想 → 揭晓 → 自己判', () => {
   it('答案本来就在手里（state 里带着英文和关键点）：点「看答案」不再跑一趟接口，没有延迟', () => {
     const st = drillState([]);
     expect((st.当前 as Record<string, string>).英文).toBe('catch');
-    expect((st.当前 as Record<string, string>).关键点).toBe('没听清用 catch，不要用 understand');
+    expect((st.当前 as Record<string, string>).关键点).toBe('catch 是耳朵没收到；understand 是听清了但没懂。说错了对方会帮错忙');
     // 「看答案」这个按钮的处理函数里没有 fetch
     const reveal = DRILL_JS.slice(DRILL_JS.indexOf('function dReveal'), DRILL_JS.indexOf('function dAnswer'));
     expect(reveal).not.toContain('fetch');
@@ -325,7 +390,7 @@ describe('5. 接口：进度存在服务器上（换设备接着练）', () => {
     const { body } = await api('state');
     const six = body.这一段.六项 as { id: string; 中文: string; 英文: string | null; 关键点: string | null; 会了: boolean; 第一次就会: boolean }[];
     expect(six).toHaveLength(6);
-    expect(six[0]).toEqual({ id: 'w1', 中文: '听清', 英文: 'catch', 关键点: '没听清用 catch，不要用 understand', 会了: true, 第一次就会: true });
+    expect(six[0]).toEqual({ id: 'w1', 中文: '听清', 英文: 'catch', 关键点: 'catch 是耳朵没收到；understand 是听清了但没懂。说错了对方会帮错忙', 会了: true, 第一次就会: true });
     expect(six.slice(1).every((x) => x.英文 === null && x.关键点 === null && !x.会了)).toBe(true);
     // 中文一直给（他要能看到这一段都有哪些）
     expect(six.map((x) => x.中文)).toEqual(['听清', '跟得上', '意思是', '换个说法再说', '听懵了', '说清楚']);
@@ -369,9 +434,10 @@ describe('7. 不调 AI、不花钱、不碰密钥', () => {
     for (const w of ["from './ai'", "from './gemini'", "from './workers-ai'", "from './ai.js'", '@cf/', 'generativelanguage', '/v1/', 'chargeNeurons', 'neurons']) {
       expect([w, src.includes(w)]).toEqual([w, false]);
     }
-    // 只 import 了类型
+    // 钉死到底 import 了哪两个模块（比"只有一条 import"更严：多一条、换一个来源都红）
     expect(src).toContain("import type { Env } from './env';");
-    expect((src.match(/^import /gm) ?? [])).toHaveLength(1);
+    expect(src).toContain("import { CONTENT, STAGE3, W1_KEY } from './drill-content';");
+    expect([...src.matchAll(/^import .*from '([^']+)';$/gm)].map((m) => m[1])).toEqual(['./env', './drill-content']);
   });
 
   it('页面上不出现任何命令行、不出现密钥变量名（底线 1、把用户当小白）', () => {
@@ -432,5 +498,391 @@ describe('9. 进度一眼看得到；第四段不假装有', () => {
   it('这一块明说自己不调 AI（折叠说明里），不吹第四段已经有了', () => {
     expect(DRILL_MOD).toContain('一个 AI 都不调');
     expect(DRILL_MOD).not.toContain('Gemini Live 对话');
+  });
+});
+
+// ======================================================================
+describe('10. v2 内容：音标 / 重音、词义、用法（内容在 src/drill-content.ts，null 就整行不显示）', () => {
+  const card = (id: string) => cardOf(STAGES.flatMap((s) => s.items).find((i) => i.id === id)!);
+
+  it('单词段给音标、不给重音；词组和例句段给重音、不给音标（显示位分得清清楚楚）', () => {
+    for (const id of ALL_IDS.slice(0, 6)) {
+      expect([id, card(id).音标]).toEqual([id, CONTENT[id].ipa ?? null]);
+      expect([id, card(id).重音]).toEqual([id, null]);
+    }
+    for (const id of ALL_IDS.slice(6)) {
+      expect([id, card(id).重音]).toEqual([id, CONTENT[id].stress ?? null]);
+      expect([id, card(id).音标]).toEqual([id, null]);
+    }
+  });
+
+  it('词义和用法原样给（空白串一律当没有 → null，页面照规矩不显示那一行）', () => {
+    for (const id of ALL_IDS) {
+      expect([id, card(id).字面意思]).toEqual([id, (CONTENT[id].meaning ?? '').trim() || null]);
+      expect([id, card(id).什么场合用]).toEqual([id, (CONTENT[id].usage ?? '').trim() || null]);
+    }
+  });
+
+  it('空的内容一律变成 null（这是"整行不显示"的根：空字符串、只有空白、没给，都一样）', () => {
+    for (const v of ['', '   ', '\n', null, undefined]) expect([String(v), orNull(v)]).toEqual([String(v), null]);
+    expect(orNull('  /kætʃ/  ')).toBe('/kætʃ/');
+  });
+
+  it('内容文件里缺的字段：出来就是 null，不冒充、也不写「暂无」', () => {
+    // 第二段没有 ipa、第一段没有 stress：这两处本来就是空的
+    expect(ALL_IDS.slice(6).every((id) => (CONTENT[id].ipa ?? null) === null)).toBe(true);
+    expect(ALL_IDS.slice(0, 6).every((id) => (CONTENT[id].stress ?? null) === null)).toBe(true);
+    // 服务端给出去的一整项里，没有一个字段是「暂无」这类占位词
+    const all = JSON.stringify(ALL_IDS.map((id) => card(id)));
+    for (const w of ['暂无', '待补', 'TODO', 'null 占位', '未填']) expect([w, all.includes(w)]).toEqual([w, false]);
+  });
+
+  it('每一条内容都带出处（src），查不到的写「未查到」——不许留空', () => {
+    for (const id of ALL_IDS) {
+      const src = CONTENT[id].src.trim();
+      expect([id, src.length > 0]).toEqual([id, true]);
+      expect([id, src === '未查到' || src.startsWith('https://')]).toEqual([id, true]);
+    }
+  });
+
+  it('第三段卡片上给「对方说的那句」+ 中文情境 + 它自己的发音编号；前两段没有', () => {
+    for (const id of ALL_IDS.slice(12)) {
+      expect([id, card(id).对方说的]).toEqual([id, STAGE3[id].prompt_en]);
+      expect([id, card(id).对方说的中文]).toEqual([id, STAGE3[id].prompt_zh]);
+      expect([id, card(id).对方发音]).toEqual([id, id + 'p']);
+    }
+    for (const id of ALL_IDS.slice(0, 12)) {
+      expect([id, card(id).对方说的, card(id).对方发音]).toEqual([id, null, null]);
+    }
+    // 每一项都能点🔊（发音编号就是它自己）
+    for (const id of ALL_IDS) expect([id, card(id).发音]).toEqual([id, id]);
+  });
+
+  it('state 的「当前」一次把该给的都给了（页面点「看答案」不用再跑一趟接口）', () => {
+    const cur = drillState([]).当前 as Record<string, unknown>;
+    expect(Object.keys(cur).sort()).toEqual(['中文', '什么场合用', '关键点', '发音', '字面意思', '对方发音', '对方说的', '对方说的中文', '段', '英文', '重音', '音标', 'id'].sort());
+    expect(cur.音标).toBe(CONTENT.w1.ipa);
+    expect(cur.字面意思).toBe(CONTENT.w1.meaning);
+    expect(cur.什么场合用).toBe(CONTENT.w1.usage);
+  });
+});
+
+// ======================================================================
+describe('11. 发音：melotts 第一次需要时生成一次，存 D1 永久复用（24 段约 20 neurons）', () => {
+  it('一共 24 段：18 项 + 第三段 6 句「对方说的那句」（s1p～s6p）', () => {
+    expect(AUDIO_IDS).toHaveLength(24);
+    expect(new Set(AUDIO_IDS).size).toBe(24);
+    expect(AUDIO_IDS.slice(18)).toEqual(['s1p', 's2p', 's3p', 's4p', 's5p', 's6p']);
+  });
+
+  it('每一段念的是什么：答案念答案、s#p 念对方那句；只去掉填空的 ___ 和破折号，一个词都不改', () => {
+    for (const id of ALL_IDS) expect([id, audioTextOf(id)]).toEqual([id, sayText(enOf(STAGES.flatMap((s) => s.items).find((i) => i.id === id)!))]);
+    for (const id of ALL_IDS.slice(12)) expect([id, audioTextOf(id + 'p')]).toEqual([id, sayText(STAGE3[id].prompt_en)]);
+    expect(sayText('What do you mean by ___?')).toBe('What do you mean by ?');
+    expect(sayText('Just to make sure I understand —')).toBe('Just to make sure I understand');
+    expect(audioTextOf('w9')).toBe(null);
+  });
+
+  it('第一次点🔊：调一次 melotts（prompt + lang=en）、存进 drill_audio、回 audio/mpeg；第二次**不再调 AI**', async () => {
+    const ai = fakeAi();
+    const r1 = await getRaw('audio/w1', ai.env());
+    expect(r1.status).toBe(200);
+    expect(r1.headers.get('content-type')).toBe('audio/mpeg');
+    expect(new Uint8Array(await r1.arrayBuffer())).toEqual(MP3);
+    expect(ai.calls).toHaveLength(1);
+    expect(ai.calls[0].model).toBe(TTS_MELOTTS);
+    expect(ai.calls[0].inp).toEqual({ prompt: 'catch', lang: 'en' });
+    const row = await db.prepare("SELECT item, at FROM drill_audio WHERE item = 'w1'").first<{ item: string; at: number }>();
+    expect([row?.item, row?.at]).toEqual(['w1', T0]);
+    // 第二次：库里有了，一次 AI 都不调（永久复用，不再花钱）
+    const r2 = await getRaw('audio/w1', ai.env(), T0 + 99_000);
+    expect(r2.status).toBe(200);
+    expect(new Uint8Array(await r2.arrayBuffer())).toEqual(MP3);
+    expect(ai.calls).toHaveLength(1);
+  });
+
+  it('记账走已有那一本：用途 drill-tts、项目 drill、模型 melotts，而且 drill-tts 在用量页有中文名', async () => {
+    const ai = fakeAi();
+    await getRaw('audio/p2', ai.env());
+    const p = await db.prepare('SELECT purpose, model, req, neurons FROM usage_by_purpose').first<{ purpose: string; model: string; req: number; neurons: number }>();
+    // 记账那一本按"引擎"记（workers-ai），和语音生成工具、素材生成器同一套；真正跑的模型是 melotts（上一条测了）
+    expect([p?.purpose, p?.model, p?.req]).toEqual([DRILL_PURPOSE, 'workers-ai', 1]);
+    expect(p!.neurons).toBeGreaterThan(0);
+    const j = await db.prepare('SELECT project FROM usage_by_project').first<{ project: string }>();
+    expect(j?.project).toBe(DRILL_PROJECT);
+    const a = await db.prepare('SELECT neurons FROM ai_usage').first<{ neurons: number }>();
+    expect(a!.neurons).toBeGreaterThan(0);
+    expect(DRILL_PURPOSE).toBe('drill-tts');
+    expect(PURPOSES).toContain(DRILL_PURPOSE);
+  });
+
+  it('24 段全生成一遍：加起来远不到免费额度（别偷偷变成一笔新开销）', async () => {
+    const ai = fakeAi();
+    for (const id of AUDIO_IDS) expect([id, (await getRaw('audio/' + id, ai.env())).status]).toEqual([id, 200]);
+    expect(ai.calls).toHaveLength(24);
+    const a = await db.prepare('SELECT neurons FROM ai_usage').first<{ neurons: number }>();
+    expect(a!.neurons).toBeLessThan(100); // 实测约 20；免费额度 10,000/天
+    expect((await db.prepare('SELECT COUNT(*) AS n FROM drill_audio').first<{ n: number }>())?.n).toBe(24);
+  });
+
+  it('没绑 Workers AI → 503 两句话；编号不认识 → 400（都不进库）', async () => {
+    const r = await getRaw('audio/w1');
+    expect(r.status).toBe(503);
+    const j = (await r.json()) as Record<string, string>;
+    expect(j.出错).toContain('生成不了发音');
+    expect(j.怎么办).toBeTruthy();
+    const bad = await getRaw('audio/w9', fakeAi().env());
+    expect(bad.status).toBe(400);
+    expect(((await bad.json()) as Record<string, string>).出错).toContain('不在带练清单里');
+    expect((await db.prepare('SELECT COUNT(*) AS n FROM drill_audio').first<{ n: number }>())?.n).toBe(0);
+  });
+
+  it('今天额度不够 → 429 两句话，**一次 AI 都不调**、不入库（C117：只看他自己设的那个上限）', async () => {
+    await db.prepare("INSERT INTO ai_usage (day, neurons) VALUES ('2026-10-29', 8000)").run();
+    const ai = fakeAi();
+    const r = await getRaw('audio/w1', ai.env());
+    expect(r.status).toBe(429);
+    const j = (await r.json()) as Record<string, string>;
+    expect(j.出错).toContain('额度不够');
+    expect(j.怎么办).toContain('生成过的永久存着');
+    expect(ai.calls).toHaveLength(0);
+    expect((await db.prepare('SELECT COUNT(*) AS n FROM drill_audio').first<{ n: number }>())?.n).toBe(0);
+  });
+
+  it('模型出错 → 502 两句话、按估算记一笔账、库里不留半截；**失败就失败，不自动重试**', async () => {
+    const ai = fakeAi(async () => {
+      throw new Error('melotts boom');
+    });
+    const r = await getRaw('audio/w1', ai.env());
+    expect(r.status).toBe(502);
+    const j = (await r.json()) as Record<string, string>;
+    expect(j.出错).toContain('发音没生成出来');
+    expect(j.怎么办).toContain('不会自动重试');
+    expect(ai.calls).toHaveLength(1); // 只试了一次，没有重试风暴
+    expect((await db.prepare('SELECT COUNT(*) AS n FROM drill_audio').first<{ n: number }>())?.n).toBe(0);
+    expect((await db.prepare('SELECT neurons FROM ai_usage').first<{ neurons: number }>())!.neurons).toBeGreaterThan(0);
+  });
+
+  it('回来的是空的 → 502，不把空文件存进库（下次还能重新生成）', async () => {
+    const ai = fakeAi(async () => ({ audio: '' }));
+    const r = await getRaw('audio/w1', ai.env());
+    expect(r.status).toBe(502);
+    expect((await db.prepare('SELECT COUNT(*) AS n FROM drill_audio').first<{ n: number }>())?.n).toBe(0);
+  });
+
+  it('没登录一律 401（和带练别的接口一样）', async () => {
+    const r = await handle(req('/api/drill/audio/w1'), fakeAi().env(), T0);
+    expect(r.status).toBe(401);
+  });
+});
+
+// ======================================================================
+describe('12. 复考：「明天再考我这 18 项」（表 drill_review，不动 drill_item）', () => {
+  it('还没安排：一句话是空的，页面上什么都不写', async () => {
+    const { status, body } = await api('review');
+    expect(status).toBe(200);
+    expect([body.有安排, body.到期了, body.一句话]).toEqual([false, false, '']);
+    expect(body.一共).toBe(18);
+  });
+
+  it('按「明天再考我这 18 项」：记下**明天同一时刻**到期，方式是「只考」', async () => {
+    const { body } = await api('review/plan', {});
+    expect(body.到期时间).toBe(T0 + DAY);
+    expect(body.方式).toBe(REVIEW_MODE);
+    expect(body.到期了).toBe(false);
+    const row = await db.prepare('SELECT scene, due_at, mode FROM drill_review').first<{ scene: number; due_at: number; mode: string }>();
+    expect([row?.scene, row?.due_at, row?.mode]).toEqual([SCENE, T0 + DAY, REVIEW_MODE]);
+  });
+
+  it('没到期：顶上写「下次复考：X 月 X 日」（台湾时间）；到期了：写「今天是复考」并说明只考什么', () => {
+    const row = { scene: SCENE, due_at: T0 + DAY, mode: REVIEW_MODE };
+    expect(dayText(T0 + DAY)).toBe('10 月 30 日'); // T0 是台湾时间 10/29 12:00
+    expect(reviewLine(row, T0)).toBe('下次复考：10 月 30 日（只考）。还没到期，想现在考也可以。');
+    expect(reviewLine(row, T0 + DAY)).toContain('今天是复考');
+    expect(reviewLine(row, T0 + DAY)).toContain('不给关键点、不给词意');
+    expect(reviewLine(null, T0)).toBe('');
+  });
+
+  it('到期后再打开：到期了 = true（一句话由服务端给，页面原样显示）', async () => {
+    await planAt(T0 - 1000);
+    const { body } = await api('review');
+    expect(body.到期了).toBe(true);
+    expect(body.一句话).toContain('今天是复考');
+  });
+
+  it('开始这一轮：18 项**三段合一轮、顺序打散**，而且是那 18 项的排列（不多不少）', async () => {
+    await planAt(T0 - 1000);
+    const { body } = await api('review/start', {});
+    const ids = (body.题目 as Record<string, string>[]).map((x) => x.id);
+    expect(ids).toHaveLength(18);
+    expect([...ids].sort()).toEqual([...ALL_IDS].sort());
+    expect(ids).not.toEqual(ALL_IDS); // 打散了
+    // 同一次复考刷新几遍是同一张卷子（种子是到期时间）
+    const again = await api('review/start', {});
+    expect((again.body.题目 as Record<string, string>[]).map((x) => x.id)).toEqual(ids);
+    expect(shuffleIds(ALL_IDS, T0 - 1000)).toEqual(ids);
+  });
+
+  it('「只考」就是只考：题目里**没有**关键点、字面意思、什么场合用、音标（只有题面、答案和发音）', async () => {
+    await planAt(T0 - 1000);
+    const { body } = await api('review/start', {});
+    for (const q of body.题目 as Record<string, unknown>[]) {
+      expect(Object.keys(q).sort()).toEqual(['中文', '发音', '对方发音', '对方说的', '对方说的中文', '段', '英文', 'id'].sort());
+    }
+  });
+
+  it('提前开始也行（没到期一样能 start）；没安排过就 start → 409', async () => {
+    const no = await api('review/start', {});
+    expect(no.status).toBe(409);
+    expect(no.body.怎么办).toContain('明天再考我这 18 项');
+    await api('review/plan', {});
+    const early = await api('review/start', {}, T0 + 1000);
+    expect(early.status).toBe(200);
+    expect((early.body.题目 as unknown[]).length).toBe(18);
+  });
+
+  it('走完报「说得出来 N / 18」，这一笔安排清掉；**drill_item 的进度一行没动**', async () => {
+    await yes('w1');
+    const before = await db.prepare('SELECT item, tries, pass_try, at FROM drill_item').all();
+    await planAt(T0 - 1000);
+    const done = await api('review/done', { 对: 13 });
+    expect(done.status).toBe(200);
+    expect(done.body.这一轮).toBe('说得出来 13 / 18');
+    expect(done.body.有安排).toBe(false);
+    expect((await db.prepare('SELECT COUNT(*) AS n FROM drill_review').first<{ n: number }>())?.n).toBe(0);
+    const after = await db.prepare('SELECT item, tries, pass_try, at FROM drill_item').all();
+    expect(after.results).toEqual(before.results);
+  });
+
+  it('成绩不合法（负数、超过 18、不是整数、没给）→ 400；这一轮已经结束了再报 → 409', async () => {
+    await planAt(T0 - 1000);
+    for (const v of [-1, 19, 1.5, '3']) expect([v, (await api('review/done', { 对: v })).status]).toEqual([v, 400]);
+    expect((await api('review/done', {})).status).toBe(400);
+    expect((await api('review/done', { 对: 18 })).status).toBe(200);
+    expect((await api('review/done', { 对: 18 })).status).toBe(409);
+  });
+
+  it('打散是算出来的、不是随机的：同一个种子永远同一张卷子，换一个种子就不一样', () => {
+    expect(shuffleIds(ALL_IDS, 123)).toEqual(shuffleIds(ALL_IDS, 123));
+    expect(shuffleIds(ALL_IDS, 123)).not.toEqual(shuffleIds(ALL_IDS, 124));
+    expect([...shuffleIds(ALL_IDS, 123)].sort()).toEqual([...ALL_IDS].sort());
+    expect(REVIEW_N).toBe(18);
+  });
+
+  it('没登录一律 401', async () => {
+    expect((await handle(req('/api/drill/review'), env(), T0)).status).toBe(401);
+  });
+});
+
+// ======================================================================
+describe('13. 迁移 0014 / 0015 只 CREATE（旧表一行不动）', () => {
+  const code = (f: string) => readFileSync(path.join(MIG, f), 'utf8').split('\n').map((l) => l.replace(/--.*$/, '')).join('\n');
+
+  it('0014 只有一条 CREATE TABLE drill_audio（item / mp3 / at，主键 item），没有 ALTER / DROP / INDEX / 回填', () => {
+    const c = code(M0014);
+    expect((c.match(/CREATE TABLE/g) ?? []).length).toBe(1);
+    expect(c).toContain('CREATE TABLE drill_audio (');
+    expect(c).toContain('item TEXT PRIMARY KEY');
+    for (const w of ['ALTER ', 'DROP ', 'CREATE INDEX', 'INSERT ', 'UPDATE ', 'DELETE ']) expect([w, c.toUpperCase().includes(w)]).toEqual([w, false]);
+  });
+
+  it('0015 只有一条 CREATE TABLE drill_review（scene / due_at / mode，主键 scene），同样只 CREATE', () => {
+    const c = code(M0015);
+    expect((c.match(/CREATE TABLE/g) ?? []).length).toBe(1);
+    expect(c).toContain('CREATE TABLE drill_review (');
+    expect(c).toContain('scene INTEGER PRIMARY KEY');
+    for (const w of ['ALTER ', 'DROP ', 'CREATE INDEX', 'INSERT ', 'UPDATE ', 'DELETE ']) expect([w, c.toUpperCase().includes(w)]).toEqual([w, false]);
+  });
+
+  it('在已有 0001～0013 数据的库上跑：旧表还在、0013 的 drill_item 结构一个字没变，两张新表是空的', async () => {
+    const old = await db.prepare("SELECT COUNT(*) AS n FROM sqlite_master WHERE type = 'table' AND name IN ('events','queue','en_word','drill_item')").first<{ n: number }>();
+    expect(old?.n).toBe(4);
+    const cols = (await db.prepare("SELECT name FROM pragma_table_info('drill_item')").all<{ name: string }>()).results;
+    expect(cols!.map((c) => c.name)).toEqual(['scene', 'item', 'tries', 'pass_try', 'at']);
+    for (const t of ['drill_audio', 'drill_review']) {
+      expect([t, (await db.prepare(`SELECT COUNT(*) AS n FROM ${t}`).first<{ n: number }>())?.n]).toEqual([t, 0]);
+    }
+    const au = (await db.prepare("SELECT name, type FROM pragma_table_info('drill_audio')").all<{ name: string; type: string }>()).results;
+    expect(au!.map((c) => [c.name, c.type])).toEqual([['item', 'TEXT'], ['mp3', 'BLOB'], ['at', 'INTEGER']]);
+    const rv = (await db.prepare("SELECT name, type FROM pragma_table_info('drill_review')").all<{ name: string; type: string }>()).results;
+    expect(rv!.map((c) => [c.name, c.type])).toEqual([['scene', 'INTEGER'], ['due_at', 'INTEGER'], ['mode', 'TEXT']]);
+  });
+});
+
+// ======================================================================
+describe('14. 页面：音标 / 词意 / 发音 / 复考都在，一个输入框都没加', () => {
+  it('揭晓那一块里：音标、字面意思、什么场合用各占一行，**空的那一行整行不显示**（dLine）', () => {
+    expect(DRILL_JS).toContain("function dLine(id,s)");
+    expect(DRILL_JS).toContain("e.hidden=!t;");
+    for (const id of ['dr-ipa', 'dr-zimian', 'dr-use']) expect([id, DRILL_JS.includes("dLine('" + id + "'")]).toEqual([id, true]);
+    // 页面自己不造占位词（内容是 null 就整行不显示；"这一项也没有音标"是发音失败时的实话，不是占位词）
+    for (const w of ['暂无', '待补', '待定', 'N/A']) expect([w, DRILL_MOD.includes(w) || DRILL_JS.includes(w)]).toEqual([w, false]);
+  });
+
+  it('两个发音按钮：🔊 正常速 + 🐢 慢速 0.7 倍，**同一段音频**（慢速只是 playbackRate=0.7，不额外生成）', () => {
+    expect(DRILL_MOD).toContain('id="dr-say">🔊 正常速</button>');
+    expect(DRILL_MOD).toContain('id="dr-slow">🐢 慢速 0.7 倍</button>');
+    expect(DRILL_JS).toContain("dAudio(DR.cur&&DR.cur['发音'],0.7,'ans')");
+    expect(DRILL_JS).toContain('a.playbackRate=rate');
+    // 同一段在生成中被连点（🔊 之后马上点 🐢）不许再发一个请求 —— 否则会再调一次 melotts、再记一次账
+    // （2026-11-10 审查 🟡2）。auBusy 是那道闸。
+    expect(DRILL_JS).toContain('if(DR.auBusy[id]){return;}');
+    expect(DRILL_JS).toContain('DR.auBusy[id]=1;');
+    expect(DRILL_JS).toContain('auBusy:{}');
+    // 成功和失败两条路都要把闸放开，否则这一段再也点不响
+    const da = DRILL_JS.slice(DRILL_JS.indexOf('function dAudio'), DRILL_JS.indexOf('/* ---- 画一遍'));
+    expect([...da.matchAll(/done\(\);/g)].length).toBeGreaterThanOrEqual(3);
+    // 两个按钮都在 .dr-two 里（和「会了 / 不会」同一条 ≥56px 的规则）
+    expect(DRILL_MOD).toContain('<div class="dr-two dr-au" id="dr-au">');
+    // 第三段还能单独听「对方那句」
+    expect(DRILL_JS).toContain("dAudio(DR.cur&&DR.cur['对方发音'],1,'pr')");
+  });
+
+  it('复考到期当天，小结页的「明天再考我这 18 项」要藏起来（否则一点就把今天的复考推到明天）', () => {
+    // 到期那天小结页照旧显示，里面那个按钮一点就无条件 due_at = now + 1 天，没有任何确认，
+    // 今天该做的复考被悄悄取消（2026-11-10 审查 🟡3）。到期时只留顶上的「开始复考」。
+    expect(DRILL_MOD).toContain('<div class="dr-one" id="dr-planwrap">');
+    expect(DRILL_JS).toContain("dShow('dr-planwrap',!s['到期了']);");
+  });
+
+  it('发音生成不出来：当面说「发音这次没生成出来」+ 服务器那两句话，**不自动重试**', () => {
+    // 文案要分清是哪一段没生成出来：原来不管点哪个按钮都说「下面只有音标」，
+    // 可「对方那句」根本没有音标，而且音标在按钮**上面**，「下面」还是反的（2026-11-10 审查 🔴1b）。
+    expect(DRILL_JS).toContain("which==='pr'?'对方那句的发音':'这一项的发音'");
+    expect(DRILL_JS).toContain("'没生成出来，'");
+    expect(DRILL_JS).toContain("先看上面的音标。");
+    expect(DRILL_JS).toContain("这一次先跳过发音。");
+    expect(DRILL_JS).toContain("怎么办：");
+    // 三个按钮都要把自己是哪一段传进去，否则上面那句分不清
+    expect(DRILL_JS).toContain("dAudio(DR.cur&&DR.cur['发音'],1,'ans')");
+    expect(DRILL_JS).toContain("dAudio(DR.cur&&DR.cur['对方发音'],1,'pr')");
+    // dAudio 里没有任何重试 / 定时器（不做重试风暴）
+    const au = DRILL_JS.slice(DRILL_JS.indexOf('function dAudio'), DRILL_JS.indexOf('/* ---- 画一遍'));
+    for (const w of ['setTimeout', 'setInterval', 'retry', '重试一次']) expect([w, au.includes(w)]).toEqual([w, false]);
+  });
+
+  it('复考：小结页一个大按钮「明天再考我这 18 项」，顶上一句话由服务端给、页面原样显示', () => {
+    expect(DRILL_MOD).toContain('id="dr-plan">明天再考我这 18 项</button>');
+    expect(DRILL_MOD).toContain('id="dr-go">现在就复考</button>');
+    expect(DRILL_JS).toContain("dText('dr-rvline',s['一句话']||'')");
+    expect(DRILL_JS).toContain("dText('dr-go',s['到期了']?'开始复考':'现在就复考')");
+    // 复考时把关键点 / 音标 / 词意全藏起来（quiz=true），两个按钮改成「说得出来 / 说不出来」
+    expect(DRILL_JS).toContain("dCard(DR.cur,true)");
+    expect(DRILL_JS).toContain("dText('dr-yes','说得出来');dText('dr-no','说不出来')");
+    // 复考时「看全部」藏起来（免得剧透）
+    expect(DRILL_JS).toContain("dShow('dr-all',false)");
+  });
+
+  it('复考那一轮的进度不存库：页面上照实说「中途刷新会从头考」，不假装存着', () => {
+    expect(DRILL_JS).toContain("dText('dr-rvhint',s['中途刷新']||'')");
+    expect(DRILL_MOD).toContain('id="dr-rvhint"');
+  });
+
+  it('新加的这些东西里，还是一个输入框都没有、也没有命令行（底线 1、把用户当小白）', () => {
+    for (const s of [DRILL_MOD, DRILL_JS, DRILL_CSS]) {
+      for (const w of ['<input', 'input', '<textarea', 'contenteditable', 'TOKEN', 'API_KEY', 'PASSWORD', 'SECRET', 'npm ', 'curl ', 'wrangler ']) {
+        expect([w, s.includes(w)]).toEqual([w, false]);
+      }
+    }
   });
 });

@@ -1314,6 +1314,12 @@ try {
 
   // ---------- 15. 带练（2026-11-09，Amos："使用 Gemini 和我对话，这个引导我的方式很差"）----------
   // 四段结构没变，变的是载体：前三段的内容是写死的，就是"卡片 + 按钮 + 进度"，**不调任何 AI**。
+  // v2（2026-11-10，Amos 用完 18 项：「没有音标，没有词意解释，做完后不知道该干什么」「不只是加音标 还得有发音 让我可以照着学」）
+  // 另加五件：⑦ 揭晓后有音标（第一段）/ 重音（二三段）、字面意思、什么场合用，**和接口给的一模一样**；
+  // ⑧ 两个发音按钮（🔊 正常速 / 🐢 慢速 0.7 倍）≥56px，**生成不出来时当面说**（本地没绑 Workers AI，走的就是失败那条路）；
+  // ⑨ 第三段卡片上显示「对方说的那句」（那是对方的话，**故意显示**），而且它里面**不含答案的 4 词以上片段**；
+  // ⑩ 小结页有「明天再考我这 18 项」，按下去顶上出现「下次复考：X 月 X 日」+「现在就复考」；
+  // ⑪ 复考一轮：18 项打散、**只考**（没有关键点 / 音标 / 词意、「看全部」收起来），走完报「说得出来 N / 18」。
   // 守六件事：① 在工作台二级菜单第 8 项「带练」，点了能滚到、地址是 #/work/drill；
   // ② 一项三步：卡片上先**只有中文**（英文看不见）→ 点「看答案」才出英文 + 关键点 → 两个大按钮「会了 / 不会」；
   // ③ 点「不会」马上换下一项、进度不动，这一项**排到这一段末尾**还会再考到；
@@ -1366,15 +1372,52 @@ try {
       const bs = ['dr-yes', 'dr-no'].map((i) => ({ i, t: g(i).textContent, h: Math.round(g(i).getBoundingClientRect().height), shown: !!g(i).getClientRects().length }));
       return { en: g('dr-en').textContent, key: g('dr-key').textContent, keyShown: !g('dr-key').hidden, oneHidden: g('dr-one').hidden, bs };
     });
-    check(`${tg}：点「看答案」出英文 catch + 关键点，「会了」「不会」两个按钮都 ≥52px，「看答案」收起来`, step2.en === 'catch' && step2.keyShown && step2.key.includes('不要用 understand') && step2.oneHidden && step2.bs.every((b) => b.shown && b.h >= 52) && step2.bs.map((b) => b.t).join('/') === '会了/不会', step2);
+    check(`${tg}：点「看答案」出英文 catch + 关键点，「会了」「不会」两个按钮都 ≥52px，「看答案」收起来`, step2.en === 'catch' && step2.keyShown && step2.key.includes('catch 是耳朵没收到') && step2.oneHidden && step2.bs.every((b) => b.shown && b.h >= 52) && step2.bs.map((b) => b.t).join('/') === '会了/不会', step2);
+    // ⑦ 音标 + 字面意思 + 什么场合用：三行都在，而且**和 /api/drill/state 给的一模一样**（页面不自己造内容）
+    const v2 = await p.evaluate(async () => {
+      const g = (i) => document.getElementById(i);
+      const shown = (i) => (g(i).hidden ? null : g(i).textContent);
+      const j = await (await fetch('/api/drill/state')).json();
+      const au = ['dr-say', 'dr-slow'].map((i) => ({ i, t: g(i).textContent, h: Math.round(g(i).getBoundingClientRect().height), shown: !!g(i).getClientRects().length }));
+      return { ipa: shown('dr-ipa'), mean: shown('dr-zimian'), use: shown('dr-use'), key: shown('dr-key'), cur: j['当前'], au, msgHidden: g('dr-aumsg').hidden };
+    });
+    check(`${tg}：揭晓后有音标「${v2.ipa}」、字面意思、什么场合用，三行都和接口给的一模一样`,
+      !!v2.ipa && v2.ipa === v2.cur['音标'] && !!v2.mean && v2.mean === v2.cur['字面意思'] && !!v2.use && v2.use === v2.cur['什么场合用'] && v2.key === v2.cur['关键点'], v2);
+    check(`${tg}：两个发音按钮「🔊 正常速」「🐢 慢速 0.7 倍」都在、都 ≥56px，没点之前不报错`,
+      v2.au.length === 2 && v2.au.every((b) => b.shown && b.h >= 56) && v2.au.map((b) => b.t).join('/') === '🔊 正常速/🐢 慢速 0.7 倍' && v2.msgHidden, v2.au);
     if (SHOTS) await p.locator('#w-drill').screenshot({ path: path.join(SHOTS, '带练-揭晓-390.png') });
+    // ⑧ 本地没绑 Workers AI：点🔊 一定生成不出来——**当面说**，不假装有声音、也不自动重试
+    await p.click('#dr-say');
+    // 等的是**最终那条报错**：点下去会先出现一句「第一次要先生成这一段发音，一两秒……」，
+    // 原来只等 `!hidden` 会量到那句提示就收工（2026-11-10 自查）。
+    await p.waitForFunction(() => {
+      const m = document.getElementById('dr-aumsg');
+      return !m.hidden && m.innerText.includes('怎么办：');
+    }, null, { timeout: WAIT }).catch(() => {});
+    const aumsg = await p.evaluate(() => ({ t: document.getElementById('dr-aumsg').innerText, hidden: document.getElementById('dr-aumsg').hidden }));
+    check(`${tg}：发音生成不出来时当面说「这一项的发音没生成出来……」，并把服务器那两句话原样摆出来`,
+      !aumsg.hidden && aumsg.t.includes('这一项的发音没生成出来') && aumsg.t.includes('怎么办：'), aumsg);
+    if (SHOTS) await p.locator('#w-drill').screenshot({ path: path.join(SHOTS, '带练-发音失败-390.png') });
     // ③ 「不会」：换下一项、答案藏回去、进度不动
     await p.click('#dr-no');
     await p.waitForFunction(() => document.getElementById('dr-zh').textContent === '跟得上', null, { timeout: WAIT });
     const step3 = await p.evaluate(() => ({ zh: document.getElementById('dr-zh').textContent, ansHidden: document.getElementById('dr-ans').hidden, body: document.getElementById('w-drill').innerText }));
     check(`${tg}：点「不会」换下一项（跟得上），答案又藏起来，进度还是"还剩 6 个"`, step3.zh === '跟得上' && step3.ansHidden && /这一段还剩 6 个/.test(step3.body), step3);
     // 这一段剩下的五项都点「会了」→ 绕回刚才点过「不会」的那一项
+    // 每一项揭晓**之前**都量一次：答案（#dr-en 的文字，这时还藏着）不许出现在卡片看得见的文字里。
+    // 以前只在第 1 项查一个写死的 catch；现在 18 项逐项查，而且查的是**这一项自己的答案**（第三段显示对方那句，不受影响）。
+    const leaks = [];
+    const peek = async () => {
+      const x = await p.evaluate(() => ({
+        zh: document.getElementById('dr-zh').textContent,
+        en: document.getElementById('dr-en').textContent,
+        body: document.getElementById('w-drill').innerText,
+      }));
+      leaks.push({ zh: x.zh, en: x.en, leak: !x.en || x.body.includes(x.en) });
+      return x;
+    };
     const once = async () => {
+      await peek();
       await p.click('#dr-show');
       await p.waitForFunction(() => !document.getElementById('dr-two').hidden, null, { timeout: WAIT });
       const was = await p.evaluate(() => document.getElementById('dr-zh').textContent);
@@ -1389,7 +1432,41 @@ try {
     const next = await p.evaluate(() => document.getElementById('dr-where').textContent);
     check(`${tg}：这一段六项全会了才进第 2 段`, /第 2 段 词组 · 第 1 个 \/ 共 6/.test(next), next);
     // ⑤ 第二、三段也走完：小结 + 第四段还没做
-    for (let k = 0; k < 12; k++) await once();
+    for (let k = 0; k < 6; k++) await once();
+    // ⑨ 到第三段了：卡片上多出「对方说的那句」（故意显示）+ 一个🔊按钮；答案照旧藏着
+    const st3 = await p.evaluate(async () => {
+      const g = (i) => document.getElementById(i);
+      const j = await (await fetch('/api/drill/state')).json();
+      return { where: g('dr-where').textContent, prHidden: g('dr-pr').hidden, pren: g('dr-pren').textContent, zh: g('dr-zh').textContent,
+        prauH: Math.round(g('dr-prau').getBoundingClientRect().height), prauT: g('dr-prau').textContent,
+        body: g('w-drill').innerText, en: g('dr-en').textContent, cur: j['当前'] };
+    });
+    const run4 = (a, b) => { // a 里有没有 b 的 4 个词以上连续片段
+      const w = (t) => t.toLowerCase().replace(/[^a-z0-9' ]+/g, ' ').split(/\s+/).filter(Boolean);
+      const [A, B] = [w(a), w(b)];
+      for (let i = 0; i + 4 <= B.length; i++) if (A.join(' ').includes(B.slice(i, i + 4).join(' '))) return true;
+      return false;
+    };
+    check(`${tg}：第三段卡片上显示「对方说的那句」+ 中文情境 + 一个🔊按钮（${st3.prauH}px ≥ 52）`,
+      /第 3 段 例句/.test(st3.where) && !st3.prHidden && st3.pren.length > 10 && st3.pren === st3.cur['对方说的'] && st3.zh === st3.cur['对方说的中文'] && !!st3.zh && st3.prauH >= 52 && st3.prauT.includes('听他这句'), st3);
+    check(`${tg}：对方那句里**不含答案的 4 词以上片段**（不是"刚看过就考同一句"），而且答案这时还看不见`,
+      !run4(st3.pren, st3.en) && !st3.body.includes(st3.en), { pren: st3.pren.slice(0, 60), en: st3.en });
+    if (SHOTS) await p.locator('#w-drill').screenshot({ path: path.join(SHOTS, '带练-第三段对方说话-390.png') });
+    // 🔴（2026-11-10 审查）：第三段**揭晓前**点「🔊 听他这句」失败时，报错也必须看得见。
+    // 原来 #dr-aumsg 嵌在 #dr-ans 里，这会儿 #dr-ans 还带 hidden，于是页面一动不动、什么都不显示。
+    await p.click('#dr-prau');
+    await p.waitForFunction(() => {
+      const m = document.getElementById('dr-aumsg');
+      return !m.hidden && m.innerText.includes('怎么办：');
+    }, null, { timeout: WAIT }).catch(() => {});
+    const prErr = await p.evaluate(() => {
+      const m = document.getElementById('dr-aumsg');
+      return { t: m.innerText, hidden: m.hidden, 看得见: !!m.getClientRects().length, 答案还藏着: document.getElementById('dr-ans').hidden };
+    });
+    check(`${tg}：第三段揭晓前点「听他这句」生成不出来，报错**看得见**（不是藏在还没揭晓的答案块里）`,
+      prErr.看得见 && !prErr.hidden && prErr.答案还藏着 && prErr.t.includes('对方那句的发音没生成出来') && prErr.t.includes('怎么办：'), prErr);
+    for (let k = 0; k < 6; k++) await once();
+    check(`${tg}：18 项里，每一项没点「看答案」之前都看不到它自己的答案（量到 ${leaks.length} 项）`, leaks.length === 18 && leaks.every((x) => !x.leak), leaks.filter((x) => x.leak).slice(0, 3));
     await waitFor(p, '#dr-sum');
     const done = await p.evaluate(() => ({ sum: document.getElementById('dr-sum-b').innerText, next: document.getElementById('dr-next').innerText, play: document.getElementById('dr-play').hidden }));
     check(`${tg}：三段走完给每段「会了几个 / 第一次就会几个」的小结`, /第 1 段 单词：会了 6 \/ 6 个，第一次就会 5 个/.test(done.sum) && /第 2 段 词组：会了 6 \/ 6 个，第一次就会 6 个/.test(done.sum) && /第 3 段 例句：会了 6 \/ 6 个，第一次就会 6 个/.test(done.sum), done.sum);
@@ -1398,7 +1475,7 @@ try {
     await p.click('#dr-all > summary');
     await p.waitForTimeout(150);
     const all = await p.evaluate(() => ({ n: document.querySelectorAll('#dr-all-b li').length, t: document.getElementById('dr-all-b').innerText }));
-    check(`${tg}：「看全部」把这一段 6 项列出来（练过的带英文答案）`, all.n === 6 && all.t.includes('复述他的结论：先上简单版本') && all.t.includes('ship the simple version first.'), { n: all.n, t: all.t.slice(0, 80) });
+    check(`${tg}：「看全部」把这一段 6 项列出来（练过的带英文答案）`, all.n === 6 && all.t.includes('他绕了一圈，你复述他的结论') && all.t.includes('we drop the dashboard to make the pilot date.'), { n: all.n, t: all.t.slice(0, 80) });
     check(`${tg}：走完以后页面也没有横向滚动`, await noHScroll(p), await p.evaluate(() => [document.documentElement.scrollWidth, innerWidth]));
     if (SHOTS) { await p.evaluate(() => document.getElementById('w-drill').scrollIntoView({ block: 'start' })); await p.waitForTimeout(150); await p.locator('#w-drill').screenshot({ path: path.join(SHOTS, '带练-小结-390.png') }); }
     // 进度存在服务器上：刷新还在（换设备接着练靠的就是这个）
@@ -1406,6 +1483,42 @@ try {
     await p.waitForSelector('#app:not([hidden])', { timeout: WAIT });
     await waitFor(p, '#dr-sum');
     check(`${tg}：刷新后进度还在（存在服务器上，不在浏览器里）`, /三段都练完了/.test(await txt(p, '#dr-lead')), await txt(p, '#dr-lead'));
+
+    // ⑩ 做完之后知道该干什么：小结页一个大按钮「明天再考我这 18 项」
+    const plan = await p.evaluate(() => { const b = document.getElementById('dr-plan'); const r = b.getBoundingClientRect(); return { t: b.textContent, h: Math.round(r.height), shown: !!b.getClientRects().length }; });
+    check(`${tg}：小结页有大按钮「明天再考我这 18 项」（${plan.h}px ≥ 52）`, plan.shown && plan.h >= 52 && plan.t === '明天再考我这 18 项', plan);
+    if (SHOTS) { await p.evaluate(() => document.getElementById('w-drill').scrollIntoView({ block: 'start' })); await p.waitForTimeout(150); await p.locator('#w-drill').screenshot({ path: path.join(SHOTS, '带练-小结-明天再考-390.png') }); }
+    await p.click('#dr-plan');
+    await p.waitForFunction(() => !document.getElementById('dr-rvtop').hidden, null, { timeout: WAIT }).catch(() => {});
+    const rv0 = await p.evaluate(() => ({ line: document.getElementById('dr-rvline').textContent, go: document.getElementById('dr-go').textContent, hint: document.getElementById('dr-rvhint').textContent, sum: document.getElementById('dr-rvsum').textContent }));
+    check(`${tg}：按下去顶上就写「下次复考：X 月 X 日」，还能「现在就复考」`, /下次复考：\d+ 月 \d+ 日/.test(rv0.line) && rv0.go === '现在就复考' && rv0.hint.includes('从头考'), rv0);
+    // ⑪ 现在就复考：18 项打散、只考（没有关键点 / 音标 / 词意），「看全部」收起来
+    await p.click('#dr-go');
+    await p.waitForFunction(() => /复考 · 第 1 项/.test(document.getElementById('dr-where').textContent), null, { timeout: WAIT }).catch(() => {});
+    await p.click('#dr-show');
+    await p.waitForFunction(() => !document.getElementById('dr-ans').hidden, null, { timeout: WAIT });
+    const rv1 = await p.evaluate(() => {
+      const g = (i) => document.getElementById(i);
+      return { where: g('dr-where').textContent, en: g('dr-en').textContent, ipa: g('dr-ipa').hidden, mean: g('dr-zimian').hidden, use: g('dr-use').hidden, key: g('dr-key').hidden,
+        all: g('dr-all').hidden, yes: g('dr-yes').textContent, no: g('dr-no').textContent, h: Math.round(g('dr-yes').getBoundingClientRect().height), body: g('w-drill').innerText };
+    });
+    check(`${tg}：复考就是「只考」——有答案、**没有关键点 / 音标 / 词意**，「看全部」收起来，按钮是「说得出来 / 说不出来」（${rv1.h}px ≥ 52）`,
+      /复考 · 第 1 项 \/ 共 18/.test(rv1.where) && !!rv1.en && rv1.ipa && rv1.mean && rv1.use && rv1.key && rv1.all && rv1.yes === '说得出来' && rv1.no === '说不出来' && rv1.h >= 52, rv1);
+    if (SHOTS) await p.locator('#w-drill').screenshot({ path: path.join(SHOTS, '带练-复考-390.png') });
+    check(`${tg}：复考时也没有横向滚动`, await noHScroll(p), await p.evaluate(() => [document.documentElement.scrollWidth, innerWidth]));
+    // 走完这一轮 18 项（第一项已经揭晓了）：全部点「说得出来」
+    const rvOnce = async (first) => {
+      if (!first) { await p.click('#dr-show'); await p.waitForFunction(() => !document.getElementById('dr-two').hidden, null, { timeout: WAIT }); }
+      const was = await p.evaluate(() => document.getElementById('dr-zh').textContent + '|' + document.getElementById('dr-where').textContent);
+      await p.click('#dr-yes');
+      await p.waitForFunction((t) => document.getElementById('dr-zh').textContent + '|' + document.getElementById('dr-where').textContent !== t, was, { timeout: WAIT });
+    };
+    for (let k = 0; k < 18; k++) await rvOnce(k === 0);
+    await p.waitForFunction(() => /说得出来 18 \/ 18/.test(document.getElementById('dr-rvsum').textContent), null, { timeout: WAIT }).catch(() => {});
+    const rv2 = await p.evaluate(() => ({ sum: document.getElementById('dr-rvsum').textContent, yes: document.getElementById('dr-yes').textContent, where: document.getElementById('dr-where').textContent, plan: !!document.getElementById('dr-plan').getClientRects().length }));
+    check(`${tg}：18 项走完报「说得出来 N / 18」，按钮回到「会了 / 不会」，还能再约下一次`, /说得出来 18 \/ 18/.test(rv2.sum) && rv2.yes === '会了' && rv2.plan, rv2);
+    // 复考不影响原来的进度（三段还是走完的状态）
+    check(`${tg}：复考不动原来的进度（还是"三段都练完了"）`, /三段都练完了/.test(await txt(p, '#dr-lead')), await txt(p, '#dr-lead'));
     await p.context().close();
   });
 

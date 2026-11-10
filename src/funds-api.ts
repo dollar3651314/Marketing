@@ -1,5 +1,5 @@
 /**
- * 公共工具「基金观察」的服务端：取数（Yahoo / 东方财富）+ 存 D1（迁移 0014 表 fund_snapshot）+ 两个接口。计算口径在 src/funds.ts。
+ * 公共工具「基金观察」的服务端：取数（Yahoo / 东方财富）+ 存 D1（迁移 0016 表 fund_snapshot）+ 两个接口。计算口径在 src/funds.ts。
  *
  *   GET  /api/funds          → { fetched_at, items }：45 只按 FUNDS 的顺序，每只是上次取到的快照 + 清单里的名字 / 标签 + ok_at（这一只上次取到的时间）；
  *                              这一只最近一次没取到时带 error（原因）和 error_at：有旧快照的照样带着旧数值（页面写"没取到，显示的是 <日期> 的数据"），

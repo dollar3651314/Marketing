@@ -395,15 +395,15 @@ async function load(){if(loading)return;loading=true;
 var progAt=null;
 function prog(parts,err){progAt=D&&D.fetched_at||null;var P=$('fu-prog');P.replaceChildren();P.className='fu-prog'+(err?' err':'');parts.forEach(function(x){P.appendChild(x[1]?el('b',null,x[0]):document.createTextNode(x[0]))})}
 function names(codes){return codes.length<=5?'（'+codes.join('、')+'）':''}
-/** 一次刷新最多发几次 POST：45 只、每批至少 1 只，正常最多 45 批；超了说明进度没往前走，停下（防请求失控） */
-var MAX_POSTS=45;
+/** 一次刷新最多发几次 POST：每批至少 1 只，正常最多"基金总数"批（现在 45）；超了说明进度没往前走，停下（防请求失控） */
+function maxPosts(){return Math.max(45,ITEMS.length)}
 async function refresh(){if(busy)return;busy=true;var btn=$('fu-refresh');btn.disabled=true;btn.textContent='正在刷新…';
   var cur=0,total=ITEMS.length||45,updated=[],failed=[],before=D&&D.fetched_at;
   var mk=function(i){var f=ITEMS[i];return f?f.market:''};
   var was=before?'显示的还是 '+tw(before)+' 的数据':'还没有数据';
   prog([['正在取 '],[mk(0)||'第一批',1],[' · 0 / '+total]]);
   var posts=0;
-  try{while(cur!=null){if(posts>=MAX_POSTS)throw new Error('已经发了 '+MAX_POSTS+' 次请求还没取完，先停下了，防止请求失控');posts++;
+  try{while(cur!=null){if(posts>=maxPosts())throw new Error('已经发了 '+maxPosts()+' 次请求还没取完，先停下了，防止请求失控');posts++;
       var r=await getJson(BASE+'/refresh',{cursor:cur});total=r.total;updated=updated.concat(r.updated||[]);failed=failed.concat(r.failed||[]);
       if(r.next!=null&&!(r.next>cur))throw new Error('服务器回的进度没有往前走（'+cur+' → '+r.next+'），先停下了，防止请求失控');
       cur=r.next;
@@ -436,7 +436,8 @@ document.addEventListener('pointerdown',function(e){if(!tipOpen()||!tipOff)retur
 window.addEventListener('scroll',function(){if(tipOpen()&&tipOff)tipOff()},{passive:true});
 document.addEventListener('keydown',function(e){if(e.key==='Escape'&&tipOpen()&&tipOff)tipOff()});
 $('fu-retry').addEventListener('click',load);
-var rt;window.addEventListener('resize',function(){if($('v-funds').hidden||!D)return;clearTimeout(rt);rt=setTimeout(function(){scatter();if(st.open)list_()},120)});
+// 只在**宽度**变了时重画：手机地址栏伸缩只改高度，重画会把散点的触屏抽屉关掉
+var rt,lastW=window.innerWidth;window.addEventListener('resize',function(){if(window.innerWidth===lastW)return;lastW=window.innerWidth;if($('v-funds').hidden||!D)return;clearTimeout(rt);rt=setTimeout(function(){scatter();if(st.open)list_()},120)});
 /** 每次进这一页（route() 调）都重新 GET /api/funds（不轮询）；已经有数据就先按当前宽度画出来，读到新的再重画。正在刷新时不读（刷完会读） */
 window.fundsOpen=function(){if(D)render();if(!busy)load()};
 })();
