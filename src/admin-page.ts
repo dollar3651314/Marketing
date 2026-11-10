@@ -4,6 +4,7 @@ import { VOICE_CSS, VOICE_JS } from './voice-page';
 import { ENGLISH_CSS, ENGLISH_JS, ENGLISH_MOD } from './english-page';
 import { EM_CSS, EM_JS, EM_MOD } from './english-memory-page';
 import { DRILL_CSS, DRILL_JS, DRILL_MOD } from './drill-page';
+import { EAR_CSS, EAR_JS } from './ear-page';
 import { FUNDS_CSS, FUNDS_JS, FUNDS_MOD } from './funds-page';
 import { EXTENSION_VERSION } from './extension-download';
 import { MAX_PROJECT_PAGES, PLATFORM_CONFIG, PROJECT_PAGES_FALLBACK, PROJECT_SITE } from './projects';
@@ -463,7 +464,7 @@ th{font-size:12px;color:var(--muted);font-weight:600}td.n{text-align:right}
 .plat details.recent>summary{border-top:1px solid var(--line)}
 @media (max-width:600px){.act-item{grid-template-columns:minmax(0,1fr)}.act-item .go{flex-direction:row;flex-wrap:wrap;align-items:flex-start}}
 /* 收编进来的工具的样式：素材生成器（选择器都带 .ag）、语音生成（都带 .tv）、语音对话实测（都带 .vc），不串到别的模块 */
-${ASSETS_CSS}${TTS_CSS}${VOICE_CSS}${ENGLISH_CSS}${EM_CSS}${DRILL_CSS}${FUNDS_CSS}
+${ASSETS_CSS}${TTS_CSS}${VOICE_CSS}${ENGLISH_CSS}${EM_CSS}${DRILL_CSS}${EAR_CSS}${FUNDS_CSS}
 </style></head><body>
 <div class="bars" id="bars"><header class="top" id="top"><span class="logo" aria-hidden="true"><i style="height:16px;background:#2DD4BF"></i><i style="height:10px;background:#FBBF24"></i></span><span class="brand">工作平台</span><b class="sr" id="title">工作台</b>
   <nav class="nav1" id="nav1" aria-label="一级菜单" hidden><a href="#/work" data-p="work">工作台<span class="cnt" id="c-work" hidden></span></a><span class="sep" id="nav1-sep0" aria-hidden="true" hidden></span><span class="grp-l" id="nav1-grp" hidden>项目</span><span class="sep" id="nav1-sep" aria-hidden="true"></span><a href="#/tools" data-p="tools" id="nav1-tools">公共工具</a><a href="#/funds" data-f="funds" id="nav1-funds">基金观察</a></nav>
@@ -1664,5 +1665,6 @@ var platformReady=function(){return !!PL.data;};
 <script>${ENGLISH_JS}</script>
 <script>${EM_JS}</script>
 <script>${DRILL_JS}</script>
+<script>${EAR_JS}</script>
 <script>${FUNDS_JS}</script>
 </body></html>`;
