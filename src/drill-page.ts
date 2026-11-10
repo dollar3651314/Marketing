@@ -137,11 +137,13 @@ export const DRILL_MOD = `<section class="card mod dr" id="w-drill"><header clas
           <button class="btn" type="button" id="dr-say">🔊 正常速</button>
           <button class="btn" type="button" id="dr-slow">🐢 慢速 0.7 倍</button>
         </div>
-        <div class="dr-aumsg" id="dr-aumsg" hidden></div>
         <p class="dr-zimian" id="dr-zimian" hidden></p>
         <p class="dr-use" id="dr-use" hidden></p>
         <p class="dr-key" id="dr-key" hidden></p>
       </div>
+      <!-- 发音出错要显示在 #dr-ans **外面**：第三段揭晓前 #dr-ans 还带 hidden，
+           报错框在里面就渲染不出来——他点「听他这句」失败时页面一动不动，什么都看不到（2026-11-10 审查 🔴1）。-->
+      <div class="dr-aumsg" id="dr-aumsg" hidden></div>
     </div>
     <div class="dr-one" id="dr-one"><button class="btn primary" type="button" id="dr-show">看答案</button></div>
     <div class="dr-two" id="dr-two" hidden>
@@ -154,7 +156,7 @@ export const DRILL_MOD = `<section class="card mod dr" id="w-drill"><header clas
     <p class="s-t">三段都练完了</p>
     <ul id="dr-sum-b"></ul>
     <p class="s-h" id="dr-rvsum">练过的东西隔一天再考一遍才记得住。</p>
-    <div class="dr-one"><button class="btn primary" type="button" id="dr-plan">明天再考我这 18 项</button></div>
+    <div class="dr-one" id="dr-planwrap"><button class="btn primary" type="button" id="dr-plan">明天再考我这 18 项</button></div>
   </div>
   <p class="dr-next" id="dr-next" hidden></p>
 
@@ -174,7 +176,7 @@ export const DRILL_JS = `
 /* 整段包在一个函数里：和后台那几段脚本共用一个全局作用域，名字不能重复声明；只往外露一个 window.drillOpen */
 (function(){
 try{
-var DR={base:(window.__drillBase||'/api/drill/'),cur:null,busy:false,loaded:false,au:{},player:null,rv:{on:false,list:[],i:0,ok:0},rvs:null};
+var DR={base:(window.__drillBase||'/api/drill/'),cur:null,busy:false,loaded:false,au:{},auBusy:{},player:null,rv:{on:false,list:[],i:0,ok:0},rvs:null};
 var dq=function(i){return document.getElementById(i)};
 function dText(id,s){var e=dq(id);if(e)e.textContent=s}
 function dShow(id,on){var e=dq(id);if(e)e.hidden=!on}
@@ -193,10 +195,11 @@ function dJson(path,init){return fetch(DR.base+path,init||{}).then(function(r){
 });}
 
 /* ---- 发音：同一段只取一次，之后复用；**失败就当面说，不自动重试** ---- */
-function dAuErr(j){
+function dAuErr(j,which){
   var m=dq('dr-aumsg');if(!m)return;
   var ipa=dq('dr-ipa');
-  var s='发音这次没生成出来，'+((ipa&&!ipa.hidden)?'下面只有音标。':'这一项也没有音标。');
+  var s=(which==='pr'?'对方那句的发音':'这一项的发音')+'没生成出来，'
+      +((which!=='pr'&&ipa&&!ipa.hidden)?'先看上面的音标。':'这一次先跳过发音。');
   if(j&&j['出错'])s+='\\n'+j['出错'];
   if(j&&j['怎么办'])s+='\\n怎么办：'+j['怎么办'];
   m.textContent=s;m.hidden=false;
@@ -210,15 +213,21 @@ function dPlay(url,rate){
     if(pr&&pr.catch)pr.catch(function(){dAuErr({'出错':'浏览器把这次播放挡住了。','怎么办':'再点一下这个按钮就会响。'});});
   }catch(e){dAuErr({'出错':'这台设备放不了这段声音。'});}
 }
-function dAudio(id,rate){
+function dAudio(id,rate,which){
   if(!id)return;
   var m=dq('dr-aumsg');if(m)m.hidden=true;
   if(DR.au[id]){dPlay(DR.au[id],rate);return;}
+  // 第一次要现生成，melotts 要一两秒。这期间他若再点另一个速度按钮，
+  // 不拦住就会**再发一个请求、再调一次 melotts、再记一次账**（2026-11-10 审查 🟡2）。
+  if(DR.auBusy[id]){return;}
+  DR.auBusy[id]=1;
+  if(m){m.textContent='第一次要先生成这一段发音，一两秒……';m.hidden=false;}
+  var done=function(){delete DR.auBusy[id];};
   fetch(DR.base+'audio/'+encodeURIComponent(id)).then(function(r){
     var ct=r.headers.get('content-type')||'';
-    if(!r.ok||ct.indexOf('audio')<0){return r.json().catch(function(){return {}}).then(function(j){dAuErr(j)});}
-    return r.blob().then(function(b){var u=URL.createObjectURL(b);DR.au[id]=u;dPlay(u,rate);});
-  },function(e){dAuErr({'出错':'没连上服务器（'+e.message+'）。','怎么办':'等一下再点一次。'});});
+    if(!r.ok||ct.indexOf('audio')<0){return r.json().catch(function(){return {}}).then(function(j){done();dAuErr(j,which)});}
+    return r.blob().then(function(b){done();if(m)m.hidden=true;var u=URL.createObjectURL(b);DR.au[id]=u;dPlay(u,rate);});
+  },function(e){done();dAuErr({'出错':'没连上服务器（'+e.message+'）。','怎么办':'等一下再点一次。'},which);});
 }
 
 /* ---- 画一遍 ---- */
@@ -328,6 +337,9 @@ function dRvTop(s){
   dText('dr-rvline',s['一句话']||'');
   dText('dr-go',s['到期了']?'开始复考':'现在就复考');
   dText('dr-rvhint',s['中途刷新']||'');
+  // 到期当天小结页照旧显示，里面那个「明天再考我这 18 项」一点就把**今天**该做的复考推到明天，
+  // 而且没有任何确认。到期时就把它藏起来，只留顶上的「开始复考」（2026-11-10 审查 🟡3）。
+  dShow('dr-planwrap',!s['到期了']);
 }
 function dRvLoad(){return dJson('review').then(dRvTop,function(){dRvTop(null)});}
 function dRvPaint(){
@@ -385,9 +397,9 @@ function dLoad(){
 var sh=dq('dr-show');if(sh)sh.addEventListener('click',dReveal);
 var y=dq('dr-yes');if(y)y.addEventListener('click',function(){dAnswer(true)});
 var n=dq('dr-no');if(n)n.addEventListener('click',function(){dAnswer(false)});
-var sy=dq('dr-say');if(sy)sy.addEventListener('click',function(){dAudio(DR.cur&&DR.cur['发音'],1)});
-var sl=dq('dr-slow');if(sl)sl.addEventListener('click',function(){dAudio(DR.cur&&DR.cur['发音'],0.7)});
-var pa=dq('dr-prau');if(pa)pa.addEventListener('click',function(){dAudio(DR.cur&&DR.cur['对方发音'],1)});
+var sy=dq('dr-say');if(sy)sy.addEventListener('click',function(){dAudio(DR.cur&&DR.cur['发音'],1,'ans')});
+var sl=dq('dr-slow');if(sl)sl.addEventListener('click',function(){dAudio(DR.cur&&DR.cur['发音'],0.7,'ans')});
+var pa=dq('dr-prau');if(pa)pa.addEventListener('click',function(){dAudio(DR.cur&&DR.cur['对方发音'],1,'pr')});
 var go=dq('dr-go');if(go)go.addEventListener('click',dRvStart);
 var pl=dq('dr-plan');if(pl)pl.addEventListener('click',dRvPlan);
 window.drillOpen=function(){if(DR.loaded)return;DR.loaded=true;dLoad();dRvLoad();};

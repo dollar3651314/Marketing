@@ -224,9 +224,13 @@ describe('3. 三步交互：先回想 → 揭晓 → 自己判', () => {
     // 卡片上先只有中文：**揭晓那一整块**（#dr-ans，默认 hidden）里面装着英文、音标 / 重音、词义、用法、关键点和两个发音按钮。
     // 以前这里只切到 #dr-en 后面第一个 </div> 为止（切早了，#dr-key 根本没被看），现在整块都看，而且多钉了 4 个元素。
     const ans = ansBlock();
-    for (const id of ['dr-en', 'dr-ipa', 'dr-zimian', 'dr-use', 'dr-key', 'dr-au', 'dr-aumsg']) expect([id, ans.includes('id="' + id + '"')]).toEqual([id, true]);
-    // 中文和「对方说的那句」在块外面（那是题面，一直看得见）
-    for (const id of ['dr-zh', 'dr-pr']) expect([id, ans.includes('id="' + id + '"')]).toEqual([id, false]);
+    for (const id of ['dr-en', 'dr-ipa', 'dr-zimian', 'dr-use', 'dr-key', 'dr-au']) expect([id, ans.includes('id="' + id + '"')]).toEqual([id, true]);
+    // 中文、「对方说的那句」、**发音出错的提示**都在块外面。
+    // `dr-aumsg` 原来钉在块**里面**——那条断言把一个真 bug 钉死了：第三段揭晓前 #dr-ans 还带 hidden，
+    // 他点「🔊 听他这句」失败时 dAuErr 把 hidden=false 设在一个父元素还 hidden 的节点上，**页面一动不动、什么都看不到**
+    // （2026-11-10 审查 🔴1）。现在反过来钉：它必须在块外面，否则那个 bug 回来就红。
+    for (const id of ['dr-zh', 'dr-pr', 'dr-aumsg']) expect([id, ans.includes('id="' + id + '"')]).toEqual([id, false]);
+    expect(DRILL_MOD).toContain('id="dr-aumsg"');
   });
 
   it('点「看答案」才揭晓：dReveal 把答案显示出来、换掉按钮；换下一项时 dPaint 又藏回去', () => {
@@ -818,18 +822,40 @@ describe('14. 页面：音标 / 词意 / 发音 / 复考都在，一个输入框
   it('两个发音按钮：🔊 正常速 + 🐢 慢速 0.7 倍，**同一段音频**（慢速只是 playbackRate=0.7，不额外生成）', () => {
     expect(DRILL_MOD).toContain('id="dr-say">🔊 正常速</button>');
     expect(DRILL_MOD).toContain('id="dr-slow">🐢 慢速 0.7 倍</button>');
-    expect(DRILL_JS).toContain("dAudio(DR.cur&&DR.cur['发音'],0.7)");
+    expect(DRILL_JS).toContain("dAudio(DR.cur&&DR.cur['发音'],0.7,'ans')");
     expect(DRILL_JS).toContain('a.playbackRate=rate');
+    // 同一段在生成中被连点（🔊 之后马上点 🐢）不许再发一个请求 —— 否则会再调一次 melotts、再记一次账
+    // （2026-11-10 审查 🟡2）。auBusy 是那道闸。
+    expect(DRILL_JS).toContain('if(DR.auBusy[id]){return;}');
+    expect(DRILL_JS).toContain('DR.auBusy[id]=1;');
+    expect(DRILL_JS).toContain('auBusy:{}');
+    // 成功和失败两条路都要把闸放开，否则这一段再也点不响
+    const da = DRILL_JS.slice(DRILL_JS.indexOf('function dAudio'), DRILL_JS.indexOf('/* ---- 画一遍'));
+    expect([...da.matchAll(/done\(\);/g)].length).toBeGreaterThanOrEqual(3);
     // 两个按钮都在 .dr-two 里（和「会了 / 不会」同一条 ≥56px 的规则）
     expect(DRILL_MOD).toContain('<div class="dr-two dr-au" id="dr-au">');
     // 第三段还能单独听「对方那句」
-    expect(DRILL_JS).toContain("dAudio(DR.cur&&DR.cur['对方发音'],1)");
+    expect(DRILL_JS).toContain("dAudio(DR.cur&&DR.cur['对方发音'],1,'pr')");
+  });
+
+  it('复考到期当天，小结页的「明天再考我这 18 项」要藏起来（否则一点就把今天的复考推到明天）', () => {
+    // 到期那天小结页照旧显示，里面那个按钮一点就无条件 due_at = now + 1 天，没有任何确认，
+    // 今天该做的复考被悄悄取消（2026-11-10 审查 🟡3）。到期时只留顶上的「开始复考」。
+    expect(DRILL_MOD).toContain('<div class="dr-one" id="dr-planwrap">');
+    expect(DRILL_JS).toContain("dShow('dr-planwrap',!s['到期了']);");
   });
 
   it('发音生成不出来：当面说「发音这次没生成出来」+ 服务器那两句话，**不自动重试**', () => {
-    expect(DRILL_JS).toContain("'发音这次没生成出来，'");
-    expect(DRILL_JS).toContain("下面只有音标。");
+    // 文案要分清是哪一段没生成出来：原来不管点哪个按钮都说「下面只有音标」，
+    // 可「对方那句」根本没有音标，而且音标在按钮**上面**，「下面」还是反的（2026-11-10 审查 🔴1b）。
+    expect(DRILL_JS).toContain("which==='pr'?'对方那句的发音':'这一项的发音'");
+    expect(DRILL_JS).toContain("'没生成出来，'");
+    expect(DRILL_JS).toContain("先看上面的音标。");
+    expect(DRILL_JS).toContain("这一次先跳过发音。");
     expect(DRILL_JS).toContain("怎么办：");
+    // 三个按钮都要把自己是哪一段传进去，否则上面那句分不清
+    expect(DRILL_JS).toContain("dAudio(DR.cur&&DR.cur['发音'],1,'ans')");
+    expect(DRILL_JS).toContain("dAudio(DR.cur&&DR.cur['对方发音'],1,'pr')");
     // dAudio 里没有任何重试 / 定时器（不做重试风暴）
     const au = DRILL_JS.slice(DRILL_JS.indexOf('function dAudio'), DRILL_JS.indexOf('/* ---- 画一遍'));
     for (const w of ['setTimeout', 'setInterval', 'retry', '重试一次']) expect([w, au.includes(w)]).toEqual([w, false]);
