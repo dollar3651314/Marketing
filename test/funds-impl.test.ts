@@ -229,3 +229,104 @@ describe('5. 截止打断和失败原因（第二轮修改 9、10）', () => {
     expect(r200.failed[0].reason).toBe('Yahoo 没有这只的数据：No data found, symbol may be delisted');
   });
 });
+
+// ---------------------------------------------------------------- 页面脚本（src/funds-page.ts 的 FUNDS_JS）在 jsdom 里跑：第三轮 1、4
+type Win = Window & typeof globalThis & { fundsOpen(): void; eval(s: string): unknown };
+type Reply = { status?: number; body: unknown };
+/** 开一个只有 #v-funds 的 jsdom 页面，GET / POST 都用替身；返回 api.snap（GET 回什么）、api.posts（POST 的 body）、api.onPost */
+async function fundsPage(snap: unknown, onPost: (body: { cursor: number }, n: number) => Reply) {
+  const jsdomName = 'jsdom';
+  const { JSDOM } = await import(jsdomName);
+  const { FUNDS_MOD, FUNDS_JS } = await import('../src/funds-page');
+  const dom = new JSDOM(`<!doctype html><body><main id="app">${FUNDS_MOD}</main></body>`, { runScripts: 'outside-only', pretendToBeVisual: true });
+  const w = dom.window as Win;
+  const api = { snap, posts: [] as { cursor: number }[], gets: 0 };
+  const res = (r: Reply) => ({ status: r.status ?? 200, ok: (r.status ?? 200) < 400, json: async () => r.body });
+  (w as any).fetch = async (_url: string, init: { method: string; body?: string }) => {
+    if (init.method === 'POST') { const b = JSON.parse(init.body || '{}'); api.posts.push(b); return res(onPost(b, api.posts.length)); }
+    api.gets++;
+    return res({ body: JSON.parse(JSON.stringify(api.snap)) });
+  };
+  (w as any).matchMedia = () => ({ matches: false });
+  w.eval(FUNDS_JS);
+  w.document.getElementById('v-funds')!.hidden = false;
+  const $ = (id: string) => w.document.getElementById(id)!;
+  /** 等到 cond 成立（硬上限 400 × 5ms） */
+  const until = async (cond: () => boolean) => { for (let k = 0; k < 400 && !cond(); k++) await new Promise((ok) => setTimeout(ok, 5)); return cond(); };
+  const oldRows = () => [...w.document.querySelectorAll('#fu-list .fu-old')].map((e) => e.closest('[data-code]')!.getAttribute('data-code'));
+  const refresh = async () => { ($('fu-refresh') as HTMLButtonElement).click(); await until(() => !($('fu-refresh') as HTMLButtonElement).disabled && api.gets >= 2); await until(() => $('fu-prog').textContent !== ''); };
+  w.fundsOpen();
+  await until(() => api.gets >= 1 && w.document.querySelectorAll('#fu-list [data-code]').length > 0);
+  return { w, api, $, until, oldRows, refresh, close: () => w.close() };
+}
+const SNAP = JSON.parse(readFileSync(path.join(ROOT, 'test/fixtures/funds/snapshot.json'), 'utf8')) as { fetched_at: string; items: { code: string; ok_at?: string }[] };
+const snapAt = (fetched: string, okAt: (code: string, i: number) => string | undefined) => ({ ...SNAP, fetched_at: fetched, items: SNAP.items.map((x, i) => ({ ...x, ok_at: okAt(x.code, i) })) });
+
+describe('页面：「上次数据」以服务器为准（第三轮 1）', () => {
+  it('本窗口中途断 → 别的设备全量刷完 → 切走再回来：标题和行都不再写"上次"', async () => {
+    const codes = SNAP.items.map((x) => x.code), first = codes.slice(0, 12), rest = codes.slice(12);
+    const p = await fundsPage(SNAP, (_b, n) => (n === 1 ? { body: { next: 12, done: 12, total: 45, updated: first, failed: [] } } : { status: 500, body: { error: 'D1 写库失败' } }));
+    try {
+      await p.refresh();
+      expect(p.api.posts.length).toBe(2);
+      expect(p.oldRows().sort()).toEqual(rest.slice().sort()); // 中途断：没轮到的 33 只标"上次数据"（服务器没给 ok_at，靠本窗口兜底）
+      expect(p.$('fu-meta').textContent).toMatch(/其中 33 只的取数时间还是上次的/);
+      // 别的设备随后全量刷完：服务器每只的 ok_at 都是新的
+      const ALL = '2026-11-10T12:00:00Z';
+      p.api.snap = snapAt(ALL, () => ALL);
+      p.w.fundsOpen();
+      await p.until(() => p.api.gets >= 3 && !/上次/.test(p.$('fu-meta').textContent || ''));
+      expect(p.$('fu-meta').textContent).not.toMatch(/上次|取数时间/);
+      expect(p.oldRows()).toEqual([]);
+      expect(p.$('fu-prog').textContent).toBe(''); // 上次那句"其余 33 只还是…"也不再留着
+    } finally { p.close(); }
+  });
+  it('服务器给了 ok_at 时本窗口的记忆不算数：中途断的那几只服务器 ok_at 还是旧的 → 照服务器标；新的 → 不标', async () => {
+    const T = '2026-11-10T10:00:00Z', OLD = '2026-11-10T08:00:00Z';
+    const codes = SNAP.items.map((x) => x.code), first = codes.slice(0, 12);
+    const p = await fundsPage(snapAt(OLD, () => OLD), (_b, n) => {
+      if (n === 1) { p0.api.snap = snapAt(T, (c) => (first.includes(c) || c === 'VOO' ? T : OLD)); return { body: { next: 12, done: 12, total: 45, updated: first, failed: [] } }; }
+      return { status: 500, body: { error: 'D1 写库失败' } };
+    });
+    const p0 = p;
+    try {
+      await p.refresh();
+      // VOO 不在第一批，但服务器说它的 ok_at 是新的（别的窗口刚好刷到）→ 不标；其余 32 只照服务器的 ok_at 标
+      expect(p.oldRows()).not.toContain('VOO');
+      expect(p.oldRows().length).toBe(32);
+      expect(p.$('fu-meta').textContent).toMatch(/其中 32 只的取数时间还是上次的 16:00/);
+    } finally { p.close(); }
+  });
+  it('"旧"的门槛是 5 分钟：ok_at 早 6 分钟的标、早 4 分钟的不标；标题写"取数时间"', async () => {
+    const T = Date.parse('2026-11-10T10:00:00Z');
+    const iso = (ms: number) => new Date(ms).toISOString();
+    const p = await fundsPage(snapAt(iso(T), (_c, i) => iso(T - (i < 10 ? 6 : 4) * 60e3)), () => ({ body: {} }));
+    try {
+      expect(p.oldRows().sort()).toEqual(SNAP.items.slice(0, 10).map((x) => x.code).sort());
+      expect(p.$('fu-meta').textContent).toMatch(/其中 10 只的取数时间还是上次的 17:54/);
+      expect(p.api.posts.length).toBe(0);
+    } finally { p.close(); }
+  });
+});
+
+describe('页面：刷新循环有硬上限（第三轮 4）', () => {
+  it('服务器一直回 next（每次只往前 1）：最多发 45 次 POST 就停下并提示', async () => {
+    const p = await fundsPage(SNAP, (b, n) => (n > 60 ? { body: { next: null, total: 1000, updated: [], failed: [] } } : { body: { next: b.cursor + 1, done: b.cursor + 1, total: 1000, updated: [], failed: [] } }));
+    try {
+      await p.refresh();
+      await p.until(() => /失控/.test(p.$('fu-prog').textContent || ''));
+      expect(p.api.posts.length).toBe(45);
+      expect(p.$('fu-prog').textContent).toMatch(/已经发了 45 次请求还没取完，先停下了/);
+      expect((p.$('fu-refresh') as HTMLButtonElement).disabled).toBe(false);
+    } finally { p.close(); }
+  });
+  it('服务器回的 next 没往前走：发 1 次就停下', async () => {
+    const p = await fundsPage(SNAP, (b) => ({ body: { next: b.cursor, done: 0, total: 45, updated: [], failed: [] } }));
+    try {
+      await p.refresh();
+      await p.until(() => /失控/.test(p.$('fu-prog').textContent || ''));
+      expect(p.api.posts.length).toBe(1);
+      expect(p.$('fu-prog').textContent).toMatch(/进度没有往前走/);
+    } finally { p.close(); }
+  });
+});

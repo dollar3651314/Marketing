@@ -62,12 +62,17 @@ export const FUNDS_CSS = `
 #v-funds .fu-scbox{position:relative;margin-top:var(--s2)}
 #v-funds .fu-scbox svg{display:block;width:100%;height:auto}
 #v-funds .fu-tip{position:absolute;pointer-events:none;background:var(--surface);border:1px solid var(--line);box-shadow:0 8px 24px rgba(0,0,0,.14);border-radius:10px;padding:8px 12px;font-size:var(--fs-aux);white-space:nowrap;z-index:5}
-#v-funds .fu-tip.touch{pointer-events:auto;white-space:normal;width:min(300px,calc(100% - 8px));padding:4px 10px;max-height:216px;overflow-y:auto;overscroll-behavior:contain}
-#v-funds .fu-tip .it{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:center;gap:2px 8px;padding:6px 0}#v-funds .fu-tip .it+.it{border-top:1px solid var(--line)}
-#v-funds .fu-tip .it b{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-#v-funds .fu-tip .it .num{grid-column:1;font-size:12px;color:var(--ink-2)}
-#v-funds .fu-tip .go{grid-column:2;grid-row:1 / span 2;display:inline-flex;align-items:center;min-height:36px;padding:0 10px;border:1px solid var(--line);border-radius:99px;background:var(--surface-2);color:var(--teal-ink);font:inherit;font-size:var(--fs-aux);font-weight:700;cursor:pointer;white-space:nowrap}
-#v-funds .fu-tip .more{color:var(--muted);font-size:12px;padding:4px 0}
+/* 触屏：浮框改成贴在屏幕上方或下方的抽屉（position:fixed），放在点击那一团点的另一侧，不盖住它们；高度最多半屏（top / bottom / max-height 由脚本按那一团点的位置算） */
+#v-funds .fu-tip.touch{position:fixed;left:8px;right:8px;max-width:560px;margin:0 auto;pointer-events:auto;white-space:normal;padding:0 10px 6px;overflow-y:auto;overscroll-behavior:contain;z-index:40;border-radius:14px;box-shadow:0 6px 28px rgba(0,0,0,.22)}
+#v-funds .fu-tip .hd{position:sticky;top:0;z-index:1;display:flex;align-items:center;gap:6px;background:var(--surface);border-bottom:1px solid var(--line)}
+#v-funds .fu-tip .x{flex:0 0 auto;width:44px;height:44px;margin-right:-8px;border:0;border-radius:99px;background:none;color:var(--ink-2);font:inherit;font-size:22px;line-height:1;cursor:pointer}
+#v-funds .fu-tip .it{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:center;gap:0 8px;padding:3px 6px;margin:0 -6px;border-radius:8px;cursor:pointer}#v-funds .fu-tip .it+.it{border-top:1px solid var(--line)}
+#v-funds .fu-tip .it.on{background:var(--teal-soft)}
+#v-funds .fu-tip .it b{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;line-height:1.35}
+#v-funds .fu-tip .it .num{grid-column:1;font-size:12px;color:var(--ink-2);line-height:1.35}
+#v-funds .fu-tip .go{grid-column:2;grid-row:1 / span 2;display:inline-flex;align-items:center;min-height:44px;padding:0 12px;border:1px solid var(--line);border-radius:99px;background:var(--surface-2);color:var(--teal-ink);font:inherit;font-size:var(--fs-aux);font-weight:700;cursor:pointer;white-space:nowrap}
+#v-funds .fu-tip .more{flex:1;color:var(--muted);font-size:12px;padding:6px 0;line-height:1.5}
+#v-funds .fu-tip .x:focus-visible,#v-funds .fu-tip .go:focus-visible{outline:2px solid var(--amber);outline-offset:2px}
 #v-funds .fu-empty{padding:var(--s5) 0;text-align:center;color:var(--muted)}
 #v-funds .fu-group{display:flex;align-items:center;gap:var(--s2);font-size:var(--fs-aux);color:var(--muted);font-weight:700;padding:var(--s4) 0 var(--s2);border-bottom:1px solid var(--line)}
 #v-funds .fu-group i{width:10px;height:10px;border-radius:50%}
@@ -170,6 +175,8 @@ var PL={w1:'近 1 周',m1:'近 1 月',ytd:'今年以来',y1:'近 1 年'};
 var CAT={'宽基':'var(--fu-broad)','债券':'var(--fu-bond)','红利':'var(--fu-div)'};
 var MKS=['新加坡','美国','中国'],CATS=['宽基','债券','红利'];
 var D=null,ITEMS=[],st={p:'y1',m:'',open:null},busy=false,loading=false;
+/** 散点图触屏抽屉的关闭函数（scatter() 每次重画时换成新的） */
+var tipOff=null;
 function pct(v,dig){if(v==null)return'—';dig=dig==null?2:dig;var s=Math.abs(v).toFixed(dig);if(+s===0)return(0).toFixed(dig)+'%';return(v>0?'+':'−')+s+'%'}
 function cls(v){return v==null?'na':v>0?'pos':v<0?'neg':''}
 function el(tag,attrs,text){var e=document.createElement(tag);if(attrs)for(var k in attrs)e.setAttribute(k,attrs[k]);if(text!=null)e.textContent=text;return e}
@@ -183,15 +190,21 @@ function fmtPx(v){return v==null?'—':v.toFixed(v<10?3:2)}
 function tw(iso){if(!iso)return'';var d=new Date(Date.parse(iso)+8*3600e3).toISOString();return d.slice(0,10)+' '+d.slice(11,16)}
 function cnt(m){return ITEMS.filter(function(f){return!m||f.market===m}).length}
 var TZ='（新加坡时间）';
-/** 刷新中途断了时，没轮到的那几只（code → 刷新前的数据时间），整次刷完成功才清掉 */
+/** "旧"的门槛：ok_at 比标题的数据时间早 5 分钟以上（一次全量最坏约 2 分钟，同一次刷新里的不会被误标） */
+var OLD_MS=5*60e3;
+/** 刷新中途断了时，没轮到的那几只（code → 刷新前的数据时间）。**以服务器为准**：只给服务器没带 ok_at 的那几只兜底；
+ *  每次读到 GET /api/funds 都对一遍（pruneStale）——服务器带了 ok_at（别的设备 / 别的窗口刷过）的就从这里去掉，交给下面的 ok_at 判断 */
 var STALE=null;
-/** 显示的是上次数据的那几只：这次刷新中途断了没轮到的，或者服务器记的 ok_at 比标题的数据时间早 30 分钟以上 → 那几行标"上次数据"，标题也写明 */
-function oldAt(f){if(!has(f))return null;if(STALE&&STALE.codes[f.code])return STALE.at||f.ok_at||null;if(f.ok_at&&D&&D.fetched_at&&Date.parse(D.fetched_at)-Date.parse(f.ok_at)>18e5)return f.ok_at;return null}
-function isOld(f){return!!(has(f)&&((STALE&&STALE.codes[f.code])||oldAt(f)))}
+function pruneStale(){if(!STALE)return;var left=0;ITEMS.forEach(function(f){if(!STALE.codes[f.code])return;if(f.ok_at)delete STALE.codes[f.code];else left++});if(!left)STALE=null}
+/** 显示的是上次数据的那几只：服务器记的 ok_at 比标题的数据时间早 5 分钟以上；服务器没给 ok_at 时才看本窗口记的 STALE → 那几行标"上次数据"，标题也写明 */
+function oldAt(f){if(!has(f))return null;if(f.ok_at){return D&&D.fetched_at&&Date.parse(D.fetched_at)-Date.parse(f.ok_at)>OLD_MS?f.ok_at:null}if(STALE&&STALE.codes[f.code])return STALE.at||null;return null}
+function isOld(f){return!!(has(f)&&(oldAt(f)||(!f.ok_at&&STALE&&STALE.codes[f.code])))}
 function oldest(list){var t=null;list.forEach(function(f){var a=oldAt(f);if(a&&(!t||a<t))t=a});return t}
 
+/** 标题里"旧"的那几只写取数时间（和行上的价格日期区分）：和标题同一天只写 HH:MM，否则 MM-DD HH:MM */
+function sameDay(iso){var t=tw(iso);return t.slice(0,10)===tw(D.fetched_at).slice(0,10)?t.slice(11):t.slice(5)}
 function meta(){var ok=ITEMS.filter(has).length,old=ITEMS.filter(isOld);
-  $('fu-meta').textContent=D&&D.fetched_at?('数据时间 '+tw(D.fetched_at)+TZ+(old.length?'，其中 '+old.length+' 只还是上次'+(oldest(old)?' '+tw(oldest(old)):'')+' 的数据':'')+' · '+ITEMS.length+' 只 · 新加坡、美国、中国'+(ok<ITEMS.length?' · '+(ITEMS.length-ok)+' 只还没有数据':'')):'还没取过数据，点「刷新数据」去取（大约半分钟）';
+  $('fu-meta').textContent=D&&D.fetched_at?('数据时间 '+tw(D.fetched_at)+TZ+(old.length?'，其中 '+old.length+' 只'+(oldest(old)?'的取数时间还是上次的 '+sameDay(oldest(old)):'还是上次的数据'):'')+' · '+ITEMS.length+' 只 · 新加坡、美国、中国'+(ok<ITEMS.length?' · '+(ITEMS.length-ok)+' 只还没有数据':'')):'还没取过数据，点「刷新数据」去取（大约半分钟）';
   document.querySelectorAll('#fu-markets .fu-chip').forEach(function(b){var m=b.dataset.m;b.textContent=(m||'全部')+' '+cnt(m)});}
 
 function lede(){var p=st.p,L=$('fu-lede'),A=$('fu-alerts');L.replaceChildren();A.replaceChildren();
@@ -246,15 +259,35 @@ function scatter(){var p=st.p,list=shown().filter(function(f){return ret(f,p)!=n
   function go(f){hide();st.open=f.code;list_();var r=document.querySelector('#fu-list [data-code="'+f.code+'"]');if(r){r.scrollIntoView({block:'center'});r.classList.add('flash');setTimeout(function(){r.classList.remove('flash')},1200);r.focus({preventScroll:true})}}
   function line(f){return f.market+' · '+f.category+' · 收益 '+pct(ret(f,p))+' · 最大回撤 '+pct(dd(f,p))}
   function place(c){var bx=box.getBoundingClientRect(),r=c.getBoundingClientRect();var x=r.left-bx.left+12,y=r.top-bx.top-tip.offsetHeight-8;tip.style.left=Math.max(0,Math.min(x,bx.width-tip.offsetWidth-4))+'px';tip.style.top=(y<0?r.bottom-bx.top+8:y)+'px'}
-  function hide(){tip.hidden=true;tip.className='fu-tip';dots.forEach(function(d){d.c.setAttribute('r',6)})}
+  /** 高亮图上一个点（放大、加深色描边、挪到最上层），浮框里对应那一行也标出来；code 为 null 时全部还原 */
+  function hl(code){dots.forEach(function(d){var on=d.f.code===code;d.c.setAttribute('r',on?10:6);d.c.setAttribute('stroke',on?'var(--ink)':'var(--surface)');d.c.setAttribute('stroke-width',on?3:1.5);if(on)svg.appendChild(d.c)});
+    tip.querySelectorAll('.it').forEach(function(it){it.classList.toggle('on',it.getAttribute('data-pick')===code)})}
+  function hide(){tip.hidden=true;tip.className='fu-tip';tip.removeAttribute('style');tip.onscroll=null;hl(null)}
+  tipOff=hide;
   /** 鼠标悬停 / 键盘聚焦：只显示一只 */
   function show(d){hide();tip.replaceChildren();tip.appendChild(el('b',null,d.f.name));tip.appendChild(el('div',{'class':'num'},line(d.f)));tip.hidden=false;place(d.c);d.c.setAttribute('r',8)}
-  /** 触屏点一下：先出浮框（离手指最近的一只 + 附近挤在一起的几只），点「看这一只 →」才跳到那一行 */
+  /** 触屏点一下：先出抽屉（离手指最近的一只 + 附近挤在一起的几只，按远近排），整行或「看这一只 →」才跳到那一行。
+   *  抽屉贴在屏幕上方或下方——哪边离这一团点远放哪边，最高半屏，不盖住这一团点；按住 / 滑到某一行，图上对应的点放大高亮。
+   *  关掉：右上 ×、点抽屉和图以外的地方、滚动页面、Esc */
   function showTouch(near){hide();tip.replaceChildren();tip.className='fu-tip touch';
-    if(near.length>3)tip.appendChild(el('div',{'class':'more'},'这里挤了 '+near.length+' 只，按远近排，往下滑看全部（也可以切到单个市场）'));
-    near.forEach(function(d){var it=el('div',{'class':'it'});it.appendChild(el('b',null,d.f.name));it.appendChild(el('div',{'class':'num'},'收益 '+pct(ret(d.f,p))+' · 回撤 '+pct(dd(d.f,p))));
-      var b=el('button',{type:'button','class':'go','data-go':d.f.code},'看这一只 →');b.addEventListener('click',function(e){e.stopPropagation();go(d.f)});it.appendChild(b);tip.appendChild(it)});
-    tip.hidden=false;place(near[0].c);near[0].c.setAttribute('r',8)}
+    var hd=el('div',{'class':'hd'});
+    hd.appendChild(el('div',{'class':'more'},near.length>1?'这里挤了 '+near.length+' 只，按远近排'+(near.length>4?'，往下滑看全部（也可以切到单个市场）':''):'点这一行看一年走势和回撤'));
+    var x=el('button',{type:'button','class':'x','aria-label':'关闭'},'×');x.addEventListener('click',function(e){e.stopPropagation();hide()});hd.appendChild(x);tip.appendChild(hd);
+    near.forEach(function(d){var it=el('div',{'class':'it','data-pick':d.f.code});it.appendChild(el('b',null,d.f.name));it.appendChild(el('div',{'class':'num'},'收益 '+pct(ret(d.f,p))+' · 回撤 '+pct(dd(d.f,p))));
+      var b=el('button',{type:'button','class':'go','data-go':d.f.code},'看这一只 →');b.addEventListener('click',function(e){e.stopPropagation();go(d.f)});it.appendChild(b);
+      it.addEventListener('click',function(){go(d.f)});
+      ['pointerdown','focusin'].forEach(function(ev){it.addEventListener(ev,function(){hl(d.f.code)})});
+      tip.appendChild(it)});
+    // 这一团点在屏幕上的上下边（含点的半径），抽屉放在空间大的那一侧
+    var top=Infinity,bot=-Infinity;near.forEach(function(d){var r=d.c.getBoundingClientRect();top=Math.min(top,r.top);bot=Math.max(bot,r.bottom)});
+    var bar=document.querySelector('.bars'),t0=bar?Math.max(0,bar.getBoundingClientRect().bottom):0,vh=window.innerHeight,cap=Math.round(vh*.5),gap=10;
+    var below=vh-bot-gap-8,above=top-gap-t0-8;
+    tip.hidden=false;tip.scrollTop=0;
+    if(below>=above){tip.style.bottom='8px';tip.style.top='auto';tip.style.maxHeight=Math.max(160,Math.min(cap,below))+'px'}
+    else{tip.style.top=(t0+8)+'px';tip.style.bottom='auto';tip.style.maxHeight=Math.max(160,Math.min(cap,above))+'px'}
+    hl(near[0].f.code);
+    // 抽屉里往下滑时，顶上第一整行对应的点跟着高亮
+    tip.onscroll=function(){var h=hd.getBoundingClientRect().bottom,its=tip.querySelectorAll('.it');for(var i=0;i<its.length;i++){if(its[i].getBoundingClientRect().top>=h-2){hl(its[i].getAttribute('data-pick'));break}}}}
   list.forEach(function(f){
     var c=sv('circle',{cx:X(-dd(f,p)),cy:Y(ret(f,p)),r:6,fill:CAT[f.category],'fill-opacity':.8,stroke:'var(--surface)','stroke-width':1.5,tabindex:0,'data-code':f.code,'aria-label':f.name+' 收益 '+pct(ret(f,p))+' 最大回撤 '+pct(dd(f,p))});
     c.style.cursor='pointer';var d={f:f,c:c};dots.push(d);
@@ -262,7 +295,7 @@ function scatter(){var p=st.p,list=shown().filter(function(f){return ret(f,p)!=n
     c.addEventListener('mouseleave',function(){if(!tip.classList.contains('touch'))hide()});c.addEventListener('blur',function(){if(!tip.classList.contains('touch'))hide()});
     c.addEventListener('keydown',function(e){if(e.key==='Enter'||e.key===' '){e.preventDefault();go(f)}});
     svg.appendChild(c);});
-  // 点击统一在整张图上判断：取离点击处最近的点（触屏 22px 内，鼠标 10px 内）；触屏时浮框按远近列出这一圈里的所有点，挤在一起的也点得开
+  // 点击统一在整张图上判断：取离点击处最近的点（触屏 22px 内，鼠标 10px 内）；触屏时抽屉按远近列出这一圈里的所有点，挤在一起的也点得开
   var ptr='mouse';svg.onpointerdown=function(e){ptr=e.pointerType||'mouse'};
   svg.onclick=function(e){var R0=ptr==='mouse'?10:22,near=[];
     dots.forEach(function(d){var r=d.c.getBoundingClientRect(),dx=r.left+r.width/2-e.clientX,dy=r.top+r.height/2-e.clientY,dist=Math.sqrt(dx*dx+dy*dy);if(dist<=R0)near.push({f:d.f,c:d.c,dist:dist})});
@@ -353,17 +386,27 @@ async function getJson(url,body){var r;try{r=await fetch(url,{method:body?'POST'
   if(r.status===401){try{showLogin('请重新登录')}catch(e){}throw new Error('请重新登录')}
   if(!r.ok)throw new Error(j.error||('服务器出错了（'+r.status+'）'));return j}
 async function load(){if(loading)return;loading=true;
-  try{D=await getJson(BASE);ITEMS=D.items||[];showErr('');render()}
+  try{D=await getJson(BASE);ITEMS=D.items||[];pruneStale();showErr('');render();
+    // 上一次刷新的结果文字是按当时的数据写的；服务器的数据时间变了（别的设备 / 窗口刷过）就不再留着它，以服务器为准
+    if(!busy&&$('fu-prog').textContent&&(D.fetched_at||null)!==progAt)prog([])}
   catch(e){showErr('基金数据读取失败：'+e.message+(D?'。下面是上次读到的。':'。'));if(!D){$('fu-meta').textContent='没读到';$('fu-lede').textContent='没读到数据，点上面的「再读一次」。'}}
   finally{loading=false}}
-function prog(parts,err){var P=$('fu-prog');P.replaceChildren();P.className='fu-prog'+(err?' err':'');parts.forEach(function(x){P.appendChild(x[1]?el('b',null,x[0]):document.createTextNode(x[0]))})}
+/** 刷新结果文字写下时的数据时间 */
+var progAt=null;
+function prog(parts,err){progAt=D&&D.fetched_at||null;var P=$('fu-prog');P.replaceChildren();P.className='fu-prog'+(err?' err':'');parts.forEach(function(x){P.appendChild(x[1]?el('b',null,x[0]):document.createTextNode(x[0]))})}
 function names(codes){return codes.length<=5?'（'+codes.join('、')+'）':''}
+/** 一次刷新最多发几次 POST：45 只、每批至少 1 只，正常最多 45 批；超了说明进度没往前走，停下（防请求失控） */
+var MAX_POSTS=45;
 async function refresh(){if(busy)return;busy=true;var btn=$('fu-refresh');btn.disabled=true;btn.textContent='正在刷新…';
   var cur=0,total=ITEMS.length||45,updated=[],failed=[],before=D&&D.fetched_at;
   var mk=function(i){var f=ITEMS[i];return f?f.market:''};
   var was=before?'显示的还是 '+tw(before)+' 的数据':'还没有数据';
   prog([['正在取 '],[mk(0)||'第一批',1],[' · 0 / '+total]]);
-  try{while(cur!=null){var r=await getJson(BASE+'/refresh',{cursor:cur});total=r.total;updated=updated.concat(r.updated||[]);failed=failed.concat(r.failed||[]);cur=r.next;
+  var posts=0;
+  try{while(cur!=null){if(posts>=MAX_POSTS)throw new Error('已经发了 '+MAX_POSTS+' 次请求还没取完，先停下了，防止请求失控');posts++;
+      var r=await getJson(BASE+'/refresh',{cursor:cur});total=r.total;updated=updated.concat(r.updated||[]);failed=failed.concat(r.failed||[]);
+      if(r.next!=null&&!(r.next>cur))throw new Error('服务器回的进度没有往前走（'+cur+' → '+r.next+'），先停下了，防止请求失控');
+      cur=r.next;
       if(cur!=null)prog([['正在取 '],[mk(cur),1],[' · '+r.done+' / '+r.total]]);}
     STALE=null;await load();
     if(!updated.length){prog([['这次没取到，'+was+'，可以再点一次']],true);return}
@@ -387,6 +430,11 @@ async function refresh(){if(busy)return;busy=true;var btn=$('fu-refresh');btn.di
 document.querySelectorAll('#fu-periods .fu-chip').forEach(function(b){b.addEventListener('click',function(){st.p=b.dataset.p;document.querySelectorAll('#fu-periods .fu-chip').forEach(function(x){x.setAttribute('aria-pressed',x===b?'true':'false')});render()})});
 document.querySelectorAll('#fu-markets .fu-chip').forEach(function(b){b.addEventListener('click',function(){st.m=b.dataset.m;document.querySelectorAll('#fu-markets .fu-chip').forEach(function(x){x.setAttribute('aria-selected',x===b?'true':'false')});render()})});
 $('fu-refresh').addEventListener('click',refresh);
+// 触屏抽屉：点抽屉和散点图以外的地方、滚动页面、按 Esc 都关掉
+function tipOpen(){var t=$('fu-tip');return!t.hidden&&t.classList.contains('touch')}
+document.addEventListener('pointerdown',function(e){if(!tipOpen()||!tipOff)return;if($('fu-tip').contains(e.target)||$('fu-scatter').contains(e.target))return;tipOff()},true);
+window.addEventListener('scroll',function(){if(tipOpen()&&tipOff)tipOff()},{passive:true});
+document.addEventListener('keydown',function(e){if(e.key==='Escape'&&tipOpen()&&tipOff)tipOff()});
 $('fu-retry').addEventListener('click',load);
 var rt;window.addEventListener('resize',function(){if($('v-funds').hidden||!D)return;clearTimeout(rt);rt=setTimeout(function(){scatter();if(st.open)list_()},120)});
 /** 每次进这一页（route() 调）都重新 GET /api/funds（不轮询）；已经有数据就先按当前宽度画出来，读到新的再重画。正在刷新时不读（刷完会读） */
