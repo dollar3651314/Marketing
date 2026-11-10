@@ -245,6 +245,28 @@ describe('5. 答完那一刻：对 / 错 + 点名放的是哪个词 + 两个词�
     expect(EAR_JS).toContain("eText('dr-ear-ipa',p.a['词']+' '+p.a['音标']+'　·　'+p.b['词']+' '+p.b['音标']);");
   });
 
+  it('每个词给一个「听真人念」的链接，跳内容文件里那个词的出处（剑桥词条页有真人录音）', () => {
+    // 为什么有这一行：上面那两个🔊是 melotts 合成的，**合成音可能把元音念歪**——
+    // 他听得很清楚却选错，那是机器的错不是他的耳朵，而「两个听着一样」那个按钮**分不出这一种**。
+    // （2026-11-10 两轮 16 题，他一次都没点那个按钮，bad/bed 和 lock/luck 两轮全错。）
+    expect(EAR_MOD).toContain('id="dr-ear-human"');
+    expect(EAR_JS).toContain('function eHuman(p){');
+    expect(EAR_JS).toContain('eHuman(p);');
+    // 地址只能来自内容文件的「出处」，**不许页面自己拼词典地址**
+    expect(EAR_JS).toContain("a.href=w['出处'];");
+    expect(EAR_JS).not.toMatch(/dictionary\.cambridge\.org/);
+    // 用 createElement 建，不拼 HTML 字符串（出处是我们自己的内容，但不开这个口子）
+    expect(EAR_JS).toContain("document.createElement('a')");
+    expect(EAR_JS).not.toMatch(/dr-ear-human[^\n]*innerHTML/);
+    // 外链要带 noopener（新标签页打开，别让对方页面拿到 window.opener）
+    expect(EAR_JS).toContain("a.rel='noopener noreferrer';");
+    expect(EAR_JS).toContain("a.target='_blank';");
+    // 没有出处就不画那个链接（不造占位、不给死链，底线 3）
+    expect(EAR_JS).toContain("if(!w||!w['出处'])return;");
+    // 内容文件里 16 个词**每个都有出处**，所以线上这一行不会是空的
+    expect(PAIRS.flatMap((p) => [p.a, p.b]).filter((w) => !w.src)).toEqual([]);
+  });
+
   it('走完给小结：听对 N / 8、错的那几组、点过「两个听着一样」的那几组（并写明可能是机器没念出区别）', () => {
     expect(EAR_JS).toContain("eText('dr-ear-score','听对 '+ok+' / '+n);");
     expect(EAR_JS).toContain("var bad=EA.res.filter(function(x){return !x.对&&!x.一样});");
