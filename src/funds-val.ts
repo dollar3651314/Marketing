@@ -58,6 +58,8 @@ export interface ValStored {
   /** 股息率（百分数，3.03 = 3.03%）；没取到过是 null */
   dy_now: number | null;
   dy_date: string | null;
+  /** 只有标普500：上次成功下载并解析过的 ie_data.xls 链接（第五版：下次直接请求它，失败再回退首页找） */
+  xls_url?: string;
 }
 
 /** GET /api/funds 里 valuation.items 的一张卡（字段名照调研的 val.json，测试会话 test/funds-v4-valuation.test.ts 按这些名字比） */
