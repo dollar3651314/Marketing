@@ -990,6 +990,31 @@ describe('11. 页面照着依据画：课件没说的一笔都不画（jsdom 里
     } finally { await p.close(); }
   });
 
+  it('「拿手指量」这句只在课件真给了食指参照的组上说（别把第 1 组的原文串到别人头上）', async () => {
+    const p = await pronPage();
+    try {
+      for (const g of GROUPS) {
+        p.useGroup(`${g.a.ipa} vs ${g.b.ipa}`);
+        await p.until(() => p.$('pn-mouthhint').textContent!.length > 0);
+        const hint = p.$('pn-mouthhint').textContent!;
+        // 这一组课件到底给没给"可容纳几根食指"
+        const 根 = [g.a, g.b].flatMap((x) => x.mouth).filter((m) => /食指/.test(m));
+        if (根.length) {
+          expect([g.id, /拿手指量/.test(hint)]).toEqual([g.id, true]);
+          // 说几根，必须就是这一组课件写的那个数，不许拿别组的
+          for (const n of ['一根', '两根']) {
+            expect([g.id, n, hint.includes(n)]).toEqual([g.id, n, 根.some((m) => m.includes(n))]);
+          }
+        } else {
+          // 课件没给尺寸的组（/f/ /v/、/l/ /r/、/n/ /l/、/ʒ/ /dʒ/）：一个字都不许提手指和厘米
+          expect([g.id, hint]).toEqual([g.id, expect.not.stringContaining('食指')]);
+          expect([g.id, hint]).toEqual([g.id, expect.not.stringContaining('cm')]);
+          expect([g.id, /别拿手指量/.test(hint)]).toEqual([g.id, true]);
+        }
+      }
+    } finally { await p.close(); }
+  });
+
   it('第 7 组：一张图都不画，面板上照实说"课件没给这个音的口型"', async () => {
     const p = await pronPage();
     try {

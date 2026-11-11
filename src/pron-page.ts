@@ -170,7 +170,7 @@ export const PRON_MOD = `<section class="card mod pn" id="w-pron"><header class=
     </div>
     <div class="pn-aumsg" id="pn-mirmsg" hidden></div>
     <div class="pn-sounds" id="pn-sounds"></div>
-    <p class="pn-mouthhint">课件原文的口型定位。"上下齿距离 1cm 左右（可容纳一根食指）"就是拿手指量 —— 对着镜子做一遍再往下走。</p>
+    <p class="pn-mouthhint" id="pn-mouthhint"></p>
     <p class="pn-note" id="pn-note1"></p>
     <div class="pn-one"><button class="btn primary" type="button" id="pn-go2">做完动作了，去对照听</button></div>
   </div>
@@ -509,6 +509,20 @@ function pDrawAll(ph,lit){
     box.appendChild(d);
   });
   pText('pn-drawnote',tu['说明']||'');
+  /* 「拿手指量」这句**只在课件真给了食指参照的组**上说（2026-11-11 主会话改）：
+     原来是写死在模板里的，于是 /f/ /v/、/ʒ/ /dʒ/ 这些课件压根没给开口尺寸的组，
+     底下也照样挂着「上下齿距离 1cm（可容纳一根食指）」—— **那是第 1 组的原文串到了别人头上**，
+     等于拿一条课件没说的话当这一组的做法，是底线 3 的事。 */
+  var fi=[];
+  ['a','b'].forEach(function(k){
+    var f=tu[k]&&tu[k]['正面'];var n=f&&f['手指'];
+    /* 两个音的根数可能不一样（第 1 组就是 1 根 vs 2 根），**两个都要说**，不许只留一个 */
+    if(n&&fi.indexOf(n)<0)fi.push(n);
+  });
+  var cn={1:'一',2:'两',3:'三'};
+  pText('pn-mouthhint',fi.length
+    ?'课件原文的口型定位。"可容纳'+fi.map(function(n){return cn[n]||n;}).join('根食指" / "')+'根食指"就是拿手指量 —— 对着镜子做一遍再往下走。'
+    :'课件没给这一组开口的厘米数，别拿手指量 —— 照着上面写的做一遍，再往下走。');
   pMirTarget();
 }
 /* 来回切换：每 450ms 一拍，同一个音看两帧（课件写「由…到…」的音才会动），两拍换一个音 */
