@@ -84,7 +84,7 @@ describe('A. 美国 15 只走 Tiingo', () => {
       expect(JSON.stringify(s)).not.toContain(TOKEN);
     }
     const f: FetchLike = async () => new Response('{}', { status: 404 });
-    const e = await fetchFund(FUNDS.find((x) => x.code === 'SCHD')!, new Http(f, 45, noSleep), NOW, null, { tiingo: TOKEN }).catch((x) => x as Error);
+    const e = await fetchFund(FUNDS.find((x) => x.code === 'SCHD')!, new Http(f, 45, noSleep), NOW, null, { tiingo: TOKEN }).catch((x: Error) => x) as Error;
     expect(e.message).toBe('Tiingo回 404；Yahoo回 404'); // 404 不重试，和第三版 Yahoo 404 的写法一样
   });
   it('没配置：不请求 Tiingo，直接 Yahoo（和第三版一样，没有 fallback 字段）', async () => {
@@ -235,9 +235,9 @@ function valFake(over: (u: string) => Response | null = () => null) {
     if (o) return o;
     const m = /indexCode=(\d+)/.exec(u);
     if (m) return perf(m[1], u);
-    if (u.includes('indicator.xls')) return new Response(csXls([['20261110', 3.03]], { small: true }));
+    if (u.includes('indicator.xls')) return new Response(csXls([['20261110', 3.03]], { small: true }) as unknown as BodyInit);
     if (u === 'https://shillerdata.com/') return new Response('<a href="//img1.wsimg.com/blobby/go/a/downloads/b/ie_data.xls?ver=9">ie_data.xls</a>');
-    if (u.includes('ie_data.xls')) return new Response(shillerXls(200, (i) => 20 + i / 10));
+    if (u.includes('ie_data.xls')) return new Response(shillerXls(200, (i) => 20 + i / 10) as unknown as BodyInit);
     return new Response('no', { status: 404 });
   };
   return { f, log, sleep };

@@ -407,7 +407,7 @@ function spark(f){var s=f.series,W=120,H=36,vals=s.map(function(x){return x[1]})
   svg.appendChild(sv('path',{d:d,fill:'none',stroke:col,'stroke-width':1.4,'vector-effect':'non-scaling-stroke'}));
   return svg;}
 
-function srcName(f){return f.price_kind==='index'?'东方财富每日收益':f.source==='eastmoney'?'东方财富净值（不是场内成交价）':f.source==='tiingo'?'Tiingo 复权价':'Yahoo 复权价'+(f.fallback?'（Tiingo 没取到：'+f.fallback+'）':'')}
+function srcName(f){return f.price_kind==='index'?'东方财富每日收益':f.source==='eastmoney'?'东方财富净值（不是场内成交价）':f.source==='tiingo'?'Tiingo 复权价':'Yahoo 复权价'+(f.fallback?'（Tiingo 没取到：'+plainWhy(f.fallback)+'，这次改用 Yahoo）':'')}
 /** 第三版复核 R1：收益指数（511990，按每天收益连乘、起点 100）不是价格，不带币种 */
 function isIdx(f){return f.price_kind==='index'}
 // 画布宽度按实际可用宽度算（不靠 viewBox 缩放），手机上字也是 12px，不会缩成看不清
@@ -557,10 +557,10 @@ function valuation(){var G=$('fu-va-grid'),N=$('fu-va-sg');G.replaceChildren();v
     g.appendChild(el('span',{'class':'tr'}));g.appendChild(el('span',{'class':'md',style:'left:'+X(med)+'%'}));
     g.appendChild(el('span',{'class':'now',style:'left:'+X(now)+'%;background:'+col}));
     // 中位数的字离两端太近会和"最低 / 最高"压在一起：那时并进离它远的那一端的字里
-    var mx=X(med),mid=mx>22&&mx<78;
-    g.appendChild(el('span',{'class':'lb l'},'最低 '+fx(mn)+(!mid&&mx>=78?' · 中位 '+fx(med):'')));
+    var mx=X(med),mid=mx>=33&&mx<=67;
+    g.appendChild(el('span',{'class':'lb l'},'最低 '+fx(mn)+(!mid&&mx>67?' · 中位 '+fx(med):'')));
     if(mid)g.appendChild(el('span',{'class':'lb',style:'left:'+mx+'%'},'中位 '+fx(med)));
-    g.appendChild(el('span',{'class':'lb r'},(!mid&&mx<=22?'中位 '+fx(med)+' · ':'')+'最高 '+fx(mxx)));c.appendChild(g);
+    g.appendChild(el('span',{'class':'lb r'},(!mid&&mx<33?'中位 '+fx(med)+' · ':'')+'最高 '+fx(mxx)));c.appendChild(g);
     var ss=el('div',{'class':'fu-vstats'});
     [[fx(now),spx?'CAPE 现在':'市盈率 现在'],[p==null?'—':Math.round(p)+'%',yrs+'分位'],[v.dy_now==null?'—':(+v.dy_now).toFixed(2)+'%','股息率'+(v.dy_date&&vaDate(v.dy_date)!==vaDate(v.pe_now_date)?' · '+vaDate(v.dy_date):'')]].forEach(function(q){var d=el('div');d.appendChild(el('b',null,q[0]));d.appendChild(el('span',null,q[1]));ss.appendChild(d)});
     c.appendChild(ss);
