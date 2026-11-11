@@ -153,3 +153,46 @@ describe('源码里删干净了（T-3：文件直接删，不留注释掉的代�
     }
   });
 });
+
+// ======================================================================
+/**
+ * 第二批下线（2026-11-11，Amos：「工作台 英语练习和代练（带练）都没用了，用你新做的东西彻底替换掉它们吧」）：
+ * 「英语练习」（8 条提示词）、「它记得住你」（跨轮记忆 /api/english/*）、「带练」（/api/drill/*，含发音、复考、听辨小测）
+ * 整套删掉，换成「发音训练」（#w-pron、/api/pron/*，src/pron.ts）。
+ *
+ * **只删代码，不删数据**：`en_*`、`drill_item`、`drill_audio`、`drill_review`、`ear_pair` 这些表一张都没 DROP
+ * （他的历史数据还在，谁都能查回去）——那一条由 test/pron.test.ts 第 7 组守着。
+ * 这里守的是"接口和文件删干净了"。
+ */
+describe('英语练习、它记得住你、带练（含听辨小测）：整套下线（2026-11-11）', () => {
+  const GONE2 = ['/api/english/state', '/api/english/history', '/api/drill/state', '/api/drill/answer', '/api/drill/audio/w1', '/api/drill/review', '/api/drill/ear/state'];
+
+  it('没登录：一律 401（和别的 /api/* 一样，不单独露馅）', async () => {
+    for (const p of GONE2) {
+      const r = await call(p, env());
+      expect([p, r.status]).toEqual([p, 401]);
+    }
+  });
+
+  it('登录以后：一律 404，一次模型都不调', async () => {
+    const f = fakeAi();
+    const e = env({ AI: f.ai });
+    const login = await call('/api/login', e, { method: 'POST', body: JSON.stringify({ password: PASS }), headers: { 'content-type': 'application/json' } });
+    const cookie = (login.headers.get('set-cookie') ?? '').split(';')[0];
+    for (const p of GONE2) {
+      const r = await call(p, e, { headers: { cookie } });
+      expect([p, r.status]).toEqual([p, 404]);
+      const post = await call(p, e, { method: 'POST', headers: { cookie, 'content-type': 'application/json' }, body: '{}' });
+      expect([p, 'POST', post.status]).toEqual([p, 'POST', 404]);
+    }
+    expect(f.calls).toEqual([]);
+  });
+
+  it('源码里删干净了：src/ 下不剩 english / drill / ear 这三套的任何一个文件', () => {
+    for (const f of ['english-page.ts', 'english-memory.ts', 'english-memory-page.ts', 'drill.ts', 'drill-content.ts', 'drill-page.ts',
+      'drill-review.ts', 'drill-audio.ts', 'ear.ts', 'ear-content.ts', 'ear-page.ts'])
+      expect([f, existsSync(path.join(ROOT, 'src', f))]).toEqual([f, false]);
+    // 接替它们的是发音训练（src/pron.ts）
+    for (const f of ['pron.ts', 'pron-audio.ts', 'pron-page.ts', 'pron-content.ts']) expect([f, existsSync(path.join(ROOT, 'src', f))]).toEqual([f, true]);
+  });
+});
