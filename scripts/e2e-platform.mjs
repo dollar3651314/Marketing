@@ -65,9 +65,14 @@ const REDESIGN_B = true;
  */
 const EAR_AUDIO_IDS = ['p1a', 'p1b', 'p2a', 'p2b', 'p3a', 'p3b', 'p4a', 'p4b', 'p5a', 'p5b', 'p6a', 'p6b', 'p7a', 'p7b', 'p8a', 'p8b'];
 const SILENT_MP3 = readFileSync(path.join(ROOT, 'test/fixtures/ear/silent.mp3')).toString('hex');
+/** 发音在库里的键 = 版本号 + 编号，和 src/drill-audio.ts 的 audioKey 一致（那边改了这里要跟着改） */
+const audioKey = (item) => `a2:${item}`;
 const srv = await startServer({
   name: 'e2e-platform',
-  seedSql: EAR_AUDIO_IDS.map((i) => `INSERT INTO drill_audio (item, mp3, at) VALUES ('${i}', X'${SILENT_MP3}', 0);`).join('\n'),
+  // 键要带**发音版本号前缀**（src/drill-audio.ts 的 audioKey）：换 TTS 模型时前缀会变，
+  // 旧模型生成的那些段就再也读不到。这里不预置成新键的话，页面会当成"还没生成过"去调 AI（本地没绑 → 报错）。
+  // 2026-11-10 从 melotts 换成 aura-2-en 时，就是这条 e2e 先红的。
+  seedSql: EAR_AUDIO_IDS.map((i) => `INSERT INTO drill_audio (item, mp3, at) VALUES ('${audioKey(i)}', X'${SILENT_MP3}', 0);`).join('\n'),
 });
 const BASE = srv.BASE;
 const now = Date.now();
