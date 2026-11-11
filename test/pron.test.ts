@@ -654,7 +654,8 @@ describe('7. 迁移 0019 只 CREATE，一张旧表都没 DROP', () => {
     expect(all.map((f) => Number(f.slice(0, 4)))).toEqual(all.map((_, i) => i + 1));
     for (const f of ['0012_english_memory.sql', '0013_drill.sql', '0014_drill_audio.sql', '0015_drill_review.sql', '0017_ear.sql'])
       expect([f, all.includes(f)]).toEqual([f, true]);
-    expect(all[all.length - 1]).toBe(M0019);
+    // 基金观察第四版（2026-11-11）加了 0020_fund_valuation.sql：原来"最后一个是 0019"改成"第 19 个就是 0019_pron.sql"（编号连续上面已经守着），守的东西不变
+    expect(all[18]).toBe(M0019);
   });
 });
 

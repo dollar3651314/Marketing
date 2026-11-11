@@ -210,9 +210,15 @@ describe('5. 截止打断和失败原因（第二轮修改 9、10）', () => {
       const i = FUNDS.findIndex((x) => x.code === 'VOO');
       const second = FUNDS[i + 1].symbol;
       // 第一只 14 秒才回（还没到 15 秒，会开第二只）；第二只一直不回 → 8 秒 + 1 秒 + 被截止截短
-      const f: FetchLike = (u, init) => (u.includes(encodeURIComponent(second)) ? hang(u, init) : new Promise((res) => setTimeout(() => res(ok(yahooJson(good))), 14_000)));
+      // 第四版修不稳定（CI 偶发 updated = []）：refreshBatch 开头要先读一次 D1（真 SQLite，真 I/O，假时钟管不到），
+      // 原来一开始就拨假时钟，D1 慢一点时第一个请求还没发出去假时钟已经过了 25 秒截止 → VOO 被当成批首超时记失败。
+      // 改成等第一个请求真的发出去（D1 读完）再拨时钟：之后只剩定时器驱动的事，结果确定。断言不变。
+      let started!: () => void;
+      const firstCall = new Promise<void>((r) => { started = r; });
+      const f: FetchLike = (u, init) => { started(); return u.includes(encodeURIComponent(second)) ? hang(u, init) : new Promise((res) => setTimeout(() => res(ok(yahooJson(good))), 14_000)); };
       let out: any;
       const p = refreshBatch(env(), i, NOW, f).then((r) => (out = r));
+      await firstCall;
       for (let k = 0; k < 4000 && !out; k++) await vi.advanceTimersByTimeAsync(10);
       await p;
       expect(out.updated).toEqual(['VOO']);
