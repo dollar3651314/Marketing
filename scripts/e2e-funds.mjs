@@ -50,7 +50,7 @@
  *   测试用例修正 4（第三版）：V1 / V2 原来断言可能区间"全部时 45 行"，第三版默认折叠到 10 行，改成先点"展开其余 N 只"再数（不改判定口径）。
  *   第四版 ② 估值（Amos 2026-11-11「都按建议」；页面约定见 VA 段开头；接口一侧在 test/funds-v4-valuation.test.ts）：
  *   VA. 1200 浅色："估值：现在贵不贵"6 张卡（data-val-code）、数值和判词（< 30 / 30～70 / > 70）、"不是预测、不是投资建议"、来源"中证指数有限公司、Robert Shiller"、
- *       子菜单"估值"点了定位 / 滚动高亮、切"美国"只剩标普500、"中国"5 张、"新加坡"说明无卡、对比度；VB. 判词分界；VC. 400 深色不横向溢出、对比度。
+ *       子菜单"估值"点了定位 / 滚动高亮、切"美国"只剩标普500、"中国"5 张、"新加坡"只剩标普500（含 XUS；主会话规格更正，依据原型 v3）、对比度；VB. 判词分界；VC. 400 深色不横向溢出、对比度。
  *   全程没有页面脚本报错（pageerror）。
  *
  * 页面约定（研发照加；要改名就在同一个提交里改这里并写明）：
@@ -971,7 +971,8 @@ if (!PROTO) {
   //     判词按分位：< 30 写"便宜"（不写"贵"），30～70（含两端）写"中间"（不写"便宜"、不写"比过去贵"），> 70 写"贵"（不写"便宜"）。
   //   板块里写"不是预测"、"不是投资建议"；来源写"中证指数有限公司"、"Robert Shiller"。
   //   子菜单多一项"估值"（data-target / href / aria-controls 指到这个板块）：点了滚到板块；滚到板块时高亮它。
-  //   市场切换：全部 6 张；"美国"只有 SPX；"中国"只有 5 张 A 股；"新加坡"0 张卡、板块里有一句说明（含"新加坡"）。
+  //   市场切换：全部 6 张；"美国"只有 SPX；"中国"只有 5 张 A 股；"新加坡"只有 SPX 这 1 张、卡上基金列表含 XUS（XUS 在新加坡上市、跟踪标普500）。
+  //     （主会话规格更正，依据 Amos 审过的原型 v3：原派工单写的"新加坡显示说明无卡"是主会话写错了）
   //   400 宽不横向溢出；1200 浅色、400 深色对比度 ≥ 4.5；全程无 pageerror。
   // VA. 1200 浅色：以上全部；VB. 判词分界（替身把分位改成 29.2 / 30 / 70 / 70.8）；VC. 400 深色：6 张、不横向溢出、对比度、市场切换。
   const VREF = JSON.parse(readFileSync(path.join(ROOT, 'test/fixtures/funds/valuation/val-ref.json'), 'utf8'));
@@ -1063,9 +1064,9 @@ if (!PROTO) {
     const cn = await valCodes(page);
     check('VA 切到"中国"：只显示 5 张（000300、000016、000905、000015、000922）', cn.length === 5 && VCN.every((c) => cn.includes(c)), cn);
     await pickMarket(page, '新加坡');
-    const mv2 = await markVal(page);
-    const sg = (await page.locator('[data-qa-val]').innerText().catch(() => '')).replace(/\s+/g, ' ');
-    check('VA 切到"新加坡"：没有卡、板块在、写一句说明（含"新加坡"）', (await valCards(page).count()) === 0 && !!mv2?.visible && /新加坡/.test(sg), { n: await valCards(page).count(), mv2, sg: sg.slice(0, 160) });
+    const sgc = await valCodes(page);
+    const sgt = await cardText(page, 'SPX');
+    check('VA 切到"新加坡"：只显示标普500（SPX）这 1 张，卡上基金列表含 XUS（主会话规格更正，依据原型 v3）', JSON.stringify(sgc) === JSON.stringify(['SPX']) && /XUS/.test(sgt), { sgc, sgt: sgt.slice(0, 160) });
     await pickMarket(page, '');
     check('VA 切回"全部"：6 张', (await valCards(page).count()) === 6, await valCodes(page));
     await ctx.close();
@@ -1098,7 +1099,7 @@ if (!PROTO) {
     await pickMarket(page, '美国');
     check('VC 400 宽切到"美国"：只有 SPX', JSON.stringify(await valCodes(page)) === JSON.stringify(['SPX']), await valCodes(page));
     await pickMarket(page, '新加坡');
-    check('VC 400 宽切到"新加坡"：没有卡、不横向溢出', (await valCards(page).count()) === 0 && (await noHScroll(page)), await valCodes(page));
+    check('VC 400 宽切到"新加坡"：只有 SPX（卡上含 XUS）、不横向溢出', JSON.stringify(await valCodes(page)) === JSON.stringify(['SPX']) && /XUS/.test(await cardText(page, 'SPX')) && (await noHScroll(page)), await valCodes(page));
     await ctx.close();
   });
 

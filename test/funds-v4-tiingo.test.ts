@@ -23,7 +23,7 @@ import { FUNDS } from '../src/funds';
 import { refreshBatch, type FetchLike, type RefreshResult } from '../src/funds-api';
 import { handle } from '../src/index';
 import {
-  fakeResponse, isTiingo, isYahoo, leakOf, SG14, synth, tiingoClose, tiingoSym, urlOf, US15, YAHOO_US_MULT, yahooSym, type TiingoMode,
+  fakeResponse, isTiingo, virtualGaps, isYahoo, leakOf, SG14, synth, tiingoClose, tiingoSym, urlOf, US15, YAHOO_US_MULT, yahooSym, type TiingoMode,
 } from './funds-v4-fake';
 import { ROOT } from './helpers';
 
@@ -98,17 +98,22 @@ async function refreshAll(token?: string) {
     if (r.status !== 200 || body.next == null) break;
     cursor = body.next;
   }
-  for (let i = 0; i < 10; i++) {
-    outbound = [];
-    const r = await handle(req('/api/funds/valuation/refresh', { method: 'POST', cookie: ck, body: '{}' }), env(token), NOW, fake as never);
-    if (r.status === 404) break;
-    const text = await r.text();
-    shown.push(text);
-    let body: any = {};
-    try { body = JSON.parse(text); } catch { body = { raw: text }; }
-    rounds.push({ urls: outbound.slice(), status: r.status, body, text });
-    if (body?.next == null) break;
-  }
+  // 估值刷新（有这个接口才调）：按回的 next 一批一批调；"同一来源隔 ≥ 2 秒"的等待走虚拟时间（test/funds-v4-fake.ts 的 virtualGaps），不真等
+  await virtualGaps(async () => {
+    let next: unknown;
+    for (let i = 0; i < 10; i++) {
+      outbound = [];
+      const r = await handle(req('/api/funds/valuation/refresh', { method: 'POST', cookie: ck, body: JSON.stringify(next == null ? {} : { cursor: next }) }), env(token), NOW, fake as never);
+      if (r.status === 404) break;
+      const text = await r.text();
+      shown.push(text);
+      let body: any = {};
+      try { body = JSON.parse(text); } catch { body = { raw: text }; }
+      rounds.push({ urls: outbound.slice(), status: r.status, body, text });
+      next = body?.next;
+      if (r.status !== 200 || next == null) break;
+    }
+  });
   return rounds;
 }
 const codeOfYahoo = (u: string) => yahooSym(u).replace(/\.(SI|SS)$/, '');

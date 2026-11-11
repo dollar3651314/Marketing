@@ -24,7 +24,7 @@ import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { getPlatformProxy } from 'wrangler';
 import type { Env } from '../src/env';
 import { handle } from '../src/index';
-import { fakeResponse, isBannedVal, isCsindex, isEm, isShiller, isTiingo, isYahoo, urlOf, VAL_CN, VAL_CODES, VAL_REF } from './funds-v4-fake';
+import { clock, fakeResponse, isBannedVal, virtualGaps, isCsindex, isEm, isShiller, isTiingo, isYahoo, urlOf, VAL_CN, VAL_CODES, VAL_REF } from './funds-v4-fake';
 import { yieldHost } from './funds-yield-fake';
 import { ROOT } from './helpers';
 
@@ -48,6 +48,8 @@ const stmtsOf = (files: string[]) =>
     .join(';\n').split(';').map((s) => s.trim()).filter(Boolean);
 
 let outbound: string[] = [];
+/** 每个对外请求的虚拟时间（量同一来源的间隔） */
+let stamps: { url: string; t: number }[] = [];
 let down = new Set<'csindex' | 'shiller'>();
 const realFetch = globalThis.fetch;
 const fake = vi.fn(async (input: unknown, init?: RequestInit): Promise<Response> => {
@@ -55,6 +57,7 @@ const fake = vi.fn(async (input: unknown, init?: RequestInit): Promise<Response>
   const h = new URL(url).hostname;
   if (h === '127.0.0.1' || h === 'localhost') return realFetch(input as RequestInfo, init);
   outbound.push(url);
+  stamps.push({ url, t: clock() });
   return fakeResponse(input, init, { end: END, token: 'unused', down });
 });
 
@@ -91,17 +94,20 @@ async function refreshAll(now: number): Promise<Round[]> {
     if (r.status !== 200 || body.next == null) break;
     cursor = body.next;
   }
-  let next: unknown;
-  for (let i = 0; i < 10; i++) {
-    outbound = [];
-    const r = await handle(req('/api/funds/valuation/refresh', { method: 'POST', cookie: ck, body: JSON.stringify(next == null ? {} : { cursor: next }) }), env(), now, fake as never);
-    if (r.status === 404) break;
-    let body: any = {};
-    try { body = await r.json(); } catch { body = {}; }
-    rounds.push({ urls: outbound.slice(), status: r.status, body, path: 'valuation/refresh' });
-    next = body?.next;
-    if (r.status !== 200 || next == null) break;
-  }
+  // "同一来源隔 ≥ 2 秒"的等待走虚拟时间（virtualGaps：等待一点不少，只是不真等；CI 不会因为真等约 20 秒而超时）
+  await virtualGaps(async () => {
+    let next: unknown;
+    for (let i = 0; i < 10; i++) {
+      outbound = [];
+      const r = await handle(req('/api/funds/valuation/refresh', { method: 'POST', cookie: ck, body: JSON.stringify(next == null ? {} : { cursor: next }) }), env(), now, fake as never);
+      if (r.status === 404) break;
+      let body: any = {};
+      try { body = await r.json(); } catch { body = {}; }
+      rounds.push({ urls: outbound.slice(), status: r.status, body, path: 'valuation/refresh' });
+      next = body?.next;
+      if (r.status !== 200 || next == null) break;
+    }
+  });
   return rounds;
 }
 /** 读估值（两种接口都认） */
@@ -142,6 +148,7 @@ function compare(items: Record<string, any>[] | null): string[] {
 describe('D 估值：接口', () => {
   let first: Round[] = [];
   it('第一次完整刷新：每次 ≤ 45 个对外请求、都 200；中证 5 个指数的 PE（perf）和股息率（indicator.xls）、Shiller 都请求到了', async () => {
+    stamps = [];
     first = await refreshAll(D1A);
     expect(first.filter((r) => r.status !== 200).map((r) => [r.path, r.status, r.body])).toEqual([]);
     expect(first.map((r) => r.urls.length).filter((n) => n > LIMIT)).toEqual([]);
@@ -149,6 +156,14 @@ describe('D 估值：接口', () => {
     expect(VAL_CN.filter((c) => !cs.some((u) => /perf/i.test(u) && u.includes(c))), '中证 PE（index-perf）').toEqual([]);
     expect(VAL_CN.filter((c) => !cs.some((u) => new URL(u).hostname === 'oss-ch.csindex.com.cn' && new RegExp(`${c}indicator\\.xls`, 'i').test(u))), '中证股息率（indicator.xls）').toEqual([]);
     expect(shUrls(first).length).toBeGreaterThan(0);
+  });
+  it('（补充，研发按安全经理限制做的）同一来源相邻两个请求隔 ≥ 2 秒（中证 www 和 oss-ch 算一个来源；Shiller 首页和下载算一个来源；按虚拟时间量）', () => {
+    const bad: string[] = [];
+    for (const [name, is] of [['中证', isCsindex], ['Shiller', isShiller]] as const) {
+      const xs = stamps.filter((x) => is(x.url));
+      for (let i = 1; i < xs.length; i++) if (xs[i].t - xs[i - 1].t < 2000 - 5) bad.push(`${name}：${xs[i - 1].url.slice(0, 60)} → ${xs[i].url.slice(0, 60)} 只隔 ${xs[i].t - xs[i - 1].t} ms`);
+    }
+    expect(bad).toEqual([]);
   });
   it('来源只有中证、Shiller（及其首页给的 ie_data.xls 下载链接）；不请求蛋卷、multpl、MSCI、富时', () => {
     const v = valUrls(first);

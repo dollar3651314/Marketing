@@ -21,6 +21,7 @@
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import { gunzipSync } from 'node:zlib';
+import { vi } from 'vitest';
 import { ROOT } from './helpers';
 import { yieldResponse } from './funds-yield-fake';
 
@@ -163,4 +164,22 @@ export function fakeResponse(input: unknown, init: RequestInit | undefined, o: F
 export function leakOf(text: string, token: string, min = 6): string | null {
   for (let i = 0; i + min <= token.length; i++) { const p = token.slice(i, i + min); if (text.includes(p)) return p; }
   return null;
+}
+
+/**
+ * 跑 fn 时把"同一来源两个请求之间隔 ≥ 2 秒"那种等待变成虚拟时间：setTimeout 的延时在 [lo, hi] 毫秒之间的，立刻触发，同时让 Date.now 往前跳同样多
+ * （被测代码看到的时间照样过去了那么久，等待的逻辑一点没少；测试不用真等约 20 秒）。只在 fn 运行期间生效；8 秒超时、undici 内部计时（< 1.5 秒）不受影响。
+ * 回 fn 的结果；clock() 是虚拟的"现在"，替身 fetch 用它记每个请求的时间，好量间隔。
+ */
+let skew = 0;
+export const clock = () => Date.now();
+export async function virtualGaps<T>(fn: () => Promise<T>, lo = 1500, hi = 2000): Promise<T> {
+  const realST = globalThis.setTimeout;
+  const realNow = Date.now.bind(Date);
+  const spy = vi.spyOn(Date, 'now').mockImplementation(() => realNow() + skew);
+  globalThis.setTimeout = ((cb: (...a: unknown[]) => void, ms?: number, ...a: unknown[]) => {
+    if (typeof ms === 'number' && ms >= lo && ms <= hi) { skew += ms; return realST(cb, 0, ...a); }
+    return realST(cb, ms, ...a);
+  }) as unknown as typeof setTimeout;
+  try { return await fn(); } finally { globalThis.setTimeout = realST; spy.mockRestore(); }
 }
