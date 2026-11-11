@@ -574,6 +574,7 @@ function valuation(){var G=$('fu-va-grid');G.replaceChildren();var V=D&&D.valuat
       svg.appendChild(sv('circle',{cx:Xp(s.length-1),cy:Y(s[s.length-1][1]),r:3,fill:col}));c.appendChild(svg)}
     var e=el('div',{'class':'fu-vexp'});e.appendChild(document.createTextNode('长期（10 年）预期年化，推断：盈利收益率法 '));e.appendChild(el('b',null,'≈'+(+v.exp_a).toFixed(1)+'%'+(spx?'（扣通胀）':'')));
     e.appendChild(document.createTextNode('；分红 + 增长法 '));e.appendChild(el('b',null,v.exp_b==null?'—（没有股息率）':'≈'+(+v.exp_b).toFixed(1)+'%'));c.appendChild(e);
+    if(v.note)c.appendChild(el('div',{'class':'fu-vold'},v.note));
     if(v.error)c.appendChild(el('div',{'class':'fu-vold'},'最近一次没取全：'+plainWhy(v.error)+(v.ok_at?'，显示的是 '+tw(v.ok_at)+' 取到的数据':'')));
     G.appendChild(c)});
   miss.forEach(function(m){var c=el('div',{'class':'fu-vc','data-val-code':m.code});c.appendChild(el('h3',null,m.name));

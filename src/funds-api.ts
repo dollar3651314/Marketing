@@ -703,7 +703,9 @@ export interface ValStepResult {
 /** 中证 perf 的进度。open = false：这一轮没成功、进度留着等下一轮接着取（第五版断点续取） */
 interface PerfWork { day: string; segs: [string, string][]; i: number; months: Record<string, [string, number]>; last: [string, number] | null; incr: boolean; open?: boolean }
 /** Shiller 的进度：home 找下载链接 → dl 下载并拆块 → globals 读目录 → rows 逐块解析。cached = 这次用的是上次存的链接（失败就回退首页） */
-interface ShWork { day: string; stage: 'home' | 'dl' | 'globals' | 'rows'; url?: string; cached?: boolean; n: number; len: number; pos?: number; sst?: string[]; st?: ShillerState; pend?: [number, number] | null }
+interface ShWork { day: string; stage: 'home' | 'dl' | 'globals' | 'rows'; url?: string; cached?: boolean;
+  /** 用存的链接解析完、最新月份没比库里前进：再看一次首页，recheck = 存的那个链接（首页上还是它就不再下载） */
+  recheck?: string; n: number; len: number; pos?: number; sst?: string[]; st?: ShillerState; pend?: [number, number] | null }
 /** 这次刷新的状态：failed 这次刷新里不再碰的来源键；blocked 回过 403 / 429、这次刷新里不再碰的来源；last 每个来源最后一个请求结束的时间 */
 interface RunState { failed: string[]; blocked?: ('cs' | 'sh')[]; last: { cs?: number; sh?: number } }
 
@@ -770,7 +772,7 @@ function stepsLeft(key: string, work: Map<string, any>, stored: Map<string, bool
   const est = Math.ceil(1.7e6 / VAL_BLOB);
   if (!w) return 3 + est;
   const s = w as ShWork;
-  if (s.stage === 'home') return 3 + est;
+  if (s.stage === 'home') return s.recheck ? 1 : 3 + est;
   if (s.stage === 'dl') return 2 + est;
   return s.stage === 'globals' ? 1 + s.n : Math.max(1, s.n - Math.floor((s.pos ?? 0) / VAL_BLOB));
 }
@@ -876,9 +878,18 @@ export async function refreshValuation(env: Env, cursor: number, now: number, f:
         const home = await http.text(SHILLER_HOME, { headers: HTML_HEADERS }, 'Shiller 首页');
         const url = shillerXlsUrl(home.text);
         if (!url) throw new FetchFail('Shiller 首页上没找到 ie_data.xls 的下载链接（或链接不在 shillerdata.com / wsimg.com 上）');
-        w = { day: day8(now), stage: 'dl', url, cached: false, n: 0, len: 0 };
-        work.set(key, w);
-        await putWork(env, key, w, now).run();
+        const old = w.recheck ? await storedOf(env, 'SPX') : null;
+        if (w.recheck && url === w.recheck && old) {
+          // 首页上还是存的那个链接：Shiller 本月还没更新，保留旧数据，记一笔（页面注明），这个月这一轮算完
+          part = '首页（没有新链接，Shiller 本月还没更新）';
+          await env.DB.batch([saveVal(env, { ...old, stale_month: day8(now).slice(0, 7) }, now), markOk(env, key, now), delWork(env, key), delBlobs(env)]);
+          work.delete(key);
+          status = 'ok';
+        } else {
+          w = { day: day8(now), stage: 'dl', url, cached: false, n: 0, len: 0 };
+          work.set(key, w);
+          await putWork(env, key, w, now).run();
+        }
       } else if (w.stage === 'dl') {
         // 下载：只把工作簿流拆块存起来，不解析
         part = '下载';
@@ -898,7 +909,7 @@ export async function refreshValuation(env: Env, cursor: number, now: number, f:
           await putWork(env, key, w, now).run();
         } else {
           const n = Math.ceil(wb.length / VAL_BLOB);
-          w = { day: day8(now), stage: 'globals', url: w.url, n, len: wb.length };
+          w = { day: day8(now), stage: 'globals', url: w.url, cached: w.cached, n, len: wb.length };
           await env.DB.batch([delBlobs(env), ...Array.from({ length: n }, (_, i) => env.DB.prepare("INSERT INTO fund_val_blob (src, idx, data) VALUES ('shiller', ?1, ?2)").bind(i, wb!.slice(i * VAL_BLOB, (i + 1) * VAL_BLOB))), putWork(env, key, w, now)]);
           work.set(key, w);
         }
@@ -923,10 +934,19 @@ export async function refreshValuation(env: Env, cursor: number, now: number, f:
           const p = shillerDone(w.st!);
           if (!p) throw new FetchFail('Shiller 的 Data 表认不出来（没有表头或 CAPE）');
           const last = p.series[p.series.length - 1];
-          // 第五版：成功下载并解析过的链接存下来，下次直接请求它
-          await env.DB.batch([saveVal(env, { code: 'SPX', series: p.series, pe_now: last[1], pe_now_date: last[0], dy_now: p.dy, dy_date: p.dyDate, ...(w.url ? { xls_url: w.url } : {}) }, now), markOk(env, key, now), delWork(env, key), delBlobs(env)]);
-          work.delete(key);
-          status = 'ok';
+          const old = await storedOf(env, 'SPX');
+          const advanced = !old?.pe_now_date || last[0] > old.pe_now_date;
+          if (!advanced && w.cached && w.url) {
+            // 用存的链接取到的最新月份没比库里前进：同一轮里再看一次首页有没有新链接（下一步，仍是每次调用 ≤ 1 个请求、同源隔 ≥ 5 秒）
+            w = { day: day8(now), stage: 'home', recheck: w.url, n: 0, len: 0 };
+            work.set(key, w);
+            await env.DB.batch([delBlobs(env), putWork(env, key, w, now)]);
+          } else {
+            // 第五版：成功下载并解析过的链接存下来，下次直接请求它；最新月份没前进的记 stale_month（页面注明"Shiller 本月还没更新"）
+            await env.DB.batch([saveVal(env, { code: 'SPX', series: p.series, pe_now: last[1], pe_now_date: last[0], dy_now: p.dy, dy_date: p.dyDate, ...(w.url ? { xls_url: w.url } : {}), ...(advanced ? {} : { stale_month: day8(now).slice(0, 7) }) }, now), markOk(env, key, now), delWork(env, key), delBlobs(env)]);
+            work.delete(key);
+            status = 'ok';
+          }
         }
       }
     }
@@ -964,7 +984,7 @@ export async function refreshValuation(env: Env, cursor: number, now: number, f:
 }
 
 export interface ValuationList {
-  items: (ValCard & { ok_at: string | null; error?: string; error_at?: string })[];
+  items: (ValCard & { ok_at: string | null; error?: string; error_at?: string; note?: string })[];
   /** 还没有数据的指数（从没取到过） */
   missing: { code: string; name: string; market: string; error?: string }[];
   /** 还有来源今天（Shiller 这个月）没取过：页面刷新完 45 只后才去调 POST /api/funds/valuation/refresh；false 就不调 */
@@ -984,7 +1004,9 @@ export async function valuationList(env: Env, now: number): Promise<ValuationLis
       const st = readStored(r?.data);
       const card = st ? valCard(def, st) : null;
       if (!card) { missing.push({ code: def.code, name: def.name, market: def.market, ...(r?.err ? { error: r.err } : {}) }); continue; }
-      items.push({ ...card, ok_at: r?.ok_at ? new Date(r.ok_at).toISOString() : null, ...(r?.err ? { error: r.err, ...(r.err_at ? { error_at: new Date(r.err_at).toISOString() } : {}) } : {}) });
+      // 第五版：Shiller 这个月重新看过、还没更新 → 注明
+      const note = st!.stale_month && st!.stale_month === day8(now).slice(0, 7) ? `Shiller 本月还没更新（最新是 ${st!.pe_now_date} 的数据）` : '';
+      items.push({ ...card, ok_at: r?.ok_at ? new Date(r.ok_at).toISOString() : null, ...(note ? { note } : {}), ...(r?.err ? { error: r.err, ...(r.err_at ? { error_at: new Date(r.err_at).toISOString() } : {}) } : {}) });
     }
     // 股息率要等有了市盈率序列才取（keyReady）：没有市盈率的指数不因为股息率一直显示"要取"
     const hasPe = new Map(rows.map((r) => [r.code, !!readStored(r.data)?.series.length]));
