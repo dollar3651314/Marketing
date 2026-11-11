@@ -574,6 +574,7 @@ function valuation(){var G=$('fu-va-grid');G.replaceChildren();var V=D&&D.valuat
       svg.appendChild(sv('circle',{cx:Xp(s.length-1),cy:Y(s[s.length-1][1]),r:3,fill:col}));c.appendChild(svg)}
     var e=el('div',{'class':'fu-vexp'});e.appendChild(document.createTextNode('长期（10 年）预期年化，推断：盈利收益率法 '));e.appendChild(el('b',null,'≈'+(+v.exp_a).toFixed(1)+'%'+(spx?'（扣通胀）':'')));
     e.appendChild(document.createTextNode('；分红 + 增长法 '));e.appendChild(el('b',null,v.exp_b==null?'—（没有股息率）':'≈'+(+v.exp_b).toFixed(1)+'%'));c.appendChild(e);
+    if(v.note)c.appendChild(el('div',{'class':'fu-vold'},v.note));
     if(v.error)c.appendChild(el('div',{'class':'fu-vold'},'最近一次没取全：'+plainWhy(v.error)+(v.ok_at?'，显示的是 '+tw(v.ok_at)+' 取到的数据':'')));
     G.appendChild(c)});
   miss.forEach(function(m){var c=el('div',{'class':'fu-vc','data-val-code':m.code});c.appendChild(el('h3',null,m.name));
@@ -643,7 +644,7 @@ async function refresh(){if(busy)return;yFail=null;busy=true;var btn=$('fu-refre
     var fb=ITEMS.filter(function(f){return f.market==='美国'&&f.fallback&&f.source==='yahoo'&&updated.indexOf(f.code)>=0}).length;
     if(fb)msg+='；美国 '+fb+' 只 Tiingo 没取到，这次用的 Yahoo';
     prog([[msg]],failed.length>0);
-    // 第四版 ②：45 只取完以后再取估值（服务器说还有来源今天没取过才取；一步一小步，同一来源之间服务器自己隔 2 秒）
+    // 第四版 ②：45 只取完以后再取估值（服务器说还有来源今天没取过才取；一步一小步，同一来源之间服务器自己隔 5 秒）
     if(D&&D.valuation&&D.valuation.due){btn.textContent='正在取估值…';await valRefresh([[msg]],failed.length>0)}}
   catch(e){
     // 中途断了：只有已经回了结果的那几批算数（写库失败的那一批不算"已存好"）
@@ -662,14 +663,23 @@ async function valRefresh(base,baseErr){var M=$('fu-va-msg'),step=0,n=0,fail=[],
   show('估值：正在取 第 1 段'+(first?'（首次约两三分钟）':''));
   try{while(step!=null){if(n>=LIM)throw new Error('已经发了 '+LIM+' 次请求还没取完，先停下了');n++;
       var r=await getJson(BASE+'/valuation/refresh',{cursor:step});
-      if(r.status==='ok')ok++;else if(r.status==='failed')fail.push(r.name+'：'+plainWhy(r.reason||''));
+      if(r.status==='ok')ok++;else if(r.status==='failed')fail.push({code:r.code,name:r.name,t:plainWhy(r.reason||'')});
+      // 第五版：对方回 403 / 429 时服务器这一轮不再请求同一来源，列出没再请求的指数
+      if(Array.isArray(r.skipped))r.skipped.forEach(function(x){fail.push({code:x.code,name:x.name,t:'这一轮没再请求'})});
       if(r.next!=null&&!(r.next>step))throw new Error('服务器回的估值进度没有往前走');step=r.next;
       if(r.total>20)first=true;
       if(step!=null)show('估值：正在取 第 '+(r.done+1)+' / '+Math.max(r.total,r.done+1)+' 段'+(first?'（首次约两三分钟）':'')+(r.name?'，刚取完 '+r.name+' '+(r.part||''):''))}
     await load();
-    M.className='fu-vamsg'+(fail.length?' err':'');M.textContent=fail.length?'估值：'+fail.length+' 项这次没取到（'+fail.join('；')+'），显示的是上次的数据；今天再点「刷新数据」还会再试一轮（每个来源每天最多两轮）。':ok?'估值数据已更新。':'估值数据今天已经取过，没有再取。';
+    M.className='fu-vamsg'+(fail.length?' err':'');M.textContent=fail.length?valFailMsg(fail):ok?'估值数据已更新。':'估值数据今天已经取过，没有再取。';
     prog(base.concat([['；'+(fail.length?'估值有 '+fail.length+' 项没取到（见估值板块）':ok?'估值数据已更新':'估值今天已经取过')]]),baseErr||fail.length>0)}
-  catch(e){await load();M.className='fu-vamsg err';M.textContent='估值这次没取完（'+e.message+'），显示的是上次的数据；再点「刷新数据」会接着取。';prog(base.concat([['；估值这次没取完（'+e.message+'），再点「刷新数据」会接着取']]),true)}}
+  catch(e){await load();var hn=valHas(),hk=Object.keys(hn).length;M.className='fu-vamsg err';M.textContent='估值这次没取完（'+e.message+'），'+(!hk?'还没有估值数据':hk>=VAL_DEFS.length?'显示的是上次的数据':'已有估值的指数显示的是上次的数据，其余还没有数据')+'；再点「刷新数据」会接着取。';prog(base.concat([['；估值这次没取完（'+e.message+'），再点「刷新数据」会接着取']]),true)}}
+/** 现在页面上有估值数据（有卡片）的指数代码 */
+function valHas(){var V=D&&D.valuation,h={};(V&&Array.isArray(V.items)?V.items:[]).forEach(function(x){if(x&&x.code)h[x.code]=1});return h}
+/** 第五版：估值没取到的汇总。有上次数据的才写"显示的是上次的数据"；从没取到过的写"还没有数据"（同一个指数只算一次归类） */
+function valFailMsg(fail){var h=valHas(),seen={},keep=[],none=[];
+  fail.forEach(function(x){if(seen[x.code])return;seen[x.code]=1;(h[x.code]?keep:none).push(x.name)});
+  // 每种各成一句、写明是哪几个指数（"显示的是上次的数据"那句只说有旧数据的）
+  return '估值：'+fail.length+' 项这次没取到（'+fail.map(function(x){return x.name+'：'+x.t}).join('；')+'）。'+(keep.length?keep.join('、')+' 显示的是上次的数据；':'')+(none.length?none.join('、')+' 还没有数据；':'')+'今天再点「刷新数据」还会再试一轮（每个来源每天最多两轮）。'}
 /** 估值一次刷新最多走几步（和服务器 VAL_MAX_STEPS 一样） */
 var VAL_MAX=200;
 document.querySelectorAll('#fu-periods .fu-chip').forEach(function(b){b.addEventListener('click',function(){st.p=b.dataset.p;rgOpen=false;document.querySelectorAll('#fu-periods .fu-chip').forEach(function(x){x.setAttribute('aria-pressed',x===b?'true':'false')});render()})});

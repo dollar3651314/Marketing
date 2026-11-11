@@ -244,26 +244,29 @@ function valFake(over: (u: string) => Response | null = () => null) {
   return { f, log, sleep };
 }
 
-describe('D3. 取数：每天最多一轮、分段 / 分步、同一来源间隔 ≥ 2 秒、不自动重试、保留上次', () => {
+// 第五版估值取数修复（主会话 11/11 派工：规格变了，不是放宽）：中证 perf 首次每段 ≤ 41 个月（3 段 / 指数，原来按年 11 段）；同源间隔 2 → 5 秒（断言用 VAL_GAP_MS）；
+// Shiller 首页单独一步（原来首页 + 下载在同一步「下载」里）。每次调用对外请求 ≤ 2 → ≤ 1（更严）。
+describe('D3. 取数：每天最多一轮、分段 / 分步、同一来源间隔 ≥ 5 秒、不自动重试、保留上次', () => {
   /** 一次刷新：cursor 从 0 一直调到 next 为 null（硬上限 VAL_MAX_STEPS + 1） */
   async function round(now: number, fk: ReturnType<typeof valFake>, stopAfter = Infinity) {
     const out: ValStepResult[] = [];
-    for (let c: number | null = 0, k = 0; c !== null && k <= VAL_MAX_STEPS && k < stopAfter; k++) { const r = await refreshValuation(env(), c, now, fk.f, fk.sleep); out.push(r); expect(r.requests).toBeLessThanOrEqual(2); c = r.next; }
+    for (let c: number | null = 0, k = 0; c !== null && k <= VAL_MAX_STEPS && k < stopAfter; k++) { const r = await refreshValuation(env(), c, now, fk.f, fk.sleep); out.push(r); expect(r.requests).toBeLessThanOrEqual(1); c = r.next; }
     return out;
   }
-  it('首次：中证每个指数按年分 11 段 + 股息率 1 步，Shiller 下载 1 步 + 目录 1 步 + 逐块解析；同一来源相邻请求都等够 2 秒；同一天再刷 0 个请求；第二天中证只取最近一段', async () => {
+  it('首次：中证每个指数分 3 段（每段 ≤ 41 个月）+ 股息率 1 步，Shiller 首页 1 步 + 下载 1 步 + 目录 1 步 + 逐块解析；同一来源相邻请求都等够 5 秒；同一天再刷 0 个请求；第二天中证只取最近一段', async () => {
     const fk = valFake();
     const rs = await round(NOW, fk);
     expect(rs.filter((r) => r.status === 'failed')).toEqual([]);
     expect(rs.filter((r) => r.status === 'ok').map((r) => r.code)).toEqual(['000300', '000300', '000016', '000016', '000905', '000905', '000015', '000015', '000922', '000922', 'SPX']);
     const perf = fk.log.filter((x) => x.u.includes('index-perf'));
-    expect(perf.length).toBe(55);
-    expect(perf.slice(0, 11).map((x) => new URL(x.u).searchParams.get('startDate') + '-' + new URL(x.u).searchParams.get('endDate'))).toEqual(['20160901-20161231', ...Array.from({ length: 9 }, (_, i) => `${2017 + i}0101-${2017 + i}1231`), '20260101-20261111']);
+    expect(perf.length).toBe(15);
+    // 首尾相接、不重叠，覆盖 2016-09-01 ～ 今天
+    expect(perf.slice(0, 3).map((x) => new URL(x.u).searchParams.get('startDate') + '-' + new URL(x.u).searchParams.get('endDate'))).toEqual(['20160901-20200131', '20200201-20230630', '20230701-20261111']);
     expect(fk.log.filter((x) => x.u.includes('indicator.xls')).length).toBe(5);
     expect(fk.log.filter((x) => /shillerdata|wsimg/.test(x.u)).length).toBe(2);
     // 页面进度：done 逐步加一，total ≥ done
     rs.forEach((r, i) => { expect(r.done).toBe(i + 1); expect(r.total).toBeGreaterThanOrEqual(r.done); });
-    // 同一来源前后两个请求之间都等过（第一个中证请求、第一个 Shiller 请求前面没有同一来源的请求，不用等）
+    // 同一来源前后两个请求之间都等过（≥ VAL_GAP_MS = 5 秒）（第一个中证请求、第一个 Shiller 请求前面没有同一来源的请求，不用等）
     const fam = (u: string) => (u.includes('csindex') ? 'cs' : 'sh');
     fk.log.forEach((x, i) => {
       const prev = fk.log.slice(0, i).reverse().find((y) => fam(y.u) === fam(x.u));
@@ -297,8 +300,9 @@ describe('D3. 取数：每天最多一轮、分段 / 分步、同一来源间隔
     const fk = valFake((u) => (u.includes('ie_data.xls') ? new Response(big as unknown as BodyInit) : null));
     // 先把中证这一轮做完（跳过它们：今天记成已成功）
     await db.batch(ALL_CS.map((k) => db.prepare("INSERT INTO fund_val_fetch (src, day, tries, at, ok_day) VALUES (?1, '2026-11-11', 1, 0, '2026-11-11')").bind(k)));
-    const first = await round(NOW, fk, 4); // 下载 + 目录 + 2 块就停（像页面被关掉）
-    expect(first.map((r) => r.part)).toEqual(['下载', '目录', expect.stringMatching(/^解析第 \d+ \/ \d+ 块$/), expect.stringMatching(/^解析第 \d+ \/ \d+ 块$/)]);
+    const first = await round(NOW, fk, 4); // 首页 + 下载 + 目录 + 1 块就停（像页面被关掉）
+    // 第五版：首页单独一步（首页 1 个请求、下载 1 个请求，仍是 2 个），再目录、逐块解析
+    expect(first.map((r) => r.part)).toEqual(['首页', '下载', '目录', expect.stringMatching(/^解析第 \d+ \/ \d+ 块$/)]);
     const blobs = (await db.prepare('SELECT idx, length(data) AS n FROM fund_val_blob ORDER BY idx').all<{ idx: number; n: number }>()).results ?? [];
     expect(blobs.length).toBeGreaterThan(3);
     expect(blobs.every((b) => b.n <= VAL_BLOB)).toBe(true);
@@ -337,6 +341,42 @@ describe('D3. 取数：每天最多一轮、分段 / 分步、同一来源间隔
     const c = valFake();
     const d2 = await round(NOW + DAY, c);
     expect(d2.filter((r) => r.status === 'failed')).toEqual([]);
+  });
+  it('（第五版）Shiller 用存的链接：最新月份没前进 → 同一轮再看首页；首页还是那个链接 → 保留旧数据、注明"本月还没更新"；首页有新链接 → 换新链接下载、不再注明', async () => {
+    await db.batch(ALL_CS.map((k) => db.prepare("INSERT INTO fund_val_fetch (src, day, tries, at, ok_day) VALUES (?1, '2026-11-11', 1, 0, '2026-11-11')").bind(k)));
+    const OLD = 'https://img1.wsimg.com/blobby/go/a/downloads/b/ie_data.xls?ver=9', NEW = 'https://img1.wsimg.com/blobby/go/a/downloads/b/ie_data.xls?ver=10';
+    const xOld = shillerXls(200, (i) => 20 + i / 10), xNew = shillerXls(201, (i) => 20 + i / 10);
+    const sh = (u: string) => /shillerdata|wsimg/.test(u);
+    const a = valFake();
+    await round(NOW, a);
+    expect(a.log.map((x) => x.u)).toEqual(['https://shillerdata.com/', OLD]);
+    const spx0 = (await valuationList(env(), NOW))!.items.find((x) => x.code === 'SPX')!;
+    expect(spx0.note).toBeUndefined();
+    // 下个月：存的链接（还是旧文件）→ 没前进 → 首页（还是那个链接）→ 不再下载；保留旧数据、注明
+    const DEC = Date.UTC(2026, 11, 2, 2);
+    await db.batch(ALL_CS.map((k) => db.prepare("UPDATE fund_val_fetch SET day = '2026-12-02', ok_day = '2026-12-02' WHERE src = ?1").bind(k)));
+    const b = valFake();
+    const rb = await round(DEC, b);
+    expect(b.log.map((x) => x.u)).toEqual([OLD, 'https://shillerdata.com/']);
+    expect(b.log[1].slept - b.log[0].slept + (b.log[1].t - b.log[0].t)).toBeGreaterThanOrEqual(VAL_GAP_MS - 5);
+    expect(rb.filter((r) => r.status === 'failed')).toEqual([]);
+    const spx1 = (await valuationList(env(), DEC))!.items.find((x) => x.code === 'SPX')!;
+    expect([spx1.pe_now_date, spx1.pe_now]).toEqual([spx0.pe_now_date, spx0.pe_now]);
+    expect(spx1.note).toMatch(/Shiller 本月还没更新/);
+    expect((await valuationList(env(), DEC))!.due).toBe(false); // 这个月这一轮算完
+    expect((await db.prepare('SELECT COUNT(*) AS n FROM fund_val_blob').first<{ n: number }>())!.n).toBe(0);
+    // 再下个月：存的链接没前进 → 首页给了新链接 → 下载新文件（多一个月）→ 不再注明、链接换成新的
+    const JAN = Date.UTC(2027, 0, 5, 2);
+    await db.batch(ALL_CS.map((k) => db.prepare("UPDATE fund_val_fetch SET day = '2027-01-05', ok_day = '2027-01-05' WHERE src = ?1").bind(k)));
+    const c = valFake((u) => (u === 'https://shillerdata.com/' ? new Response(`<a href="${NEW}">ie_data.xls</a>`) : u === NEW ? new Response(xNew as unknown as BodyInit) : u === OLD ? new Response(xOld as unknown as BodyInit) : null));
+    await round(JAN, c);
+    expect(c.log.filter((x) => sh(x.u)).map((x) => x.u)).toEqual([OLD, 'https://shillerdata.com/', NEW]);
+    const spx2 = (await valuationList(env(), JAN))!.items.find((x) => x.code === 'SPX')!;
+    expect(spx2.pe_now_date > spx0.pe_now_date).toBe(true);
+    expect(spx2.note).toBeUndefined();
+    expect(JSON.parse((await db.prepare("SELECT data FROM fund_valuation WHERE code = 'SPX'").first<{ data: string }>())!.data).xls_url).toBe(NEW);
+    // 下个月的注明只在那个月显示
+    expect((await valuationList(env(), JAN))!.items.find((x) => x.code === 'SPX')!.note).toBeUndefined();
   });
   it('Shiller 首页上的链接不在白名单：不去取，记原因', async () => {
     await db.batch(ALL_CS.map((k) => db.prepare("INSERT INTO fund_val_fetch (src, day, tries, at, ok_day) VALUES (?1, '2026-11-11', 1, 0, '2026-11-11')").bind(k)));
