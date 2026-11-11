@@ -86,11 +86,17 @@ function cfb(stream: Uint8Array, small: boolean): Uint8Array {
   [0xd0, 0xcf, 0x11, 0xe0, 0xa1, 0xb1, 0x1a, 0xe1].forEach((b, i) => (head[i] = b));
   hv.setUint16(0x18, 0x3e, true); hv.setUint16(0x1a, 3, true); hv.setUint16(0x1c, 0xfffe, true);
   hv.setUint16(0x1e, 9, true); hv.setUint16(0x20, 6, true);
-  hv.setUint32(0x2c, 1, true); hv.setUint32(0x30, 1, true); hv.setUint32(0x38, 4096, true);
+  // 普通扇区的大文件要多个 FAT 扇区（放在最前面 0..nf-1，目录在 nf，数据从 nf + 1 起；最多 109 个，够 7MB）
+  const dataSecs = small ? 0 : Math.ceil(data.length / SS);
+  let nf = 1;
+  while (nf * 128 < nf + 3 + dataSecs) nf++;
+  if (nf > 109) throw new Error('太大了');
+  hv.setUint32(0x2c, nf, true); hv.setUint32(0x30, nf, true); hv.setUint32(0x38, 4096, true);
   hv.setUint32(0x44, END, true); hv.setUint32(0x48, 0, true);
-  for (let i = 0; i < 109; i++) hv.setUint32(0x4c + 4 * i, i === 0 ? 0 : FREE, true);
-  const fat = new Uint32Array(128).fill(FREE);
-  fat[0] = FATS; fat[1] = END;
+  for (let i = 0; i < 109; i++) hv.setUint32(0x4c + 4 * i, i < nf ? i : FREE, true);
+  const fat = new Uint32Array(128 * nf).fill(FREE);
+  for (let i = 0; i < nf; i++) fat[i] = FATS;
+  fat[nf] = END;
   const sectors: Uint8Array[] = [];
   const dir = new Uint8Array(SS);
   const dv = new DataView(dir.buffer);
@@ -108,7 +114,7 @@ function cfb(stream: Uint8Array, small: boolean): Uint8Array {
     return n;
   };
   if (small) {
-    // 扇区：0 FAT、1 目录、2 MiniFAT、3.. mini stream 容器
+    // 扇区：0 FAT、1 目录、2 MiniFAT、3.. mini stream 容器（小文件 nf = 1）
     const nMini = Math.ceil(data.length / 64);
     const container = new Uint8Array(nMini * 64); container.set(data);
     const mfat = new Uint8Array(SS); const mv = new DataView(mfat.buffer);
@@ -122,13 +128,12 @@ function cfb(stream: Uint8Array, small: boolean): Uint8Array {
   } else {
     hv.setUint32(0x3c, END, true); hv.setUint32(0x40, 0, true);
     entry(0, 'Root Entry', 5, END, 0);
-    entry(1, 'Workbook', 2, 2, data.length);
+    entry(1, 'Workbook', 2, nf + 1, data.length);
     sectors.push(dir);
-    chainSectors(data, 2);
+    chainSectors(data, nf + 1);
   }
-  const fatSec = new Uint8Array(SS); const fv = new DataView(fatSec.buffer);
-  fat.forEach((v, i) => fv.setUint32(4 * i, v, true));
-  const all = [head, fatSec, ...sectors];
+  const fatSecs = Array.from({ length: nf }, (_, k) => { const b = new Uint8Array(SS); const fv = new DataView(b.buffer); for (let i = 0; i < 128; i++) fv.setUint32(4 * i, fat[k * 128 + i], true); return b; });
+  const all = [head, ...fatSecs, ...sectors];
   const out = new Uint8Array(all.length * SS);
   all.forEach((s, i) => out.set(s, i * SS));
   return out;

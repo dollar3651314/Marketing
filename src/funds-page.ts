@@ -647,16 +647,19 @@ async function refresh(){if(busy)return;yFail=null;busy=true;var btn=$('fu-refre
     if(!updated.length)prog([['这次没取到，'+was+'，可以再点一次'+why]],true);
     else prog([['前 '+updated.length+' 只已更新，其余 '+(total-updated.length)+' 只'+(before?'还是 '+tw(before)+' 的数据':'还没有数据')+'，再点会从头取'+why]],true);}
   finally{busy=false;btn.disabled=false;btn.textContent='↻ 刷新数据'}}
-/** 估值一批一批取：POST /api/funds/valuation/refresh {cursor}，直到 next 为 null；硬上限 = 指数个数 + 1 次，next 不往前走也停 */
-async function valRefresh(){var M=$('fu-va-msg'),step=0,n=0,fail=[],ok=0,skip=0,LIM=VAL_DEFS.length+1;M.className='fu-vamsg';
+/** 估值一步一步取（Amos 11/11：太大就分成多个小文档多次解析）：POST /api/funds/valuation/refresh {cursor}，直到 next 为 null；硬上限 VAL_MAX + 1 次，next 不往前走也停 */
+async function valRefresh(){var M=$('fu-va-msg'),step=0,n=0,fail=[],ok=0,LIM=VAL_MAX+1;M.className='fu-vamsg';
+  M.textContent='估值：正在取 第 1 段（同一来源每次之间隔 2 秒，首次要取 10 年的数据，可能要两三分钟）';
   try{while(step!=null){if(n>=LIM)throw new Error('已经发了 '+LIM+' 次请求还没取完，先停下了');n++;
-      var nm=(VAL_DEFS[step]||{}).name||'';M.textContent='正在取估值数据 · '+nm+'（'+(step+1)+' / '+VAL_DEFS.length+'，每个来源之间隔 2 秒）';
       var r=await getJson(BASE+'/valuation/refresh',{cursor:step});
-      if(r.status==='ok')ok++;else if(r.status==='skipped')skip++;else fail.push(r.name+(r.status==='partial'?'（只取到一部分）':'')+'：'+plainWhy(r.reason||''));
-      if(r.next!=null&&!(r.next>step))throw new Error('服务器回的估值进度没有往前走');step=r.next}
+      if(r.status==='ok')ok++;else if(r.status==='failed')fail.push(r.name+'：'+plainWhy(r.reason||''));
+      if(r.next!=null&&!(r.next>step))throw new Error('服务器回的估值进度没有往前走');step=r.next;
+      if(step!=null)M.textContent='估值：正在取 第 '+(r.done+1)+' / '+Math.max(r.total,r.done+1)+' 段'+(r.name?'（刚取完 '+r.name+' '+(r.part||'')+'）':'')}
     await load();
-    M.className='fu-vamsg'+(fail.length?' err':'');M.textContent=fail.length?'估值：'+fail.length+' 个指数这次没取全（'+fail.join('；')+'），显示的是上次的数据；没取到的今天再点「刷新数据」还会再试一次（每个来源每天最多试 2 次）。':'估值数据已更新'+(skip?'（'+skip+' 个今天已经取过，没有再取）':'')+'。'}
-  catch(e){await load();M.className='fu-vamsg err';M.textContent='估值这次没取完（'+e.message+'），显示的是上次的数据。'}}
+    M.className='fu-vamsg'+(fail.length?' err':'');M.textContent=fail.length?'估值：'+fail.length+' 项这次没取到（'+fail.join('；')+'），显示的是上次的数据；今天再点「刷新数据」还会再试一轮（每个来源每天最多两轮）。':ok?'估值数据已更新。':'估值数据今天已经取过，没有再取。'}
+  catch(e){await load();M.className='fu-vamsg err';M.textContent='估值这次没取完（'+e.message+'），显示的是上次的数据；再点「刷新数据」会接着取。'}}
+/** 估值一次刷新最多走几步（和服务器 VAL_MAX_STEPS 一样） */
+var VAL_MAX=200;
 document.querySelectorAll('#fu-periods .fu-chip').forEach(function(b){b.addEventListener('click',function(){st.p=b.dataset.p;rgOpen=false;document.querySelectorAll('#fu-periods .fu-chip').forEach(function(x){x.setAttribute('aria-pressed',x===b?'true':'false')});render()})});
 document.querySelectorAll('#fu-markets .fu-chip').forEach(function(b){b.addEventListener('click',function(){st.m=b.dataset.m;rgOpen=false;document.querySelectorAll('#fu-markets .fu-chip').forEach(function(x){x.setAttribute('aria-selected',x===b?'true':'false')});render()})});
 $('fu-refresh').addEventListener('click',refresh);

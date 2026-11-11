@@ -10,7 +10,7 @@ import { getPlatformProxy } from 'wrangler';
 import type { Env } from '../src/env';
 import { handle } from '../src/index';
 import { FUNDS, parseTiingo, TIINGO_CODES, usesTiingo, type Point } from '../src/funds';
-import { fetchFund, Http, refreshBatch, refreshValuation, tiingoToken, VAL_GAP_MS, valuationList, type FetchLike } from '../src/funds-api';
+import { fetchFund, Http, refreshBatch, refreshValuation, tiingoToken, VAL_BLOB, VAL_GAP_MS, VAL_MAX_STEPS, valuationList, valKeys, type FetchLike, type ValStepResult } from '../src/funds-api';
 import { cfbStream, median, mergeMonths, monthEnds, parseCsIndicator, parseCsPerf, parseShiller, readXls, shillerXlsUrl, valCard, VAL_INDEXES, type ValStored } from '../src/funds-val';
 import { buildXls } from './funds-val-xls';
 import { ROOT } from './helpers';
@@ -35,7 +35,7 @@ beforeAll(async () => {
   await db.batch(stmtsOf(readdirSync(MIG).filter((f) => f.endsWith('.sql')).sort()).map((s) => db.prepare(s)));
 });
 afterAll(async () => dispose());
-beforeEach(async () => { await db.batch(['fund_snapshot', 'fund_valuation', 'fund_val_fetch'].map((t) => db.prepare(`DELETE FROM ${t}`))); });
+beforeEach(async () => { await db.batch(['fund_snapshot', 'fund_valuation', 'fund_val_fetch', 'fund_val_work', 'fund_val_blob'].map((t) => db.prepare(`DELETE FROM ${t}`))); });
 const env = (over: Partial<Env> = {}): Env => ({ DB: db, ENVIRONMENT: 'test', COPILOT_PASSWORD: PASS, ...over });
 const noSleep = async () => {};
 const ok = (body: unknown) => new Response(JSON.stringify(body), { status: 200 });
@@ -47,6 +47,7 @@ function days(n: number, end: string, f: (i: number) => number): Point[] {
 const tiingoJson = (pts: Point[]) => pts.map((p) => ({ date: p[0] + 'T00:00:00.000Z', close: p[1], adjClose: p[2] * 0.9, open: p[1], volume: 1 }));
 const yahooJson = (pts: Point[]) => ({ chart: { result: [{ meta: { currency: 'USD', gmtoffset: -18000 }, timestamp: pts.map((p) => Date.parse(p[0] + 'T14:30:00Z') / 1000 + 18000), indicators: { quote: [{ close: pts.map((p) => p[1]) }], adjclose: [{ adjclose: pts.map((p) => p[2]) }] } }] } });
 const good = days(300, '2026-11-10', (i) => 100 + i * 0.1);
+const ALL_CS = VAL_INDEXES.filter((d) => d.src === 'csindex').flatMap(valKeys);
 
 describe('A. 美国 15 只走 Tiingo', () => {
   it('白名单正好是那 15 只、都是美国；新加坡 CFA、SRT 不走 Tiingo（同名美国证券）', () => {
@@ -135,10 +136,10 @@ function csXls(rows: [string, number][], opts: { small?: boolean; splitSstAt?: n
   return buildXls([{ name: '000300indicator.xls', rows: [[0, head], ...rows.map(([d, dy], i) => [i + 1, [d, '000300', '沪深300指数', '沪深300', 'CSI 300 Index', 'CSI 300', 13.8, 15.2, dy, dy - 0.3]] as [number, (string | number)[]])] }], opts);
 }
 /** Shiller ie_data.xls「Data」表的样子：前几张表无关；第 7 行表头；1871.01 起每月一行；最后几个月 D 是空的、CAPE 有的是公式 */
-function shillerXls(months: number, capeOf: (i: number) => number) {
+function shillerXls(months: number, capeOf: (i: number) => number, y0 = 2010) {
   const rows: [number, (string | number | { rk: number } | { f: number } | { fs: string } | undefined)[]][] = [[5, [undefined, 'S&P']], [7, ['Date', 'P', 'D', 'E', 'CPI', 'Fraction', 'Rate GS10', 'Real', 'Real', 'Return', 'Real', 'Scaled', 'CAPE']]];
   for (let i = 0; i < months; i++) {
-    const y = 2010 + Math.floor(i / 12), m = (i % 12) + 1;
+    const y = y0 + Math.floor(i / 12), m = (i % 12) + 1;
     const last3 = i >= months - 3;
     rows.push([8 + i, [Number(`${y}.${String(m).padStart(2, '0')}`), { rk: 1000 + i }, last3 ? undefined : 20 + i * 0.01, last3 ? undefined : 50, 300, 2000, 4, 1, 1, 1, 1, 1, i < 5 ? 'NA' : i % 2 ? { f: capeOf(i) } : capeOf(i)]]);
   }
@@ -216,7 +217,7 @@ describe('D2. 口径', () => {
 
 /** 估值来源的替身：中证 JSON、中证 xls、Shiller 首页、ie_data.xls；记下每个请求和那时 sleep 过的总毫秒数 */
 function valFake(over: (u: string) => Response | null = () => null) {
-  const log: { u: string; slept: number }[] = [];
+  const log: { u: string; slept: number; t: number }[] = [];
   let slept = 0;
   const sleep = async (ms: number) => { slept += ms; };
   const perf = (code: string, u: string) => {
@@ -230,7 +231,7 @@ function valFake(over: (u: string) => Response | null = () => null) {
     return ok({ code: '200', msg: 'Success', data, success: true });
   };
   const f: FetchLike = async (u) => {
-    log.push({ u, slept });
+    log.push({ u, slept, t: Date.now() });
     const o = over(u);
     if (o) return o;
     const m = /indexCode=(\d+)/.exec(u);
@@ -243,89 +244,113 @@ function valFake(over: (u: string) => Response | null = () => null) {
   return { f, log, sleep };
 }
 
-describe('D3. 取数：每个来源每天最多 1 次、间隔 ≥ 2 秒、不重试、保留上次', () => {
-  it('6 批：中证每批 2 个请求、Shiller 2 个；同一来源前后两个请求之间都等够 2 秒；同一天再刷全部跳过、0 个请求', async () => {
-    const { f, log, sleep } = valFake();
-    const out = [];
-    for (let s: number | null = 0, k = 0; s !== null && k < 10; k++) { const r = await refreshValuation(env(), s, NOW, f, sleep); out.push(r); s = r.next; }
-    expect(out.map((r) => [r.code, r.status, r.requests])).toEqual([...VAL_INDEXES.map((d) => [d.code, 'ok', 2])]);
-    expect(log.length).toBe(12);
-    // 每个请求前都 sleep 过 ≥ 2 秒（替身 sleep 不推进时钟，所以每次都等满 2 秒）
-    // （替身 sleep 不推进时钟；两次请求之间真实过去的几毫秒会从要等的里面扣掉，所以是 ≥ 2 秒减几毫秒，且每次都等过）
-    // 第 1 个（中证第 1 批）和 Shiller 首页（前面是中证，不是同一来源）不用等；其余每个都等过
-    const waited = log.map((x, i) => x.slept - (i ? log[i - 1].slept : 0));
-    expect(waited[0]).toBe(0);
-    expect(waited[10]).toBe(0);
-    waited.forEach((ms, i) => { if (i !== 0 && i !== 10) expect(ms, String(i)).toBeGreaterThan(VAL_GAP_MS - 200); });
-    expect(log.map((x) => new URL(x.u).hostname).every((h) => ['www.csindex.com.cn', 'oss-ch.csindex.com.cn', 'shillerdata.com', 'img1.wsimg.com'].includes(h))).toBe(true);
-    // 首次全量：从 122 个月前的 1 号起
-    expect(log[0].u).toContain('startDate=20160901&endDate=20261111');
+describe('D3. 取数：每天最多一轮、分段 / 分步、同一来源间隔 ≥ 2 秒、不自动重试、保留上次', () => {
+  /** 一次刷新：cursor 从 0 一直调到 next 为 null（硬上限 VAL_MAX_STEPS + 1） */
+  async function round(now: number, fk: ReturnType<typeof valFake>, stopAfter = Infinity) {
+    const out: ValStepResult[] = [];
+    for (let c: number | null = 0, k = 0; c !== null && k <= VAL_MAX_STEPS && k < stopAfter; k++) { const r = await refreshValuation(env(), c, now, fk.f, fk.sleep); out.push(r); expect(r.requests).toBeLessThanOrEqual(2); c = r.next; }
+    return out;
+  }
+  it('首次：中证每个指数按年分 11 段 + 股息率 1 步，Shiller 下载 1 步 + 目录 1 步 + 逐块解析；同一来源相邻请求都等够 2 秒；同一天再刷 0 个请求；第二天中证只取最近一段', async () => {
+    const fk = valFake();
+    const rs = await round(NOW, fk);
+    expect(rs.filter((r) => r.status === 'failed')).toEqual([]);
+    expect(rs.filter((r) => r.status === 'ok').map((r) => r.code)).toEqual(['000300', '000300', '000016', '000016', '000905', '000905', '000015', '000015', '000922', '000922', 'SPX']);
+    const perf = fk.log.filter((x) => x.u.includes('index-perf'));
+    expect(perf.length).toBe(55);
+    expect(perf.slice(0, 11).map((x) => new URL(x.u).searchParams.get('startDate') + '-' + new URL(x.u).searchParams.get('endDate'))).toEqual(['20160901-20161231', ...Array.from({ length: 9 }, (_, i) => `${2017 + i}0101-${2017 + i}1231`), '20260101-20261111']);
+    expect(fk.log.filter((x) => x.u.includes('indicator.xls')).length).toBe(5);
+    expect(fk.log.filter((x) => /shillerdata|wsimg/.test(x.u)).length).toBe(2);
+    // 页面进度：done 逐步加一，total ≥ done
+    rs.forEach((r, i) => { expect(r.done).toBe(i + 1); expect(r.total).toBeGreaterThanOrEqual(r.done); });
+    // 同一来源前后两个请求之间都等过（第一个中证请求、第一个 Shiller 请求前面没有同一来源的请求，不用等）
+    const fam = (u: string) => (u.includes('csindex') ? 'cs' : 'sh');
+    fk.log.forEach((x, i) => {
+      const prev = fk.log.slice(0, i).reverse().find((y) => fam(y.u) === fam(x.u));
+      if (prev) expect(x.slept - prev.slept + (x.t - prev.t), `${i} ${x.u}`).toBeGreaterThanOrEqual(VAL_GAP_MS - 5);
+    });
     const v = (await valuationList(env(), NOW))!;
     expect(v.due).toBe(false);
     expect(v.items.map((x) => x.code)).toEqual(VAL_INDEXES.map((d) => d.code));
     expect(v.items[0].dy_now).toBe(3.03);
     expect(v.items[5]).toMatchObject({ metric: 'CAPE', pe_now: 39.9, pe_now_date: '2026-08', n_months: 120 });
-    // 同一天再来一遍：全部跳过
-    const again = await refreshValuation(env(), 0, NOW + 3600_000, f, sleep);
-    expect([again.status, again.requests]).toEqual(['skipped', 0]);
-    expect(log.length).toBe(12);
-    // 第二天：中证又能取（增量：从库里最后一个月的 1 号起），Shiller 这个月不再取
-    const d2 = await refreshValuation(env(), 0, NOW + DAY, f, sleep);
-    expect(d2.status).toBe('ok');
-    expect(log[12].u).toContain('startDate=20261101&endDate=20261112');
-    expect((await refreshValuation(env(), 5, NOW + DAY, f, sleep)).status).toBe('skipped');
-    // 下个月 Shiller 又能取
+    // 解析完：块删掉、进行中的状态只剩 run
+    expect((await db.prepare('SELECT COUNT(*) AS n FROM fund_val_blob').first<{ n: number }>())!.n).toBe(0);
+    expect(((await db.prepare('SELECT src FROM fund_val_work').all<{ src: string }>()).results ?? []).map((x) => x.src)).toEqual(['run']);
+    // 同一天再刷：一步就完、0 个请求
+    const n0 = fk.log.length;
+    const again = await round(NOW + 3600_000, fk);
+    expect(again.map((r) => [r.status, r.next, r.requests])).toEqual([['done', null, 0]]);
+    expect(fk.log.length).toBe(n0);
+    // 第二天：中证每个指数只取最近一段（从库里最后一个月的 1 号起）+ 股息率；Shiller 这个月不再取
+    const d2 = await round(NOW + DAY, fk);
+    const p2 = fk.log.slice(n0).filter((x) => x.u.includes('index-perf'));
+    expect(p2.length).toBe(5);
+    expect(p2[0].u).toContain('startDate=20261101&endDate=20261112');
+    expect(fk.log.slice(n0).filter((x) => /shillerdata|wsimg/.test(x.u))).toEqual([]);
+    expect(d2.filter((r) => r.status !== 'done').length).toBe(10);
+    // 下个月 Shiller 又要取
     expect((await valuationList(env(), Date.UTC(2026, 11, 2, 2)))!.due).toBe(true);
   });
-  it('回 500 不自动重试；没取到保留上次的值、标 error；没取到不算取过：当天还能再试 1 次（只试没成功的那个来源），第 3 次不再试', async () => {
+  it('Shiller 大文件拆成 ≤ 128KB 的块分多步解析；中途停下，同一天再点接着解析（不重新下载、不多算一轮）', async () => {
+    const big = shillerXls(2000, (i) => 10 + (i % 300) / 10, 1860);
+    const fk = valFake((u) => (u.includes('ie_data.xls') ? new Response(big as unknown as BodyInit) : null));
+    // 先把中证这一轮做完（跳过它们：今天记成已成功）
+    await db.batch(ALL_CS.map((k) => db.prepare("INSERT INTO fund_val_fetch (src, day, tries, at, ok_day) VALUES (?1, '2026-11-11', 1, 0, '2026-11-11')").bind(k)));
+    const first = await round(NOW, fk, 4); // 下载 + 目录 + 2 块就停（像页面被关掉）
+    expect(first.map((r) => r.part)).toEqual(['下载', '目录', expect.stringMatching(/^解析第 \d+ \/ \d+ 块$/), expect.stringMatching(/^解析第 \d+ \/ \d+ 块$/)]);
+    const blobs = (await db.prepare('SELECT idx, length(data) AS n FROM fund_val_blob ORDER BY idx').all<{ idx: number; n: number }>()).results ?? [];
+    expect(blobs.length).toBeGreaterThan(3);
+    expect(blobs.every((b) => b.n <= VAL_BLOB)).toBe(true);
+    const n0 = fk.log.length;
+    expect(n0).toBe(2);
+    const rest = await round(NOW + 60_000, fk);
+    expect(fk.log.length).toBe(n0); // 接着解析，不再下载
+    expect(rest.at(-1)!.status).toBe('ok');
+    expect((await db.prepare("SELECT tries FROM fund_val_fetch WHERE src = 'shiller'").first<{ tries: number }>())!.tries).toBe(1);
+    const spx = (await valuationList(env(), NOW))!.items.find((x) => x.code === 'SPX')!;
+    expect(spx.pe_now_date).toBe('2026-08');
+    expect(spx.pe_now).toBe(10 + (1999 % 300) / 10);
+    expect((await db.prepare('SELECT COUNT(*) AS n FROM fund_val_blob').first<{ n: number }>())!.n).toBe(0);
+  });
+  it('中证回 500：这一轮失败、保留上次的值、这次刷新里不再碰它；同一天再点还能再试一轮，第 3 轮不再试；第二天又能取', async () => {
     const a = valFake();
-    await refreshValuation(env(), 0, NOW - DAY, a.f, a.sleep);
+    await round(NOW - DAY, a);
     const before = (await valuationList(env(), NOW - DAY))!.items[0];
-    const b = valFake((u) => (u.includes('index-perf') ? new Response('x', { status: 500 }) : null));
-    const r = await refreshValuation(env(), 0, NOW, b.f, b.sleep);
-    expect(r.status).toBe('partial');
-    expect(b.log.filter((x) => x.u.includes('index-perf')).length).toBe(1);
-    expect(r.reason).toContain('市盈率：中证回 500');
+    const b = valFake((u) => (u.includes('index-perf') && u.includes('000300') ? new Response('x', { status: 500 }) : null));
+    const r1 = await round(NOW, b);
+    expect(r1.filter((r) => r.status === 'failed').map((r) => [r.code, r.reason])).toEqual([['000300', expect.stringContaining('中证回 500')]]);
+    expect(b.log.filter((x) => x.u.includes('index-perf') && x.u.includes('000300')).length).toBe(1);
     const v = (await valuationList(env(), NOW))!;
     expect(v.items[0]).toMatchObject({ code: '000300', error: expect.stringContaining('中证回 500') });
-    expect([v.items[0].pe_now_date, v.items[0].pe_now]).toEqual([before.pe_now_date, before.pe_now]);
-    expect(v.items[0].dy_now).toBe(3.03); // 股息率这次取到了
-    // 第 2 次：只试市盈率（股息率今天已经成功了），还是 500
-    const n0 = b.log.length;
-    const r2 = await refreshValuation(env(), 0, NOW + 60_000, b.f, b.sleep);
-    expect(r2.status).toBe('failed');
-    expect(b.log.slice(n0).map((x) => x.u.includes('index-perf'))).toEqual([true]);
-    // 第 3 次：今天已经试了 2 次，不再请求
-    const r3 = await refreshValuation(env(), 0, NOW + 120_000, b.f, b.sleep);
-    expect([r3.status, r3.requests, b.log.length]).toEqual(['skipped', 0, n0 + 1]);
-    expect(r3.reason).toContain('试了 2 次');
-    expect((await valuationList(env(), NOW + 120_000))!.due).toBe(true); // Shiller 等别的来源还没取
-    // 第二天又能试
+    expect([v.items[0].pe_now_date, v.items[0].pe_now, v.items[0].dy_now]).toEqual([before.pe_now_date, before.pe_now, 3.03]);
+    expect(v.due).toBe(true);
+    // 第 2 轮：只剩 000300 的市盈率
+    const n1 = b.log.length;
+    await round(NOW + 60_000, b);
+    expect(b.log.slice(n1).map((x) => x.u.includes('index-perf') && x.u.includes('000300'))).toEqual([true]);
+    // 第 3 轮：今天已经开过 2 轮，不再请求
+    const r3 = await round(NOW + 120_000, b);
+    expect(r3.map((r) => [r.status, r.requests])).toEqual([['done', 0]]);
+    expect((await valuationList(env(), NOW + 120_000))!.due).toBe(false);
+    // 第二天又能取
     const c = valFake();
-    expect((await refreshValuation(env(), 0, NOW + DAY, c.f, c.sleep)).status).toBe('ok');
-  });
-  it('第一次没取到、第二次取到：成功后当天不再取（解析失败 = 被掐断前没存好，不算取过）', async () => {
-    const bad = valFake((u) => (u.includes('index-perf') ? new Response('<html>busy</html>') : null));
-    // 库里还没有这个指数：市盈率认不出 → 股息率取到了也先不存（两个都不算取过）
-    expect((await refreshValuation(env(), 1, NOW, bad.f, bad.sleep)).status).toBe('failed');
-    const good = valFake();
-    const r = await refreshValuation(env(), 1, NOW + 1000, good.f, good.sleep);
-    expect([r.status, good.log.length]).toEqual(['ok', 2]);
-    expect((await refreshValuation(env(), 1, NOW + 2000, good.f, good.sleep)).status).toBe('skipped');
-    expect(good.log.length).toBe(2);
+    const d2 = await round(NOW + DAY, c);
+    expect(d2.filter((r) => r.status === 'failed')).toEqual([]);
   });
   it('Shiller 首页上的链接不在白名单：不去取，记原因', async () => {
-    const { f, log, sleep } = valFake((u) => (u === 'https://shillerdata.com/' ? new Response('<a href="https://evil.example.com/ie_data.xls">x</a>') : null));
-    const r = await refreshValuation(env(), 5, NOW, f, sleep);
-    expect(r.status).toBe('failed');
-    expect(log.map((x) => x.u)).toEqual(['https://shillerdata.com/']);
+    await db.batch(ALL_CS.map((k) => db.prepare("INSERT INTO fund_val_fetch (src, day, tries, at, ok_day) VALUES (?1, '2026-11-11', 1, 0, '2026-11-11')").bind(k)));
+    const fk = valFake((u) => (u === 'https://shillerdata.com/' ? new Response('<a href="https://evil.example.com/ie_data.xls">x</a>') : null));
+    const rs = await round(NOW, fk);
+    expect(rs.map((r) => r.status)).toEqual(['failed']);
+    expect(fk.log.map((x) => x.u)).toEqual(['https://shillerdata.com/']);
     expect((await valuationList(env(), NOW))!.missing.find((m) => m.code === 'SPX')!.error).toContain('没找到 ie_data.xls');
   });
-  it('接口：POST /api/funds/valuation/refresh 要登录、step 越界 400；GET /api/funds 带 valuation', async () => {
+  it('接口：POST /api/funds/valuation/refresh 要登录、cursor 越界 400；GET /api/funds 带 valuation', async () => {
     expect((await handle(new Request(HOST + '/api/funds/valuation/refresh', { method: 'POST', body: '{}' }), env(), NOW)).status).toBe(401);
     const login = await handle(new Request(HOST + '/api/login', { method: 'POST', headers: { 'content-type': 'application/json', origin: HOST, 'cf-connecting-ip': '203.0.113.8' }, body: JSON.stringify({ password: PASS }) }), env(), NOW);
     const ck = login.headers.get('set-cookie')!.split(';')[0];
-    const bad = await handle(new Request(HOST + '/api/funds/valuation/refresh', { method: 'POST', headers: { cookie: ck, origin: HOST, 'content-type': 'application/json' }, body: JSON.stringify({ cursor: 6 }) }), env(), NOW);
+    const bad = await handle(new Request(HOST + '/api/funds/valuation/refresh', { method: 'POST', headers: { cookie: ck, origin: HOST, 'content-type': 'application/json' }, body: JSON.stringify({ cursor: VAL_MAX_STEPS }) }), env(), NOW);
     expect(bad.status).toBe(400);
     const g = await (await handle(new Request(HOST + '/api/funds', { headers: { cookie: ck } }), env(), NOW)).json() as { valuation: { due: boolean; items: unknown[]; missing: unknown[] } };
     expect(g.valuation).toMatchObject({ due: true, items: [] });
@@ -351,7 +376,7 @@ describe('D4. 页面：估值板块', () => {
       const res = (b: unknown) => ({ status: 200, ok: true, json: async () => b });
       if (init.method === 'POST') {
         const b = JSON.parse(init.body || '{}'); posts.push({ url, body: b });
-        if (url.endsWith('/valuation/refresh')) { const s = b.cursor as number; return res({ next: s < 5 ? s + 1 : null, step: s, total: 6, code: '', name: 'x', status: s === 2 ? 'failed' : 'ok', reason: s === 2 ? '中证回 500' : undefined, requests: 2 }); }
+        if (url.endsWith('/valuation/refresh')) { const s = b.cursor as number; return res({ next: s < 5 ? s + 1 : null, done: s + 1, total: 6, code: '', name: 'x', part: '', status: s === 2 ? 'failed' : 'ok', reason: s === 2 ? '中证回 500' : undefined, requests: 2 }); }
         return res({ next: null, done: 45, total: 45, updated: ['VOO'], failed: [] });
       }
       return res(JSON.parse(JSON.stringify(snap)));
@@ -382,7 +407,7 @@ describe('D4. 页面：估值板块', () => {
     (w.document.getElementById('fu-refresh') as HTMLButtonElement).click();
     expect(await until(() => !(w.document.getElementById('fu-refresh') as HTMLButtonElement).disabled && w.document.getElementById('fu-va-msg')!.textContent !== '' && !/正在取/.test(w.document.getElementById('fu-va-msg')!.textContent!))).toBe(true);
     expect(posts.filter((p) => p.url.endsWith('/valuation/refresh')).map((p) => p.body.cursor)).toEqual([0, 1, 2, 3, 4, 5]);
-    expect(w.document.getElementById('fu-va-msg')!.textContent).toContain('1 个指数这次没取全');
+    expect(w.document.getElementById('fu-va-msg')!.textContent).toContain('1 项这次没取到');
     // due = false：不调估值接口
     snap.valuation.due = false;
     posts.length = 0;

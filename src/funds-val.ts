@@ -315,13 +315,9 @@ function longStr(b: Uint8Array, o: number): string {
   return s;
 }
 
-/**
- * 读 BIFF8 工作簿里的表。pick(表名, 序号) 为 true 的才读；每张表只留前 maxCol 列。认不出（不是 BIFF8）回 null。
- * 记录循环有硬上限（不会超过流长度 / 4 次）。
- */
-export function readXls(file: Uint8Array, pick: (name: string, i: number) => boolean = () => true, maxCol = 32, keepRow?: (r: number, lastRow: number) => boolean): XlsSheet[] | null {
-  const wb = cfbStream(file, 'Workbook');
-  if (!wb || wb.length < 8) return null;
+/** 工作簿全局部分：每张表的名字和在流里的起点、共享字符串表；不是 BIFF8 回 null */
+export function xlsGlobals(wb: Uint8Array): { sheets: { name: string; pos: number }[]; sst: string[] } | null {
+  if (wb.length < 8) return null;
   const dv = new DataView(wb.buffer, wb.byteOffset, wb.byteLength);
   if (dv.getUint16(0, true) !== 0x0809 || dv.getUint16(4, true) !== 0x0600) return null; // 只认 BIFF8
   const sheets: { name: string; pos: number }[] = [];
@@ -337,43 +333,50 @@ export function readXls(file: Uint8Array, pick: (name: string, i: number) => boo
     p = d + len;
     if (t === 0x000a) break; // 全局部分结束
   }
-  const sst = sstSegs.length ? parseSst(sstSegs) : [];
+  return { sheets, sst: sstSegs.length ? parseSst(sstSegs) : [] };
+}
+
+/**
+ * 从流里的 pos 往后逐条读一张表的单元格（buf 是从流的第 base 字节开始的一段，可以只是一部分）。
+ * 读到表尾（EOF）、或下一条记录的起点到了 stopAt、或这段字节里放不下下一条完整记录就停。返回停下的位置（流里的绝对位置）和是不是到了表尾。
+ * pending：公式的字符串结果在下一条 STRING 记录里（跨段时由调用方带着）。
+ */
+export function xlsWalk(buf: Uint8Array, base: number, pos: number, stopAt: number, sst: string[], onCell: (r: number, c: number, v: XlsCell) => void, pending: { cell: [number, number] | null } = { cell: null }): { pos: number; eof: boolean } {
+  const dv = new DataView(buf.buffer, buf.byteOffset, buf.byteLength);
+  let q = pos - base, g = 0;
+  while (q + 4 <= buf.length && base + q < stopAt && g++ < buf.length / 4 + 10) {
+    const t = dv.getUint16(q, true), len = dv.getUint16(q + 2, true), d = q + 4;
+    if (d + len > buf.length) break; // 这条记录跨出了这段：留给下一步
+    if (t === 0x0203 && len >= 14) onCell(dv.getUint16(d, true), dv.getUint16(d + 2, true), dv.getFloat64(d + 6, true));
+    else if (t === 0x027e && len >= 10) onCell(dv.getUint16(d, true), dv.getUint16(d + 2, true), rk(dv, d + 6));
+    else if (t === 0x00bd && len >= 6) {
+      const r = dv.getUint16(d, true), c0 = dv.getUint16(d + 2, true), n = (len - 6) / 6;
+      for (let k = 0; k < n; k++) onCell(r, c0 + k, rk(dv, d + 4 + 6 * k + 2));
+    } else if (t === 0x00fd && len >= 10) { const s = sst[dv.getUint32(d + 6, true)]; if (s !== undefined) onCell(dv.getUint16(d, true), dv.getUint16(d + 2, true), s); }
+    else if (t === 0x0204 && len >= 9) onCell(dv.getUint16(d, true), dv.getUint16(d + 2, true), longStr(buf, d + 6));
+    else if (t === 0x0006 && len >= 20) {
+      const r = dv.getUint16(d, true), c = dv.getUint16(d + 2, true);
+      if (dv.getUint16(d + 12, true) === 0xffff) { if (buf[d + 6] === 0) pending.cell = [r, c]; } // 0 = 字符串结果，在下一条 STRING 记录里；布尔 / 错误 / 空不要
+      else onCell(r, c, dv.getFloat64(d + 6, true));
+    } else if (t === 0x0207 && pending.cell) { onCell(pending.cell[0], pending.cell[1], longStr(buf, d)); pending.cell = null; }
+    q = d + len;
+    if (t === 0x000a) return { pos: base + q, eof: true };
+  }
+  return { pos: base + q, eof: false };
+}
+
+/**
+ * 读 BIFF8 工作簿里的表（一次读完；中证 indicator.xls 这种小文件用）。pick(表名, 序号) 为 true 的才读；每张表只留前 maxCol 列。认不出回 null。
+ */
+export function readXls(file: Uint8Array, pick: (name: string, i: number) => boolean = () => true, maxCol = 32): XlsSheet[] | null {
+  const wb = cfbStream(file, 'Workbook');
+  const g = wb ? xlsGlobals(wb) : null;
+  if (!wb || !g) return null;
   const out: XlsSheet[] = [];
-  sheets.forEach((sh, si) => {
+  g.sheets.forEach((sh, si) => {
     if (!pick(sh.name, si)) return;
     const rows = new Map<number, XlsCell[]>();
-    const put = (r: number, c: number, v: XlsCell) => { if (c >= maxCol) return; let a = rows.get(r); if (!a) rows.set(r, (a = [])); a[c] = v; };
-    let q = sh.pos, g = 0, pendingStr: [number, number] | null = null, lastRow = 0x7fffffff;
-    if (keepRow) {
-      // 先粗扫一遍：第一列有数字（或公式）的最后一行（DIMENSIONS 会把带格式的空行也算进去，不能用）
-      lastRow = 0;
-      for (let z = sh.pos, h = 0; z + 4 <= wb.length && h++ < wb.length / 4 + 10;) {
-        const t = dv.getUint16(z, true), len = dv.getUint16(z + 2, true), d = z + 4;
-        if (d + len > wb.length || t === 0x000a) break;
-        if ((t === 0x0203 || t === 0x027e || t === 0x0006) && len >= 4 && dv.getUint16(d + 2, true) === 0) lastRow = Math.max(lastRow, dv.getUint16(d, true));
-        z = d + len;
-      }
-    }
-    while (q + 4 <= wb.length && g++ < wb.length / 4 + 10) {
-      const t = dv.getUint16(q, true), len = dv.getUint16(q + 2, true), d = q + 4;
-      if (d + len > wb.length) break;
-      // 只要部分行（Shiller 只要表头和最后 200 来行）：别的行的记录不解（免费版 CPU 时间有限）
-      if (keepRow && (t === 0x0203 || t === 0x027e || t === 0x00bd || t === 0x00fd || t === 0x0204 || t === 0x0006) && len >= 2 && !keepRow(dv.getUint16(d, true), lastRow)) { q = d + len; continue; }
-      if (t === 0x0203 && len >= 14) put(dv.getUint16(d, true), dv.getUint16(d + 2, true), dv.getFloat64(d + 6, true));
-      else if (t === 0x027e && len >= 10) put(dv.getUint16(d, true), dv.getUint16(d + 2, true), rk(dv, d + 6));
-      else if (t === 0x00bd && len >= 6) {
-        const r = dv.getUint16(d, true), c0 = dv.getUint16(d + 2, true), n = (len - 6) / 6;
-        for (let k = 0; k < n; k++) put(r, c0 + k, rk(dv, d + 4 + 6 * k + 2));
-      } else if (t === 0x00fd && len >= 10) { const s = sst[dv.getUint32(d + 6, true)]; if (s !== undefined) put(dv.getUint16(d, true), dv.getUint16(d + 2, true), s); }
-      else if (t === 0x0204 && len >= 9) put(dv.getUint16(d, true), dv.getUint16(d + 2, true), longStr(wb, d + 6));
-      else if (t === 0x0006 && len >= 20) {
-        const r = dv.getUint16(d, true), c = dv.getUint16(d + 2, true);
-        if (dv.getUint16(d + 12, true) === 0xffff) { if (wb[d + 6] === 0) pendingStr = [r, c]; } // 0 = 字符串结果，在下一条 STRING 记录里；布尔 / 错误 / 空不要
-        else put(r, c, dv.getFloat64(d + 6, true));
-      } else if (t === 0x0207 && pendingStr) { put(pendingStr[0], pendingStr[1], longStr(wb, d)); pendingStr = null; }
-      q = d + len;
-      if (t === 0x000a) break;
-    }
+    xlsWalk(wb, 0, sh.pos, wb.length, g.sst, (r, c, v) => { if (c >= maxCol) return; let a = rows.get(r); if (!a) rows.set(r, (a = [])); a[c] = v; });
     out.push({ name: sh.name, rows });
   });
   return out;
@@ -418,30 +421,69 @@ export function shillerXlsUrl(html: string): string | null {
   return url.toString();
 }
 
-/** Shiller ie_data.xls「Data」表 → CAPE 月序列（最后 keep 个月）、最新 CAPE 的月份、股息率（最近有 D 的那个月 D / P）；认不出回 null */
+/**
+ * Shiller「Data」表**分步解析**（Amos 11/11：「表格太大无法单次解析完成，可以分开成多个小文档，多次解析」）：
+ * 状态可以 JSON 存进 D1，每一步只读一段字节（xlsWalk），按行累积；只留最近 keep 个月的 CAPE 和最近一个有 D 的月份。
+ */
+export interface ShillerState {
+  /** 表头所在行和 P / D / CAPE 在第几列；还没读到表头是 null */
+  head: { row: number; cP: number; cD: number; cCape: number } | null;
+  /** 正在读的那一行（一行的单元格可能跨两步） */
+  row: number;
+  cells: Record<number, XlsCell>;
+  cape: [string, number][];
+  dy: number | null;
+  dyDate: string | null;
+  keep: number;
+}
+export const shillerInit = (keep = VAL_KEEP): ShillerState => ({ head: null, row: -1, cells: {}, cape: [], dy: null, dyDate: null, keep });
+/** 一行读完：表头行定列；数据行（第一列是 1871.01 这种年月）记 CAPE、D / P */
+function shillerRow(st: ShillerState) {
+  const cells = st.cells;
+  st.cells = {};
+  if (st.row < 0) return;
+  if (!st.head) {
+    const t = (c: number) => (typeof cells[c] === 'string' ? (cells[c] as string).trim() : '');
+    const cols = Object.keys(cells).map(Number);
+    const find = (name: string) => cols.find((c) => t(c) === name) ?? -1;
+    if (t(0) === 'Date' && find('CAPE') >= 0 && find('P') >= 0) st.head = { row: st.row, cP: find('P'), cD: find('D'), cCape: find('CAPE') };
+    return;
+  }
+  const x = cells[0];
+  if (typeof x !== 'number' || x < 1800 || x > 3000) return;
+  const y = Math.floor(x), mo = Math.round((x - y) * 100);
+  if (mo < 1 || mo > 12) return;
+  const ym = `${y}-${String(mo).padStart(2, '0')}`;
+  const c = cells[st.head.cCape], P = cells[st.head.cP], D = st.head.cD >= 0 ? cells[st.head.cD] : undefined;
+  if (typeof c === 'number' && isFinite(c) && c > 0) { st.cape.push([ym, r2(c)]); if (st.cape.length > st.keep) st.cape.splice(0, st.cape.length - st.keep); }
+  if (typeof D === 'number' && typeof P === 'number' && D > 0 && P > 0) { st.dy = r2((D / P) * 100); st.dyDate = ym; }
+}
+/** 往状态里喂一个单元格（只留前 16 列） */
+export function shillerCell(st: ShillerState, r: number, c: number, v: XlsCell) {
+  if (c >= 16) return;
+  if (r !== st.row) { shillerRow(st); st.row = r; }
+  st.cells[c] = v;
+}
+/** 表读完：收最后一行，出结果；认不出回 null */
+export function shillerDone(st: ShillerState): { series: [string, number][]; dy: number | null; dyDate: string | null } | null {
+  shillerRow(st);
+  st.row = -1;
+  if (!st.head || !st.cape.length) return null;
+  return { series: st.cape.slice(-st.keep), dy: st.dy, dyDate: st.dyDate };
+}
+/** 工作簿流 → Data 表的起点和共享字符串表（分步解析的第一步） */
+export function shillerLocate(wb: Uint8Array): { pos: number; sst: string[] } | null {
+  const g = xlsGlobals(wb);
+  const sh = g?.sheets.find((x) => x.name.trim().toLowerCase() === 'data');
+  return g && sh ? { pos: sh.pos, sst: g.sst } : null;
+}
+
+/** 一次解析完（测试和本地核对用；线上是 refreshValuation 分步调上面那几个） */
 export function parseShiller(file: Uint8Array, keep = VAL_KEEP): { series: [string, number][]; dy: number | null; dyDate: string | null } | null {
-  // 只解表头附近（前 20 行）和最后 keep + 80 行（最新几个月 D 是空的，往前多留一些找最近的 D）
-  const sh = readXls(file, (n) => n.trim().toLowerCase() === 'data', 16, (r, last) => r < 20 || r >= last - keep - 80)?.[0];
-  if (!sh) return null;
-  let head = -1, cP = -1, cD = -1, cCape = -1;
-  for (const [r, cells] of [...sh.rows.entries()].sort((a, b) => a[0] - b[0])) {
-    const t = cells.map((c) => (typeof c === 'string' ? c.trim() : ''));
-    if (t[0] === 'Date' && t.includes('CAPE')) { head = r; cP = t.indexOf('P'); cD = t.indexOf('D'); cCape = t.indexOf('CAPE'); break; }
-  }
-  if (head < 0 || cP < 0 || cCape < 0) return null;
-  const cape: [string, number][] = [];
-  let dy: number | null = null, dyDate: string | null = null;
-  for (const [r, cells] of [...sh.rows.entries()].sort((a, b) => a[0] - b[0])) {
-    if (r <= head) continue;
-    const x = cells[0];
-    if (typeof x !== 'number' || x < 1800 || x > 3000) continue;
-    const y = Math.floor(x), mo = Math.round((x - y) * 100);
-    if (mo < 1 || mo > 12) continue;
-    const ym = `${y}-${String(mo).padStart(2, '0')}`;
-    const c = cells[cCape], P = cells[cP], D = cD >= 0 ? cells[cD] : undefined;
-    if (typeof c === 'number' && isFinite(c) && c > 0) cape.push([ym, r2(c)]);
-    if (typeof D === 'number' && typeof P === 'number' && D > 0 && P > 0) { dy = r2((D / P) * 100); dyDate = ym; }
-  }
-  if (!cape.length) return null;
-  return { series: cape.slice(-keep), dy, dyDate };
+  const wb = cfbStream(file, 'Workbook');
+  const loc = wb ? shillerLocate(wb) : null;
+  if (!wb || !loc) return null;
+  const st = shillerInit(keep);
+  const w = xlsWalk(wb, 0, loc.pos, wb.length, loc.sst, (r, c, v) => shillerCell(st, r, c, v));
+  return w.eof ? shillerDone(st) : null;
 }
