@@ -44,6 +44,8 @@
  *   X. 刷新后债券提示按每只 yield.stale / yield.approx 分"过期 / 近似 / 没有收益率数据"、和行里的标签一致（服务端给了近似值的那只不说"过期""上次的值"）；
  *      refreshYields 整体失败（yields.failed 里 code 为 '*'）时不写"（*）"。
  *   第三版取数来源（Amos 2026-11-11「都按建议」，安全经理条款核对）：AGG、TLT、LQD、O9P 改近似（V1 的 auto / approx 名单和夹具同步改成 4 / 12）；
+ *   Z. 产品复核（2026-11-11）：Z1 511990（price_kind=index）行不写 CNY、写"收益指数（起点 100）"，"说明"讲 511990 是指数不是价格、讲溢价 / 折价，
+ *      中国 ETF 详情来源写"不是场内成交价"；Z2 可能区间展开后滚到底点"收起"，按钮在吸顶栏下方可见、子菜单 aria-current 仍是"可能区间"（1200、400）。
  *   Y. 中国场内 ETF（510300）展开详情，"来源"写东方财富净值（"东方财富净值"或"东方财富累计净值"都认），不写 Yahoo。接口一侧（不请求 Yahoo / iShares / BlackRock、增量取）在 test/funds-v3-sources.test.ts。
  *   测试用例修正 4（第三版）：V1 / V2 原来断言可能区间"全部时 45 行"，第三版默认折叠到 10 行，改成先点"展开其余 N 只"再数（不改判定口径）。
  *   全程没有页面脚本报错（pageerror）。
@@ -877,6 +879,69 @@ if (!PROTO) {
     check('Y 510300 详情的"来源"写东方财富净值、不写 Yahoo', /来源[：:]?\s*东方财富(累计)?净值/.test(dt) && !/Yahoo/i.test(dt), dt.slice(-160));
     await ctx.close();
   });
+
+  // ---------------------------------------------------------------- Z 产品复核（2026-11-11，R1 / Y1 / Y2；测试先写，C154）
+  // Z1（R1）：511990 是收益指数（price_kind = 'index'，夹具里 currency 仍留 CNY）→ 逐只对比那一行不写"CNY"、写"收益指数（起点 100）"；"说明"里讲清 511990 是指数不是价格。
+  // Z1（Y2）：中国场内 ETF 详情的来源写"不是场内成交价"；"说明"里讲溢价 / 折价。
+  // Z2（Y1）：可能区间展开后滚到底点"收起"→ 按钮在吸顶栏（子菜单所在的 sticky / fixed 那一层）下方看得见，子菜单 aria-current 仍是"可能区间"；1200 和 400 都测。
+  /** "说明"板块（子菜单"说明"那一项指到的元素）：是 <details> 就先打开，回它的文字 */
+  const helpText = async (page) => {
+    const sub = await findSub(page);
+    if (!sub) return '';
+    const tg = await markTarget(page, sub.idx[SUBS.findIndex(([n]) => n === '说明')]);
+    if (!tg?.found) return '';
+    return page.evaluate(() => { const t = document.querySelector('[data-qa-target]'); t.querySelectorAll('details').forEach((d) => { d.open = true; }); if (t.tagName === 'DETAILS') t.open = true; return (t.innerText || t.textContent || ''); });
+  };
+  await section('Z1 511990 收益指数、来源说明', async () => {
+    const { page, ctx } = await open({ snap: SNAP2 });
+    await enter(page);
+    const row = (await rowText(page, '511990')).replace(/\s+/g, ' ');
+    check('Z1 511990（price_kind=index）那一行不写"CNY"、写"收益指数（起点 100）"', !!row && !/CNY/.test(row) && /收益指数[（(]起点 ?100[)）]/.test(row), row.slice(0, 200));
+    const r510 = page.locator(`${R} [data-code="510300"][aria-expanded]`).first();
+    await r510.scrollIntoViewIfNeeded().catch(() => {});
+    await r510.click();
+    const dt = (await page.locator(`${R} [data-detail="510300"]`).first().innerText({ timeout: 2000 }).catch(() => '')).replace(/\s+/g, ' ');
+    check('Z1 510300 详情的来源写东方财富净值，并写明"不是场内成交价"', /东方财富/.test(dt) && /不是场内成交价/.test(dt), dt.slice(-200));
+    await r510.click().catch(() => {});
+    const help = await helpText(page);
+    const parts = help.split(/[。；;\n]/);
+    const idx = parts.filter((x) => x.includes('511990') && /指数/.test(x) && /不是[^，,。]{0,8}价格/.test(x));
+    check('Z1 "说明"里有一句讲 511990 画的是收益指数、不是价格', idx.length > 0, parts.filter((x) => x.includes('511990')).map((x) => x.trim()).slice(0, 4));
+    check('Z1 "说明"里讲到溢价 / 折价（东方财富净值和场内成交价的差别）', /溢价/.test(help) && /折价/.test(help), help.replace(/\s+/g, ' ').slice(0, 120));
+    await ctx.close();
+  });
+  for (const [vw, scheme] of [[1200, 'light'], [400, 'dark']]) {
+    await section(`Z2 收起后按钮可见 ${vw}`, async () => {
+      const { page, ctx } = await open({ snap: SNAP2, width: vw, height: 900, colorScheme: scheme });
+      await enter(page);
+      const sub = await findSub(page);
+      const k = sub ? sub.idx[SUBS.findIndex(([n]) => n === '可能区间')] : -1;
+      await expandBands(page);
+      const f0 = await foldBtn(page);
+      check(`Z2 ${vw} 宽：前提：可能区间已展开（按钮写"收起"、45 行）`, !!f0 && f0.text === '收起' && (await bandRows(page).count()) === 45, f0);
+      if (!f0 || f0.text !== '收起') { await ctx.close(); return; }
+      // 滚到底：让"收起"按钮落在视口最下面，再点
+      await page.evaluate(() => document.querySelector('[data-qa-fold]').scrollIntoView({ block: 'end' }));
+      await page.waitForTimeout(300);
+      await page.locator('[data-qa-fold]').click();
+      await page.waitForTimeout(900);
+      const f1 = await foldBtn(page);
+      const pos = await page.evaluate(() => {
+        const b = document.querySelector('[data-qa-fold]');
+        const nav = document.querySelector('[data-qa-subnav]');
+        // 吸顶栏：子菜单自己或往上第一层 position 是 sticky / fixed 的元素；找不到就用子菜单本身
+        let bar = nav;
+        for (let e = nav; e && e !== document.body; e = e.parentElement) { const ps = getComputedStyle(e).position; if (ps === 'sticky' || ps === 'fixed') { bar = e; break; } }
+        const r = b && b.getBoundingClientRect(), br = bar && bar.getBoundingClientRect();
+        const cur = [...document.querySelectorAll('[data-qa-subnav] [data-qa-i]')].filter((a) => { const c = a.getAttribute('aria-current'); return c && c !== 'false'; }).map((a) => Number(a.getAttribute('data-qa-i')));
+        return r && br ? { top: Math.round(r.top), bottom: Math.round(r.bottom), barBottom: Math.round(br.bottom), vh: innerHeight, cur } : { err: !b ? '找不到按钮' : '找不到吸顶栏', cur };
+      });
+      check(`Z2 ${vw} 宽：滚到底点"收起"→ 收回 10 行、按钮写"展开其余 35 只"`, (await bandRows(page).count()) === 10 && !!f1 && /^展开其余 ?35 ?只$/.test(f1.text), f1);
+      check(`Z2 ${vw} 宽：收起后按钮在吸顶栏下方看得见（按钮 top ≥ 吸顶栏底边、bottom ≤ 视口底）`, !pos.err && pos.top >= pos.barBottom - 1 && pos.bottom <= pos.vh, pos);
+      check(`Z2 ${vw} 宽：收起后子菜单 aria-current 仍是"可能区间"`, !!sub && pos.cur.length === 1 && pos.cur[0] === k, { cur: pos.cur.map((i) => sub?.texts[i]), want: '可能区间' });
+      await ctx.close();
+    });
+  }
 
   await section('X 收益率整体失败不写（*）', async () => {
     const { page, api, ctx } = await open({

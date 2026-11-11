@@ -9,7 +9,9 @@
  *   S2. AGG、TLT、LQD、O9P 不再抓 iShares / BlackRock 页面，改成"美国同期限国债 + 利差"近似（kind 'approx'，页面标"近似"、≈）；
  *       refresh 不向 ishares.com / blackrock.com 发任何请求。BOND_YIELDS 的 auto 只剩 BND、BSV、511990、511880，其余 12 只 approx。
  * 做法同 test/funds-v2-api.test.ts：本地 D1（Miniflare 真 SQLite）+ 替身 fetch（债券收益率来源走 test/funds-yield-fake.ts 的实抓夹具），不连网。
- * 替身东方财富：DWJZ = LJJZ × 0.5（看得出 close / adj 有没有接反）；序列的最后一天可以往后挪一天（模拟第二天再刷）。
+ * 替身东方财富：DWJZ = LJJZ × 0.5（看得出 close / adj 有没有接反）；序列的最后一天可以往后挪一天（模拟第二天再刷）；
+ *   511990 照真实的货币基金页回"每百份收益"形状（SYType、DWJZ = 每百份收益、LJJZ = 7 日年化）。
+ * R1（产品复核，2026-11-11）：GET 每只带 price_kind（'index' | 'nav' | 'price'），511990 是 'index'（页面那一侧在 scripts/e2e-funds.mjs 的 Z 段）。
  */
 import { readdirSync, readFileSync } from 'node:fs';
 import path from 'node:path';
@@ -33,6 +35,8 @@ const SG14 = ['ES3', 'CFA', 'HST', 'XUS', 'XWR', 'A35', 'MBH', 'SBO', 'O9P', '0P
 const US15 = ['VOO', 'IVV', 'SPY', 'VTI', 'QQQ', 'AGG', 'BND', 'TLT', 'BSV', 'LQD', 'VIG', 'SCHD', 'VYM', 'DGRO', 'SDY'];
 const AUTO4 = ['BND', 'BSV', '511990', '511880'];
 const TO_APPROX = ['AGG', 'TLT', 'LQD', 'O9P'];
+/** 东方财富上是"每百份收益"的货币 ETF（页面上画收益指数、起点 100） */
+const MONEY = ['511990'];
 
 const stmtsOf = (files: string[]) =>
   files.map((f) => readFileSync(path.join(MIG, f), 'utf8').split('\n').map((l) => l.replace(/--.*$/, '')).join('\n'))
@@ -76,9 +80,13 @@ const fake = vi.fn(async (input: unknown, init?: RequestInit): Promise<Response>
   }
   const e = emCode(url);
   if (e) {
-    const rows = [...synth(e)].reverse().map(([d, a]) => ({ FSRQ: d, DWJZ: (a * 0.5).toFixed(4), LJJZ: a.toFixed(4) }));
+    // 511990（华宝添益）照东方财富货币基金页的真实形状：SYType "每百份收益"，DWJZ = 每百份收益（约 0.27），LJJZ = 7 日年化（%），不是价格
+    const money = MONEY.includes(e);
+    const rows = [...synth(e)].reverse().map(([d, a], i) => (money
+      ? { FSRQ: d, DWJZ: (0.25 + (i % 7) * 0.005).toFixed(4), LJJZ: (0.9 + (i % 5) * 0.02).toFixed(4) }
+      : { FSRQ: d, DWJZ: (a * 0.5).toFixed(4), LJJZ: a.toFixed(4) }));
     const pi = Number(u.searchParams.get('pageIndex') ?? 1), ps = Number(u.searchParams.get('pageSize') ?? 20);
-    return jsonRes({ Data: { LSJZList: rows.slice((pi - 1) * ps, pi * ps) }, ErrCode: 0, TotalCount: rows.length, PageSize: ps, PageIndex: pi });
+    return jsonRes({ Data: { LSJZList: rows.slice((pi - 1) * ps, pi * ps), SYType: money ? '每百份收益' : null }, ErrCode: 0, TotalCount: rows.length, PageSize: ps, PageIndex: pi });
   }
   return new Response('not found', { status: 404 });
 });
@@ -165,7 +173,7 @@ describe('S1 / S2 接口（本地 D1 + 替身 fetch）', () => {
   it('S1：GET 里中国 14 只 source = eastmoney、last = 最新一天的 DWJZ（单位净值）、有一年的序列（y1 不为空）', async () => {
     day1 = await getItems(DAY1);
     const bad: string[] = [];
-    for (const c of CN14) {
+    for (const c of CN14.filter((c) => !MONEY.includes(c))) {
       const x = day1[c];
       const lastRow = synth(c).at(-1)!;
       if (!x || x.source !== 'eastmoney') bad.push(`${c} source = ${x?.source}`);
@@ -173,6 +181,14 @@ describe('S1 / S2 接口（本地 D1 + 替身 fetch）', () => {
       else if (x.date !== lastRow[0] || typeof x.y1 !== 'number' || !Array.isArray(x.series) || x.series.length < 200) bad.push(`${c} date=${x.date} y1=${x.y1} series=${x.series?.length}`);
     }
     expect(bad).toEqual([]);
+  });
+
+  it('R1（产品复核）：GET 里每只都有 price_kind（index / nav / price 之一）；511990（东方财富"每百份收益"的货币 ETF）是 index，序列是收益指数（第一天 100 左右、都 > 0）', () => {
+    const bad = Object.values(day1).filter((x) => !['index', 'nav', 'price'].includes(x.price_kind)).map((x) => `${x.code}：${x.price_kind}`);
+    expect(bad).toEqual([]);
+    expect(day1['511990']?.price_kind).toBe('index');
+    const s = day1['511990']?.series as [string, ...number[]][] | undefined;
+    expect(Array.isArray(s) && s.length > 0 && s.every((p) => (p.at(-1) as number) > 0)).toBe(true);
   });
 
   it('S2：GET 里 AGG、TLT、LQD、O9P 是近似（kind approx、approx = true）、value > 0、stale = false、口径写美国国债', async () => {
