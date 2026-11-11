@@ -29,9 +29,9 @@ import { ALL_IDS, audioTextOf, AUDIO_IDS, cardOf, orNull, currentStage, drillSta
 import { CONTENT, STAGE3 } from '../src/drill-content';
 import { PAIRS } from '../src/ear-content';
 import { EAR_WORD_IDS } from '../src/ear';
-import { DRILL_PROJECT, DRILL_PURPOSE } from '../src/drill-audio';
+import { audioKey, AUDIO_REV, DRILL_PROJECT, DRILL_PURPOSE } from '../src/drill-audio';
 import { dayText, DAY, REVIEW_MODE, REVIEW_N, reviewLine, shuffleIds } from '../src/drill-review';
-import { TTS_MELOTTS } from '../src/tts';
+import { AURA_SPEAKER, TTS_AURA, TTS_MELOTTS, ttsNeurons } from '../src/tts';
 import { PURPOSES } from '../src/usage';
 import { ROOT, T0 } from './helpers';
 
@@ -85,7 +85,7 @@ const api = async (p: string, body?: unknown, now = T0) => {
   const r = await handle(req('/api/drill/' + p, body === undefined ? { cookie: ck } : { method: 'POST', cookie: ck, body: JSON.stringify(body) }), env(), now);
   return { status: r.status, body: (await r.json()) as Record<string, any> };
 };
-/** 假的 Workers AI：melotts 回 {audio: base64}，顺便记下被调了几次、每次什么参数 */
+/** 假的 Workers AI：默认回 melotts 那种 {audio: base64}（toMp3 两种都认）；aura 真实回的是流，单独有一条用例走那条路 */
 const MP3 = Uint8Array.from([0x49, 0x44, 0x33, 0x04, 0x00, 0x11, 0x22, 0x33]);
 const b64 = (a: Uint8Array) => btoa(String.fromCharCode(...a));
 function fakeAi(fn?: (model: string, inp: unknown) => Promise<unknown>) {
@@ -580,7 +580,7 @@ describe('10. v2 内容：音标 / 重音、词义、用法（内容在 src/dril
 });
 
 // ======================================================================
-describe('11. 发音：melotts 第一次需要时生成一次，存 D1 永久复用（40 段约 33 neurons）', () => {
+describe('11. 发音：aura-2-en 第一次需要时生成一次，存 D1 永久复用（40 段约 3,003 neurons）', () => {
   // 2026-11-10 听辨小测：24 段 → 40 段（多了听辨那 16 个词 p1a…p8b）。**这一组只往严里改**：
   // 原来只钉"一共几段"和末尾 6 段，现在三段都逐条钉死（18 项 / 6 句对方那句 / 16 个听辨词），
   // 而且第三段要和 src/ear-content.ts 的 PAIRS **对得上**（研发自己在 drill.ts 里另抄一份编号就红）。
@@ -603,17 +603,30 @@ describe('11. 发音：melotts 第一次需要时生成一次，存 D1 永久复
     expect(audioTextOf('w9')).toBe(null);
   });
 
-  it('第一次点🔊：调一次 melotts（prompt + lang=en）、存进 drill_audio、回 audio/mpeg；第二次**不再调 AI**', async () => {
+  it('第一次点🔊：调一次 aura-2-en（text + speaker + encoding）、存进 drill_audio、回 audio/mpeg；第二次**不再调 AI**', async () => {
     const ai = fakeAi();
     const r1 = await getRaw('audio/w1', ai.env());
     expect(r1.status).toBe(200);
     expect(r1.headers.get('content-type')).toBe('audio/mpeg');
     expect(new Uint8Array(await r1.arrayBuffer())).toEqual(MP3);
     expect(ai.calls).toHaveLength(1);
-    expect(ai.calls[0].model).toBe(TTS_MELOTTS);
-    expect(ai.calls[0].inp).toEqual({ prompt: 'catch', lang: 'en' });
-    const row = await db.prepare("SELECT item, at FROM drill_audio WHERE item = 'w1'").first<{ item: string; at: number }>();
-    expect([row?.item, row?.at]).toEqual(['w1', T0]);
+    // 2026-11-10 从 melotts 换成 aura-2-en：Amos 实测 melotts 把 seat / sit 念糊了（真人录音他分得开），
+    // **错的是机器不是他的耳朵**。入参形状和 melotts 完全不同，照 src/tts.ts 那一份，别各写一套。
+    expect(ai.calls[0].model).toBe(TTS_AURA);
+    expect(ai.calls[0].inp).toEqual({ text: 'catch', speaker: AURA_SPEAKER, encoding: 'mp3' });
+    // 存进库的键带**版本号前缀**：换模型时旧模型那些段再也读不到（旧行留着，想对比还查得出来）
+    expect(audioKey('w1')).toBe('a2:w1');
+    const row = await db.prepare("SELECT item, at FROM drill_audio WHERE item = 'a2:w1'").first<{ item: string; at: number }>();
+    expect([row?.item, row?.at]).toEqual(['a2:w1', T0]);
+    // 没有版本号的旧键一行都不会被写出来
+    expect((await db.prepare("SELECT COUNT(*) AS n FROM drill_audio WHERE item NOT LIKE 'a2:%'").first<{ n: number }>())?.n).toBe(0);
+    // **记的账要按真正调的那个模型算**。aura 按字符算钱、melotts 按音频时长，两者差一百多倍：
+    // 要是估算还按 melotts 的便宜价、实际却调 aura，「今天额度不够了」那道闸就会低估一百多倍，
+    // 他会在没有任何提示的情况下把额度跑穿（底线 8 / C117）。
+    // （2026-11-10 自查：故意把估算改回 melotts 的价，当时一条测试都不红，所以补了这一条。）
+    const u = await db.prepare('SELECT neurons FROM ai_usage').first<{ neurons: number }>();
+    expect(u!.neurons).toBeCloseTo(ttsNeurons(TTS_AURA, 'catch'), 6);
+    expect(ttsNeurons(TTS_AURA, 'catch')).toBeGreaterThan(ttsNeurons(TTS_MELOTTS, 'catch') * 50);
     // 第二次：库里有了，一次 AI 都不调（永久复用，不再花钱）
     const r2 = await getRaw('audio/w1', ai.env(), T0 + 99_000);
     expect(r2.status).toBe(200);
@@ -636,12 +649,42 @@ describe('11. 发音：melotts 第一次需要时生成一次，存 D1 永久复
     expect(PURPOSES).toContain(DRILL_PURPOSE);
   });
 
+  it('e2e 里预置发音用的那个前缀，和源码的 AUDIO_REV 是同一个（两边不许漂移）', () => {
+    // scripts/e2e-platform.mjs 是 .mjs，导不进 src/ 的常量，只能照抄一份。
+    // 抄的东西会漂：这里把它钉住——改了 AUDIO_REV 不同步改 e2e，当场红。
+    const e2e = readFileSync(path.join(ROOT, 'scripts/e2e-platform.mjs'), 'utf8');
+    expect(e2e).toContain('const audioKey = (item) => `' + AUDIO_REV + ':${item}`;');
+    expect(audioKey('x')).toBe(AUDIO_REV + ':x');
+  });
+
+  it('aura 真实返回的是**二进制流**（不是 melotts 那种 {audio: base64}）：这条路也要走得通', async () => {
+    // 上面那些用例里的假 AI 回的是 melotts 的形状 {audio: base64}，而 aura-2-en 回的是流。
+    // 生产上走的是**流**那条路，这里补一条，免得换模型后第一次点🔊 才发现格式不认识。
+    const ai = fakeAi(async () => new Response(MP3).body as ReadableStream);
+    const r = await getRaw('audio/w2', ai.env());
+    expect([r.status, r.headers.get('content-type')]).toEqual([200, 'audio/mpeg']);
+    expect(new Uint8Array(await r.arrayBuffer())).toEqual(MP3);
+    expect(ai.calls[0].model).toBe(TTS_AURA);
+    // ArrayBuffer 那种也认（同一个 toMp3）
+    const ai2 = fakeAi(async () => MP3.buffer);
+    expect((await getRaw('audio/w3', ai2.env())).status).toBe(200);
+    // 认不出来的形状**不许当成空音频存进库**，要当面报错
+    const ai3 = fakeAi(async () => ({ 不认识: 1 }));
+    const bad3 = await getRaw('audio/w4', ai3.env());
+    expect(bad3.status).toBe(502);
+    expect((await db.prepare("SELECT COUNT(*) AS n FROM drill_audio WHERE item = 'a2:w4'").first<{ n: number }>())?.n).toBe(0);
+  });
+
   it('40 段全生成一遍：加起来远不到免费额度（别偷偷变成一笔新开销）', async () => {
     const ai = fakeAi();
     for (const id of AUDIO_IDS) expect([id, (await getRaw('audio/' + id, ai.env())).status]).toEqual([id, 200]);
     expect(ai.calls).toHaveLength(40);
     const a = await db.prepare('SELECT neurons FROM ai_usage').first<{ neurons: number }>();
-    expect(a!.neurons).toBeLessThan(100); // 实测约 33；免费额度 10,000/天
+    // aura-2-en 按**字符**算钱（2727.27 / 1000 字符），melotts 按音频时长，所以换模型后这个数从约 33 跳到约 3,003。
+    // 这条守卫**不是摆设**：3,003 已经接近 Amos 在"用量和限额"里设的 8,000，再涨一截就会出现
+    // 「练到一半额度没了」。所以钉一个**比实测高不了多少**的上限——内容变长或再换更贵的模型都会红，
+    // 红了要重新算一遍再决定，不许顺手把这个数改大。
+    expect(a!.neurons).toBeLessThan(4000); // 实测约 3,003；免费额度 10,000/天，他的上限 8,000
     expect((await db.prepare('SELECT COUNT(*) AS n FROM drill_audio').first<{ n: number }>())?.n).toBe(40);
     // 再点一遍：**一次都不许再调 melotts**（存下来就永久复用，不新增一分钱费用）
     for (const id of AUDIO_IDS) expect([id, (await getRaw('audio/' + id, ai.env())).status]).toEqual([id, 200]);
