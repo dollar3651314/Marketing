@@ -224,8 +224,10 @@ export async function fetchFund(def: FundDef, http: Http, now: number, prev?: Re
       const hit = [...fresh].reverse().find((p) => oldBy.has(p[0]));
       if (hit) { const k = oldBy.get(hit[0])! / hit[2]; fresh = fresh.map((p) => [p[0], p[1] * k, p[2] * k] as Point); } else base = [];
     }
-    const pts = cleanPoints(mergePoints(base, fresh));
-    return summarize(def, 'CNY', pts);
+    let pts = cleanPoints(mergePoints(base, fresh));
+    // 收益指数（511990）：截完一年窗口后把第一点重新定成 100，页面写的"<起点日期> = 100"才是真的
+    if (got.money && pts.length) { const k = 100 / pts[0][2]; pts = pts.map((p) => [p[0], r6(p[1] * k), r6(p[2] * k)] as Point); }
+    return { ...summarize(def, 'CNY', pts), price_kind: got.money ? 'index' : 'nav' };
   }
   let yErr: unknown = null;
   let cur: string | null = null, pts: Point[] = [], why = '';
@@ -241,11 +243,13 @@ export async function fetchFund(def: FundDef, http: Http, now: number, prev?: Re
   if (pts.length < MIN_POINTS && def.symbol.endsWith('.SS')) {
     // Yahoo 丢了历史（511880 11/10 只回 1 条）→ 改用东方财富净值
     const em = cleanPoints(await fromEastmoney(http, def.symbol.slice(0, -3), now));
-    if (em.length) return summarize({ ...def, source: 'eastmoney' }, 'CNY', em);
+    if (em.length) return { ...summarize({ ...def, source: 'eastmoney' }, 'CNY', em), price_kind: 'nav' };
   }
   if (!pts.length) throw yErr instanceof Error ? new FetchFail(yErr.message) : new FetchFail(why ? `Yahoo 没有这只的数据：${why}` : 'Yahoo 没有这只的数据');
-  return summarize(def, cur, pts);
+  return { ...summarize(def, cur, pts), price_kind: 'price' };
 }
+
+const r6 = (v: number) => Math.round(v * 1e6) / 1e6;
 
 export interface RefreshResult {
   next: number | null;
@@ -336,6 +340,8 @@ export async function fundsList(env: Env): Promise<{ fetched_at: string | null; 
     const item: Record<string, unknown> = { ...(snap ?? {}), market: def.market, category: def.category, name: def.name, code: def.code, symbol: def.symbol, tag: def.tag, source: (snap?.source as string) ?? def.source };
     // 这一只上次取到的时间（页面用来标出"上次数据"：分批刷新中途断了，没轮到的几只比标题的数据时间旧）
     if (snap && r?.ok_at) item.ok_at = new Date(r.ok_at).toISOString();
+    // 第三版复核 R1：价格是什么（旧快照没有这个字段：东方财富的当净值、Yahoo 的当场内价格）
+    if (snap) item.price_kind = snap.price_kind === 'index' || snap.price_kind === 'nav' || snap.price_kind === 'price' ? snap.price_kind : item.source === 'eastmoney' ? 'nav' : 'price';
     if (!snap) item.error = r?.err ?? '还没取过';
     // 取到时会把 err 清空，所以 err 还在 = 最近一次没取到（不比时间：同一毫秒先成功后失败也算失败，C106）
     else if (r?.err) { item.error = r.err; if (r.err_at) item.error_at = new Date(r.err_at).toISOString(); }
