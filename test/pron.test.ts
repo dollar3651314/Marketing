@@ -602,6 +602,19 @@ describe('6. 发音：照搬带练那条链路（aura-2-en + 版本号键 + 额�
     expect(PRON_JS).toContain('function pAuErr(j,msgId)');
   });
 
+  it('来回点两个词对比不许蹦假错误：play() 的 AbortError 要忽略掉', () => {
+    // 第 2 步「对照听」就是让他来回点两个词。后一次 play() 必然打断前一次，
+    // 前一次的 promise 以 **AbortError** 被拒（"The play() request was interrupted by a new load request"）。
+    // 2026-11-11 合进 staging 后 CI 就是这条红的，而且**本地也复现**——
+    // 之前那次本地通过是侥幸。他照我们设计的动作做，反而会看到「浏览器把这次播放挡住了」。
+    expect(PRON_JS).toContain("if(e&&e.name==='AbortError')return;");
+    // catch 必须拿到 e 才判得了（写成 function(){...} 就又瞎报了）
+    expect(PRON_JS).toContain('pr.catch(function(e){');
+    expect(PRON_JS).not.toContain("pr.catch(function(){pAuErr(");
+    // 真被拦住的那条路还在
+    expect(PRON_JS).toContain("'出错':'浏览器把这次播放挡住了。'");
+  });
+
   it('没登录一律 401', async () => {
     const r = await handle(req('/api/pron/audio/' + BED), env(), T0);
     expect(r.status).toBe(401);
