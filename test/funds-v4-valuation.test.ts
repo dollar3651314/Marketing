@@ -10,7 +10,7 @@
  *   **同一来源同一天第二次刷新不再请求**（中证按 UTC+8 的日期；Shiller 当月不再请求）。
  *   规格补充（Amos 11/11"表格或文档太大 无法单次解析完成，可以分开成多个小文档，多次解析"，主会话转述）：中证 perf 首次按年分段取、每次调用只处理一段
  *     （每次调用对中证 ≤ 1 个请求，每段 ≤ 1 年），之后每天增量（每个指数 ≤ 1 个 perf 请求、从最近两个月内开始）；Shiller xls 每月下载 1 次、原始字节分块存 D1、
- *     分多次调用逐步解析（下载那次不解析完、之后至少再 2 次）、解析完删块（D1 体积回到下载前 + 200 KB 内）；拼起来的结果仍和标准答案差 ≤ 0.05。
+ *     分多次调用逐步解析（下载那次和下一次调用返回时都还没解析完，即之后至少再 2 次）、解析完删块（D1 体积回到估值开始前 + 200 KB 内）；拼起来的结果仍和标准答案差 ≤ 0.05。
  *     "每天最多 1 次"= 每天最多一轮；解析全部成功才记日期；当天最多 2 轮（第 3 轮不再请求）。
  *   无定时任务（wrangler 无 crons，src/index.ts 不导出 scheduled）。
  * 接口约定（研发照做；两种都认，要改就在同一个提交里改这里并写明）：
@@ -88,7 +88,7 @@ type Round = { urls: string[]; status: number; body: any; path: string };
 /** 一次完整刷新（见文件头的约定） */
 /** 每次估值调用之后调一次（第一轮量 D1 体积、SPX 何时出现用） */
 type AfterCall = (i: number, r: Round) => Promise<void>;
-async function refreshAll(now: number, after?: AfterCall): Promise<Round[]> {
+async function refreshAll(now: number, after?: AfterCall, beforeVal?: () => Promise<void>): Promise<Round[]> {
   await login(now);
   const rounds: Round[] = [];
   let cursor: number | undefined;
@@ -101,6 +101,7 @@ async function refreshAll(now: number, after?: AfterCall): Promise<Round[]> {
     cursor = body.next;
   }
   // "同一来源隔 ≥ 2 秒"的等待走虚拟时间（virtualGaps：等待一点不少，只是不真等；CI 不会因为真等约 20 秒而超时）
+  if (beforeVal) await beforeVal();
   await virtualGaps(async () => {
     let next: unknown;
     // 规格补充：首次按年分段、Shiller 分多次解析，一轮要调很多次；硬上限 400 次
@@ -171,24 +172,23 @@ function compare(items: Record<string, any>[] | null): string[] {
 describe('D 估值：接口', () => {
   let first: Round[] = [];
   /** 第一轮：每次估值调用后 D1 的总字节数；下载 ie_data.xls 的是第几次调用；那次刚返回时 SPX 有没有出来；SPX 第一次出来是第几次调用 */
-  const bytesAfter: number[] = [];
-  let dl = -1, spxAtDl = false, readyAt = -1, bytes0 = 0;
-  beforeAll(async () => { bytes0 = await dbBytes(); });
+  let dl = -1, spxAtDl = false, spxAtDl1 = false, spxEnd = false, bytes0 = 0, bytesAtDl = 0, bytesEnd = 0;
   it('第一次完整刷新：每次 ≤ 45 个对外请求、都 200；中证 5 个指数的 PE（perf）和股息率（indicator.xls）、Shiller 都请求到了', async () => {
     stamps = [];
+    // 只在关键几步量（D1 全表字节、GET 都很重，每步都量一轮要 35 秒）：估值开始前、下载那次之后、下载后再一次之后、结尾
     first = await refreshAll(D1A, async (i, r) => {
-      bytesAfter[i] = await dbBytes();
-      if (dl < 0 && r.urls.some((u) => /ie_data\.xls/i.test(u))) { dl = i; spxAtDl = await spxReady(D1A); }
-      else if (dl >= 0 && readyAt < 0 && (await spxReady(D1A))) readyAt = i;
-    });
-    bytes0 = bytesAfter[dl - 1] ?? bytes0;
+      if (dl < 0 && r.urls.some((u) => /ie_data\.xls/i.test(u))) { dl = i; bytesAtDl = await dbBytes(); spxAtDl = await spxReady(D1A); }
+      else if (dl >= 0 && i === dl + 1) spxAtDl1 = await spxReady(D1A);
+    }, async () => { bytes0 = await dbBytes(); });
+    bytesEnd = await dbBytes();
+    spxEnd = await spxReady(D1A);
     expect(first.filter((r) => r.status !== 200).map((r) => [r.path, r.status, r.body])).toEqual([]);
     expect(first.map((r) => r.urls.length).filter((n) => n > LIMIT)).toEqual([]);
     const cs = csUrls(first);
     expect(VAL_CN.filter((c) => !cs.some((u) => /perf/i.test(u) && u.includes(c))), '中证 PE（index-perf）').toEqual([]);
     expect(VAL_CN.filter((c) => !cs.some((u) => new URL(u).hostname === 'oss-ch.csindex.com.cn' && new RegExp(`${c}indicator\\.xls`, 'i').test(u))), '中证股息率（indicator.xls）').toEqual([]);
     expect(shUrls(first).length).toBeGreaterThan(0);
-  });
+  }, 120_000);
   it('（补充，研发按安全经理限制做的）同一来源相邻两个请求隔 ≥ 2 秒（中证 www 和 oss-ch 算一个来源；Shiller 首页和下载算一个来源；按虚拟时间量）', () => {
     const bad: string[] = [];
     for (const [name, is] of [['中证', isCsindex], ['Shiller', isShiller]] as const) {
@@ -205,15 +205,15 @@ describe('D 估值：接口', () => {
       .filter(([, d]) => !(d >= 0 && d <= 366));
     expect(bad, '首次按年分段取').toEqual([]);
   });
-  it('（规格补充）Shiller：下载 ie_data.xls 那次调用里不解析完（刚返回时 SPX 还没有），之后至少再调 2 次才解析完；下载后原始字节分块存进 D1（D1 增加 ≥ 一半文件大小），解析完删掉（比下载前多不到 200 KB）', () => {
+  it('（规格补充）Shiller：下载 ie_data.xls 那次调用里不解析完（刚返回时 SPX 还没有），之后至少再调 2 次才解析完；下载后原始字节分块存进 D1（D1 增加 ≥ 一半文件大小），解析完删掉（比估值开始前多不到 200 KB）', () => {
     expect(dl, '这一轮下载了 ie_data.xls').toBeGreaterThanOrEqual(0);
     expect(spxAtDl, '下载那次调用不该同时解析完').toBe(false);
-    expect(readyAt, 'SPX 最后要解析出来').toBeGreaterThan(dl);
-    expect(readyAt - dl, '分多次调用逐步解析').toBeGreaterThanOrEqual(2);
-    const grow = bytesAfter[dl] - bytes0;
+    expect(spxAtDl1, '分多次调用逐步解析：下载后的下一次调用也还没解析完（之后至少再 2 次）').toBe(false);
+    expect(spxEnd, 'SPX 最后要解析出来').toBe(true);
+    const grow = bytesAtDl - bytes0;
     expect(grow, `下载后 D1 应存着原始块（增加了 ${grow} 字节）`).toBeGreaterThanOrEqual(XLS_BYTES / 2);
-    const left = bytesAfter[bytesAfter.length - 1] - bytes0;
-    expect(left, `解析完原始块应删掉（还比下载前多 ${left} 字节）`).toBeLessThan(200_000);
+    const left = bytesEnd - bytes0;
+    expect(left, `解析完原始块应删掉（还比估值开始前多 ${left} 字节）`).toBeLessThan(200_000);
   });
   it('来源只有中证、Shiller（及其首页给的 ie_data.xls 下载链接）；不请求蛋卷、multpl、MSCI、富时', () => {
     const v = valUrls(first);
