@@ -49,6 +49,7 @@
  *   Y. 中国场内 ETF（510300）展开详情，"来源"写东方财富净值（"东方财富净值"或"东方财富累计净值"都认），不写 Yahoo。接口一侧（不请求 Yahoo / iShares / BlackRock、增量取）在 test/funds-v3-sources.test.ts。
  *   测试用例修正 4（第三版）：V1 / V2 原来断言可能区间"全部时 45 行"，第三版默认折叠到 10 行，改成先点"展开其余 N 只"再数（不改判定口径）。
  *   第四版 ② 估值（Amos 2026-11-11「都按建议」；页面约定见 VA 段开头；接口一侧在 test/funds-v4-valuation.test.ts）：
+ *   估值取数修复（2026-11-11，规格 5 文案；接口一侧在 test/funds-v5-valfix.test.ts）：VD1～VD3 从没取到过的写"还没有数据"、不出现"显示的是上次的数据"；有旧数据的才出现。
  *   VA. 1200 浅色："估值：现在贵不贵"6 张卡（data-val-code）、数值和判词（< 30 / 30～70 / > 70）、"不是预测、不是投资建议"、来源"中证指数有限公司、Robert Shiller"、
  *       子菜单"估值"点了定位 / 滚动高亮、切"美国"只剩标普500、"中国"5 张、"新加坡"只剩标普500（含 XUS；主会话规格更正，依据原型 v3）、对比度；VB. 判词分界；VC. 400 深色不横向溢出、对比度。
  *   全程没有页面脚本报错（pageerror）。
@@ -1101,6 +1102,69 @@ if (!PROTO) {
     await pickMarket(page, '新加坡');
     check('VC 400 宽切到"新加坡"：只有 SPX（卡上含 XUS）、不横向溢出', JSON.stringify(await valCodes(page)) === JSON.stringify(['SPX']) && /XUS/.test(await cardText(page, 'SPX')) && (await noHScroll(page)), await valCodes(page));
     await ctx.close();
+  });
+
+
+  // ================================================================ 估值取数修复（2026-11-11，Amos 选直接上生产；测试先写，C154）规格 5：文案
+  // 从没取到过数据的指数显示"还没有数据"（"还没有估值数据"也认），整页不出现"显示的是上次的数据"；有上次数据的才出现这句，并且这句只说有旧数据的那几个。
+  // 做法：GET /api/funds、POST /api/funds/refresh、POST /api/funds/valuation/refresh 都用替身；估值第 1 步回 failed，之后 GET 回刷新后的状态。
+  // VD1 只有从没取到过的（上证50）失败；VD2 只有有旧数据的（沪深300）失败；VD3 两个都失败。
+  const vMissing = (codes, err) => VREF.items.filter((x) => codes.includes(x.code)).map((x) => ({ code: x.code, name: x.name, market: x.market, ...(err ? { error: err } : {}) }));
+  /** pre / post：{ items, missing }；fails：这一轮失败的 [code, name] */
+  async function vdRun(name, pre, post, fails) {
+    const { page, ctx, api } = await open({ width: 1200, height: 900, snap: { ...SNAP2, valuation: { ...pre, due: true } }, onRefresh: () => ({ next: null, done: 45, total: 45, updated: SNAP2.items.map((x) => x.code), failed: [], requests: 45 }) });
+    const vposts = [];
+    await ctx.route(/\/api\/funds\/valuation\/refresh(\?.*)?$/, async (r) => {
+      const body = (() => { try { return JSON.parse(r.request().postData() || '{}'); } catch { return {}; } })();
+      vposts.push(body);
+      const i = Number(body.cursor ?? 0);
+      api.snap = { ...SNAP2, valuation: { ...post, due: false } };
+      const f = fails[i];
+      const res = f
+        ? { next: i + 1 < fails.length ? i + 1 : null, done: i + 1, total: fails.length, code: f[0], name: f[1], part: '市盈率', status: 'failed', reason: '市盈率：中证回 403', requests: 1 }
+        : { next: null, done: i + 1, total: i + 1, code: '', name: '', part: '', status: 'done', requests: 0 };
+      await r.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(res) });
+    });
+    await enter(page);
+    await page.locator(`${R} [data-val-code]`).first().waitFor({ state: 'attached', timeout: WAIT }).catch(() => {});
+    const t0 = (await page.locator(R).innerText().catch(() => '')).replace(/\s+/g, ' ');
+    check(`${name} 前提：刷新前页面没有"上次的数据"`, !/上次的数据/.test(t0), t0.match(/[^。；]*上次的数据[^。；]*/)?.[0]);
+    await page.locator(R).getByRole('button', { name: /刷新/ }).first().click();
+    await page.waitForFunction((R) => { const t = document.querySelector(R)?.innerText || ''; const b = [...document.querySelectorAll(R + ' button')].find((x) => /刷新/.test(x.textContent || '')); return !!b && !b.disabled && /估值/.test(t) && !/正在取/.test(t); }, R, { timeout: 15000 }).catch(() => {});
+    await page.waitForTimeout(300);
+    const raw = await page.locator(R).innerText().catch(() => '');
+    const t = raw.replace(/\s+/g, ' ');
+    const clauses = raw.split(/[；;。\n]/).map((x) => x.replace(/\s+/g, ' ').trim()).filter(Boolean);
+    const card = async (c) => (await page.locator(`${R} [data-val-code="${c}"]`).first().innerText({ timeout: 1500 }).catch(() => '')).replace(/\s+/g, ' ');
+    const out = { page, ctx, t, clauses, card, vposts, old: clauses.filter((x) => /上次的数据/.test(x)) };
+    check(`${name} 前提：页面调了估值刷新`, vposts.length >= 1, vposts);
+    return out;
+  }
+  await section('VD1 估值文案：从没取到过的失败', async () => {
+    const pre = { items: VREF.items.filter((x) => x.code !== '000016'), missing: vMissing(['000016']) };
+    const post = { items: pre.items, missing: vMissing(['000016'], '市盈率：中证回 403') };
+    const o = await vdRun('VD1', pre, post, [['000016', '上证50']]);
+    const c = await o.card('000016');
+    check('VD1 从没取到过的上证50：卡上写"还没有数据"（或"还没有估值数据"），不写"上次"', /还没有(估值)?数据/.test(c) && !/上次/.test(c), c.slice(0, 200));
+    check('VD1 整页不出现"显示的是上次的数据"（上证50 从来没有数据）', !/显示的是上次的数据/.test(o.t) && o.old.length === 0, o.old);
+    await o.ctx.close();
+  });
+  await section('VD2 估值文案：有旧数据的失败', async () => {
+    const pre = { items: VREF.items, missing: [] };
+    const post = { items: VREF.items.map((x) => (x.code === '000300' ? { ...x, ok_at: '2026-11-10T03:00:00.000Z', error: '市盈率：中证回 403', error_at: '2026-11-11T03:00:00.000Z' } : x)), missing: [] };
+    const o = await vdRun('VD2', pre, post, [['000300', '沪深300']]);
+    check('VD2 有旧数据的沪深300 没取到：出现"显示的是上次的数据"，这句说的是沪深300', /显示的是上次的数据/.test(o.t) && o.old.some((x) => /沪深300/.test(x)), o.old);
+    await o.ctx.close();
+  });
+  await section('VD3 估值文案：两种都失败', async () => {
+    const items = VREF.items.filter((x) => x.code !== '000016');
+    const pre = { items, missing: vMissing(['000016']) };
+    const post = { items: items.map((x) => (x.code === '000300' ? { ...x, ok_at: '2026-11-10T03:00:00.000Z', error: '市盈率：中证回 403', error_at: '2026-11-11T03:00:00.000Z' } : x)), missing: vMissing(['000016'], '市盈率：中证回 403') };
+    const o = await vdRun('VD3', pre, post, [['000300', '沪深300'], ['000016', '上证50']]);
+    check('VD3 "显示的是上次的数据"那句说沪深300、不把上证50 算进去', /显示的是上次的数据/.test(o.t) && o.old.length > 0 && o.old.every((x) => !/上证50/.test(x)) && o.old.some((x) => /沪深300/.test(x)), o.old);
+    const c = await o.card('000016');
+    check('VD3 上证50 卡上写"还没有数据"（或"还没有估值数据"），不写"上次"', /还没有(估值)?数据/.test(c) && !/上次/.test(c), c.slice(0, 200));
+    await o.ctx.close();
   });
 
 }

@@ -100,7 +100,7 @@ async function refreshAll(now: number, after?: AfterCall, beforeVal?: () => Prom
     if (r.status !== 200 || body.next == null) break;
     cursor = body.next;
   }
-  // "同一来源隔 ≥ 2 秒"的等待走虚拟时间（virtualGaps：等待一点不少，只是不真等；CI 不会因为真等约 20 秒而超时）
+  // "同一来源隔 ≥ 5 秒"的等待走虚拟时间（virtualGaps：等待一点不少，只是不真等；CI 不会因为真等约 20 秒而超时）
   if (beforeVal) await beforeVal();
   await virtualGaps(async () => {
     let next: unknown;
@@ -189,21 +189,25 @@ describe('D 估值：接口', () => {
     expect(VAL_CN.filter((c) => !cs.some((u) => new URL(u).hostname === 'oss-ch.csindex.com.cn' && new RegExp(`${c}indicator\\.xls`, 'i').test(u))), '中证股息率（indicator.xls）').toEqual([]);
     expect(shUrls(first).length).toBeGreaterThan(0);
   }, 120_000);
-  it('（补充，研发按安全经理限制做的）同一来源相邻两个请求隔 ≥ 2 秒（中证 www 和 oss-ch 算一个来源；Shiller 首页和下载算一个来源；按虚拟时间量）', () => {
+  // 估值取数修复（2026-11-11，主会话派工单规格 1）：间隔从 ≥ 2 秒改成 ≥ 5 秒——规格变化，不是放宽
+  it('（估值取数修复规格 1）同一来源相邻两个请求隔 ≥ 5 秒（中证 www 和 oss-ch 算一个来源；Shiller 首页和下载算一个来源；按虚拟时间量）', () => {
     const bad: string[] = [];
     for (const [name, is] of [['中证', isCsindex], ['Shiller', isShiller]] as const) {
       const xs = stamps.filter((x) => is(x.url));
-      for (let i = 1; i < xs.length; i++) if (xs[i].t - xs[i - 1].t < 2000 - 5) bad.push(`${name}：${xs[i - 1].url.slice(0, 60)} → ${xs[i].url.slice(0, 60)} 只隔 ${xs[i].t - xs[i - 1].t} ms`);
+      for (let i = 1; i < xs.length; i++) if (xs[i].t - xs[i - 1].t < 5000 - 5) bad.push(`${name}：${xs[i - 1].url.slice(0, 60)} → ${xs[i].url.slice(0, 60)} 只隔 ${xs[i].t - xs[i - 1].t} ms`);
     }
     expect(bad).toEqual([]);
   });
-  it('（规格补充：太大分开解析）每次调用对中证最多发 1 个请求；中证 perf 每个请求都带 startDate / endDate、一段不超过 1 年（366 天）', () => {
+  // 估值取数修复（2026-11-11，规格 1）：每段从 ≤ 1 年改成 ≤ 5 年、首次每个指数 ≤ 3 段（原来按年 11 段 × 5 个指数 ≈ 55 个请求，中证约 22 个后开始 403）
+  it('（规格补充：太大分开解析；估值取数修复规格 1）每次调用对中证最多发 1 个请求；中证 perf 每个请求都带 startDate / endDate、一段不超过 5 年；首次每个指数 ≤ 3 段', () => {
     const many = first.map((r, i) => [i, r.path, r.urls.filter(isCsindex).length] as const).filter(([, , n]) => n > 1);
     expect(many, '每次调用对中证 ≤ 1 个请求').toEqual([]);
     const perf = first.flatMap((r) => r.urls).filter((u) => isCsindex(u) && /perf/i.test(u));
     const bad = perf.map((u) => { const q = new URL(u).searchParams; const a = ymd(q.get('startDate')), b = ymd(q.get('endDate')); return [u.replace(/^https?:\/\/[^/]+/, ''), (b - a) / 86400_000] as const; })
-      .filter(([, d]) => !(d >= 0 && d <= 366));
-    expect(bad, '首次按年分段取').toEqual([]);
+      .filter(([, d]) => !(d >= 0 && d <= 5 * 366));
+    expect(bad, '首次每段 ≤ 5 年').toEqual([]);
+    const per = VAL_CN.map((c) => [c, perf.filter((u) => new URL(u).searchParams.get('indexCode') === c).length] as const).filter(([, n]) => n > 3);
+    expect(per, '首次每个指数 ≤ 3 段').toEqual([]);
   });
   it('（规格补充）Shiller：下载 ie_data.xls 那次调用里不解析完（刚返回时 SPX 还没有），之后至少再调 2 次才解析完；下载后原始字节分块存进 D1（D1 增加 ≥ 一半文件大小），解析完删掉（比估值开始前多不到 200 KB）', () => {
     expect(dl, '这一轮下载了 ie_data.xls').toBeGreaterThanOrEqual(0);
