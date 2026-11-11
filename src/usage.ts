@@ -176,13 +176,16 @@ export const envName = (env: Env): string => (env.ENVIRONMENT === 'production' ?
 // ======================================================================
 
 /** 用途的全集（页面按这个顺序排）。新增用途要同时在这里和 PURPOSE_LABEL 里加一项。 */
-export const PURPOSES = ['assets-image', 'assets-audio', 'tts', 'drill-tts', 'voice', 'draft', 'score', 'platform', 'other'] as const;
+export const PURPOSES = ['assets-image', 'assets-audio', 'tts', 'pron-tts', 'pron-asr', 'drill-tts', 'voice', 'draft', 'score', 'platform', 'other'] as const;
 export type Purpose = (typeof PURPOSES)[number];
 export const PURPOSE_LABEL: Record<Purpose, string> = {
   'assets-image': '素材生成器 · 图片',
   'assets-audio': '素材生成器 · 音频',
   tts: '语音生成',
-  'drill-tts': '带练 · 发音',
+  'pron-tts': '发音训练 · 发音',
+  'pron-asr': '发音训练 · 纠说（听你念）',
+  // 「带练」2026-11-11 下线了，这一行**留着**：库里还有它当时记的账，去掉这一行那些行就只剩一个看不懂的代号（底线 3）
+  'drill-tts': '带练 · 发音（已下线，历史数据）',
   voice: '语音对话实测',
   draft: '跟帖草稿',
   score: '跟帖评分',
