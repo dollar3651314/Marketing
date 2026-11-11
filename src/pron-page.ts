@@ -285,10 +285,13 @@ var PN={base:(window.__pronBase||'/api/pron/'),zu:[],cur:null,ji:null,step:1,loa
   q:[],i:0,ok:0,same:0,bad:[],au:{},auBusy:{},player:null,rec:null,recId:'',recT0:0,recBtn:null,
   /* 口型图的来回切换动画：on 开着没、t 第几拍、timer 计时器、side 镜子里看哪个音 */
   mo:{on:false,t:0,timer:null,side:'a'},
-  /* 镜子拿到的摄像头流：**只赋给 video.srcObject**，关掉时 getTracks().stop()。不录、不传、不存 */
-  cam:null,
-  /* 播放：rate 这一次的倍速（放完回 1）、onEnd 这一次放完做什么（「连着放」用）、slow 慢速按钮按下没 */
-  rate:1,onEnd:null,slow:false,
+  /* 镜子拿到的摄像头流：**只赋给 video.srcObject**，关掉时 getTracks().stop()。不录、不传、不存。
+     camSeq 是请求序号：getUserMedia 要等他点权限弹窗，这中间他可能已经关掉镜子、
+     走到第 2 步、或者又点了一下。流回来时序号对不上就**当场 stop 掉**，绝不留一个没人管的流亮着。 */
+  cam:null,camSeq:0,camWant:0,
+  /* 播放：rate 这一次的倍速（放完回 1）、onEnd 这一次放完做什么（「连着放」用）、slow 慢速按钮按下没。
+     chainT 是「连着放」中间那 0.3 秒的定时器——**必须存起来**，换组、换步、开考时要掐掉它。 */
+  rate:1,onEnd:null,slow:false,chainT:null,
   /* 他刚才那段录音：只在这个页面里（URL.createObjectURL），刷新就没了 */
   myUrl:'',myWord:'',mySay:''};
 var pq=function(i){return document.getElementById(i)};
@@ -376,7 +379,7 @@ function pUse(id){
   if(!z)return;
   PN.cur=z;PN.q=[];PN.i=0;PN.ok=0;PN.same=0;PN.bad=[];
   /* 换一组：上一组录的那段是**另一个词**，留着会误导 —— 当场丢掉（底线 3） */
-  pMyDrop();
+  pPlayReset();pMyDrop();
   PN.mo.side='a';
   pPick();pSound();pCmp();pSayWords();pLead();pStep(1);
   pAnimStop();
@@ -403,7 +406,17 @@ function pSound(){
     d.appendChild(ul);box.appendChild(d);
   });
   pText('pn-note1',PN.cur['听辨说明']||'');
-  pText('pn-s1-t','照着做：'+PN.cur['名字']+' 是用嘴型分开的，不是用耳朵猜的');
+  /* **这句不能写死**（2026-11-11 审查 🔴4）。原来对七组都说"是用嘴型分开的"，
+     可是 /f/ /v/、/n/ /l/ 的口型课件写的一模一样，/ʒ/ /dʒ/ 课件一句口型都没给——
+     对这三组它是**假的**，而且和同一屏下面那段"嘴外面看不出来"当场打架。
+     更糟的是他会照着这句去镜子里找一个**根本不存在**的嘴型差别。按这一组的实际情况说。 */
+  var tu0=PN.cur['口型图'];
+  var 没图=tu0&&!((tu0['a']&&(tu0['a']['画了']||[]).length)||(tu0['b']&&(tu0['b']['画了']||[]).length));
+  pText('pn-s1-t',
+    没图 ? ('先看清楚：课件没给 '+PN.cur['名字']+' 的口型 —— 这一组不是用嘴型分开的')
+    : (tu0&&tu0['画得出差别']===false)
+      ? ('先看清楚：'+PN.cur['名字']+' 的口型课件写的一样，不是用嘴型分开的 —— 下面说清楚差在哪')
+      : ('照着做：'+PN.cur['名字']+' 是用嘴型分开的，不是用耳朵猜的'));
 }
 
 /* ====================================================================
@@ -415,11 +428,17 @@ function pSound(){
    逐组实况（哪几组画得出、哪几组画不出）写在 src/pron-mouth.ts 的文件头。
    ==================================================================== */
 var PNS='http://www.w3.org/2000/svg';
-function pEl(tag,at,y,frame){
+function pEl(tag,at,y,frame,f,gv){
   var e=document.createElementNS(PNS,tag);
   for(var k in at)if(at[k]!=='')e.setAttribute(k,String(at[k]));
   if(y)e.setAttribute('data-y',y);          /* 依据：课件 mouth 里的那一条原文 */
   if(frame)e.setAttribute('data-frame','1');/* 图框，不是特征 */
+  /* data-f = 这一笔画的是哪个特征，data-g = **由这个特征决定的那个数**（审查 🟡5）。
+     光有 data-y 堵不住洞：嘴唇那一笔的 data-y 里本来就带着开口那条原文，
+     所以在嘴唇上凭空画一个差别，"依据里有 2cm"这条断言照样过。
+     有了 data-f + data-g，测试就能核"不该不一样的特征，两张图的数必须一样"。 */
+  if(f)e.setAttribute('data-f',f);
+  if(gv!==undefined&&gv!==null)e.setAttribute('data-g',String(gv));
   return e;
 }
 /* 这个音的某个可见特征是依据哪一条原文画的；没有这个特征就回空字符串 */
@@ -433,8 +452,8 @@ function pFront(sp,ph){
   var cx=56,cy=50;
   if(f['唇']==='上齿轻咬下唇'){
     /* /f/ /v/：课件只说了「上齿轻咬下唇」—— 画上齿搭在下唇上，**两个音逐笔一样**（差别在喉咙，看不出来） */
-    s.appendChild(pEl('path',{d:'M 12 62 Q 56 42 100 62 Q 56 82 12 62 Z',fill:'none',stroke:'currentColor','stroke-width':3},yL));
-    for(var i=0;i<4;i++)s.appendChild(pEl('rect',{x:26+i*15,y:50,width:12,height:12,rx:2,fill:'none',stroke:'currentColor','stroke-width':2},yL));
+    s.appendChild(pEl('path',{d:'M 12 62 Q 56 42 100 62 Q 56 82 12 62 Z',fill:'none',stroke:'currentColor','stroke-width':3},yL,0,'唇','咬唇'));
+    for(var i=0;i<4;i++)s.appendChild(pEl('rect',{x:26+i*15,y:50,width:12,height:12,rx:2,fill:'none',stroke:'currentColor','stroke-width':2},yL,0,'唇','咬唇'));
     return s;
   }
   /* 嘴角拉开多少：课件的三种说法（「扁平咧嘴」比「咧嘴」更扁更宽；「先张嘴后咧嘴」第 1 帧是张嘴、第 2 帧才咧开） */
@@ -447,21 +466,22 @@ function pFront(sp,ph){
   /* 嘴唇这一笔的依据有两条：横着拉多开看「咧嘴」那一条，竖着张多大跟着上下齿的开口走
      （嘴总得张到容得下那个齿缝）—— 所以 data-y 里**两条原文都写上**，测试按"至少有一条两边不一样"来核对 */
   s.appendChild(pEl('path',{d:'M '+(cx-hw)+' '+cy+' Q '+cx+' '+(cy-oh/2-bulge)+' '+(cx+hw)+' '+cy+' Q '+cx+' '+(cy+oh/2+bulge)+' '+(cx-hw)+' '+cy+' Z',
-    fill:'none',stroke:'currentColor','stroke-width':3},yO?(yL+' | '+yO):yL));
+    fill:'none',stroke:'currentColor','stroke-width':3},yO?(yL+' | '+yO):yL,0,'唇',hw+','+bulge));
   if(yO){
     /* 课件没给尺寸的（「微张」「张开」）画虚线：示意"开着一点"，**不代表任何厘米数**，说明里也写着 */
     var dash=f['有尺寸']?'':'5 4';
-    s.appendChild(pEl('rect',{x:cx-hw*0.55,y:cy-gap/2-9,width:hw*1.1,height:9,rx:2,fill:'none',stroke:'currentColor','stroke-width':2,'stroke-dasharray':dash},yO));
-    s.appendChild(pEl('rect',{x:cx-hw*0.55,y:cy+gap/2,width:hw*1.1,height:9,rx:2,fill:'none',stroke:'currentColor','stroke-width':2,'stroke-dasharray':dash},yO));
+    var gk=gap+'/'+(f['有尺寸']?'实':'虚');
+    s.appendChild(pEl('rect',{x:cx-hw*0.55,y:cy-gap/2-9,width:hw*1.1,height:9,rx:2,fill:'none',stroke:'currentColor','stroke-width':2,'stroke-dasharray':dash},yO,0,'开口',gk));
+    s.appendChild(pEl('rect',{x:cx-hw*0.55,y:cy+gap/2,width:hw*1.1,height:9,rx:2,fill:'none',stroke:'currentColor','stroke-width':2,'stroke-dasharray':dash},yO,0,'开口',gk));
     if(f['有尺寸']){
-      s.appendChild(pEl('line',{x1:108,y1:cy-gap/2,x2:108,y2:cy+gap/2,stroke:'currentColor','stroke-width':2},yO));
-      s.appendChild(pEl('line',{x1:103,y1:cy-gap/2,x2:113,y2:cy-gap/2,stroke:'currentColor','stroke-width':2},yO));
-      s.appendChild(pEl('line',{x1:103,y1:cy+gap/2,x2:113,y2:cy+gap/2,stroke:'currentColor','stroke-width':2},yO));
+      s.appendChild(pEl('line',{x1:108,y1:cy-gap/2,x2:108,y2:cy+gap/2,stroke:'currentColor','stroke-width':2},yO,0,'开口',gk));
+      s.appendChild(pEl('line',{x1:103,y1:cy-gap/2,x2:113,y2:cy-gap/2,stroke:'currentColor','stroke-width':2},yO,0,'开口',gk));
+      s.appendChild(pEl('line',{x1:103,y1:cy+gap/2,x2:113,y2:cy+gap/2,stroke:'currentColor','stroke-width':2},yO,0,'开口',gk));
     }
   }
   /* 食指参照：课件原文说「可容纳一根食指 / 两根食指」，所以 n 根手指正好填满这个开口 */
   var n=f['手指']||0;
-  for(var k=0;k<n;k++)s.appendChild(pEl('rect',{x:120,y:cy-gap/2+k*(gap/n),width:16,height:gap/n,rx:5,fill:'none',stroke:'currentColor','stroke-width':2},yF));
+  for(var k=0;k<n;k++)s.appendChild(pEl('rect',{x:120,y:cy-gap/2+k*(gap/n),width:16,height:gap/n,rx:5,fill:'none',stroke:'currentColor','stroke-width':2},yF,0,'手指',n));
   return s;
 }
 /* 剖面：只画舌头那一笔（课件给了舌位才画）。上下颚和牙是图框，两个音一样 */
@@ -476,7 +496,7 @@ function pSide(sp){
   var d=t['舌']==='平躺抵下齿'?'M 28 70 Q 30 62 44 61 L 104 62 Q 122 66 104 74 L 32 75 Z'
     :(t['舌']==='舌尖抵上齿龈'?'M 30 55 Q 29 40 40 37 Q 52 39 52 53 L 104 62 Q 122 66 104 74 L 32 75 Z'
     :'M 46 62 Q 38 44 56 38 Q 68 41 60 50 Q 53 56 58 64 L 104 62 Q 122 66 104 74 L 44 75 Z');
-  s.appendChild(pEl('path',{d:d,fill:'none',stroke:'currentColor','stroke-width':3},y));
+  s.appendChild(pEl('path',{d:d,fill:'none',stroke:'currentColor','stroke-width':3},y,0,'舌',t['舌']));
   return s;
 }
 /* 一个音一块：音标 + （画得出来的）图 + 「图上画的是哪几条原文」+「没画的是哪几条、为什么」 */
@@ -513,15 +533,19 @@ function pDrawAll(ph,lit){
      原来是写死在模板里的，于是 /f/ /v/、/ʒ/ /dʒ/ 这些课件压根没给开口尺寸的组，
      底下也照样挂着「上下齿距离 1cm（可容纳一根食指）」—— **那是第 1 组的原文串到了别人头上**，
      等于拿一条课件没说的话当这一组的做法，是底线 3 的事。 */
-  var fi=[];
+  var fi=[];var cn={1:'一',2:'两',3:'三'};
   ['a','b'].forEach(function(k){
     var f=tu[k]&&tu[k]['正面'];var n=f&&f['手指'];
     /* 两个音的根数可能不一样（第 1 组就是 1 根 vs 2 根），**两个都要说**，不许只留一个 */
-    if(n&&fi.indexOf(n)<0)fi.push(n);
+    if(n)fi.push({ipa:tu[k]['音标'],n:n});
   });
-  var cn={1:'一',2:'两',3:'三'};
+  /* **只有一个音有食指参照时，必须把音标带上**（审查 🟡7）：第 3 组课件只对 /æ/ 写了两根食指，
+     /aɪ/ 是"张开后慢慢闭合"、没给尺寸。光说"可容纳两根食指"会让他以为两个音都这么量。 */
   pText('pn-mouthhint',fi.length
-    ?'课件原文的口型定位。"可容纳'+fi.map(function(n){return cn[n]||n;}).join('根食指" / "')+'根食指"就是拿手指量 —— 对着镜子做一遍再往下走。'
+    ?('课件原文的口型定位。'+fi.map(function(x){
+        return (fi.length===1?(x.ipa+' 的'):'')+'"可容纳'+(cn[x.n]||x.n)+'根食指"';
+      }).join(' / ')+'就是拿手指量 —— 对着镜子做一遍再往下走。'
+      +(fi.length===1?'（另一个音课件没给厘米数，别拿手指量。）':''))
     :'课件没给这一组开口的厘米数，别拿手指量 —— 照着上面写的做一遍，再往下走。');
   pMirTarget();
 }
@@ -558,7 +582,18 @@ function pMirTarget(){
   var d=document.createElement('div');d.className='pn-mo mini';
   pMo(sp,0,d);
   pClear(box);box.appendChild(d);
+  /* **mini 把"依据"和"没画"用 CSS 藏起来了**（审查 🟡6）。于是第 7 组开镜子，
+     他脸旁边是一个写着"要做的口型：/ʒ/"的**空框**——那句"课件没给这个音的口型"恰好被藏掉了。
+     所以这里自己补一行，照实说。 */
+  if(!(sp['画了']||[]).length){
+    var e=document.createElement('p');e.className='pn-hint';e.style.margin='0';
+    e.textContent='课件没给这个音的口型，这里没有图可以照着做。';
+    box.appendChild(e);
+  }
   pText('pn-mircap','要做的口型：'+sp['音标']);
+  /* 两个音画出来一模一样时，「换另一个音的图」换出来的是**同一张图配另一个音标**，
+     等于暗示有差别——**那个按钮就不该在**（审查 🟡6）。 */
+  pShow('pn-mirswap',tu['画得出差别']!==false&&(sp['画了']||[]).length>0);
 }
 function pMirOff(){
   try{
@@ -566,19 +601,35 @@ function pMirOff(){
     if(PN.cam&&PN.cam.getTracks)PN.cam.getTracks().forEach(function(t){t.stop();});
   }catch(e){}
   PN.cam=null;
+  /* **撤销还在路上的那次请求**（审查 🔴2）：序号一往前走，流回来时就对不上，会被当场 stop 掉 */
+  PN.camWant=0;PN.camSeq++;
   var v=pq('pn-cam');if(v)try{v.srcObject=null;}catch(e){}
   pShow('pn-mirwrap',false);
   var b=pq('pn-mir');if(b){b.textContent='🪞 照镜子';b.setAttribute('aria-pressed','false');}
 }
+/* 按钮字样还原（「正在开摄像头……」这个中间态要收得回来） */
+function pMirReset(){var b=pq('pn-mir');if(b){b.textContent='🪞 照镜子';b.setAttribute('aria-pressed','false');}}
+/* 一个流到了，但已经没人要它了：**立刻掐掉**，绝不留着亮指示灯 */
+function pCamDrop(stream){try{stream.getTracks().forEach(function(t){t.stop();});}catch(e){}}
 function pMirOn(){
   if(PN.cam){pMirOff();return;}
+  /* 已经在等权限弹窗了，再点一下不许再发一个请求（审查 🔴2 复现 C：
+     手机上第一次要等弹窗，连点两下就会开出**两个流**，而 PN.cam 只记得住后一个，
+     前一个永远没人 stop ——「关掉镜子」按下去指示灯也不灭） */
+  if(PN.camWant)return;
   var md=navigator.mediaDevices;
   if(!md||!md.getUserMedia){
     pMirMsg('这个浏览器用不了摄像头，镜子打不开。\\n怎么办：换 Chrome / Safari 的新版本再试；上面的口型图、对照听和考题照常能用。');
     return;
   }
   var m=pq('pn-mirmsg');if(m)m.hidden=true;
+  var seq=++PN.camSeq;PN.camWant=seq;
+  var b0=pq('pn-mir');if(b0)b0.textContent='🪞 正在开摄像头……';
   md.getUserMedia({video:{facingMode:'user'},audio:false}).then(function(stream){
+    /* 等权限的这段时间里他可能已经关掉镜子、走到第 2 步、或者整个切走了。
+       **这三种情况一律把流掐掉**，不显示、不保留（审查 🔴2 复现 A / B）。 */
+    if(seq!==PN.camSeq||PN.camWant!==seq||PN.step!==1){PN.camWant=0;pCamDrop(stream);pMirReset();return;}
+    PN.camWant=0;
     PN.cam=stream;
     var v=pq('pn-cam');
     if(v)try{v.srcObject=stream;}catch(e){}
@@ -586,6 +637,7 @@ function pMirOn(){
     pMirTarget();
     var b=pq('pn-mir');if(b){b.textContent='🪞 镜子开着';b.setAttribute('aria-pressed','true');}
   },function(e){
+    PN.camWant=0;pMirReset();
     /* 没给权限 / 没有摄像头：当面说清楚，**整屏其余部分照常能用** */
     pMirMsg('没拿到摄像头权限（'+(e&&e.name||e)+'），镜子用不了。\\n怎么办：在浏览器地址栏左边的图标里允许摄像头，再按一次「🪞 照镜子」。不给也没关系 —— 口型图、对照听和考题照常能用。');
   });
@@ -595,6 +647,17 @@ function pMirOn(){
 /* 这一次用什么倍速：慢速按钮按下去就是 0.7 倍（标准音和他的录音都慢） */
 function pRate(){return PN.slow?0.7:1;}
 function pSetNext(rate,onEnd){PN.rate=rate||1;PN.onEnd=onEnd||null;}
+/* **把"这一次播放"的意图清空**（2026-11-11 审查 🔴3）。
+   pSetNext() 把倍速和"放完做什么"写进 PN，由下一次 pPlay() 取走。可是 pAudio() 有两条路**根本走不到 pPlay**：
+   这个词正在生成（auBusy 早退）、或者取发音失败。那 0.7 倍和那个回调就**留在枪膛里**，
+   被后面某一次毫不相干的播放打出去——**考题会被 0.7 倍慢放，他自己录的那个词会在考题上面再响一遍**，
+   然后揭晓时页面说"刚才放的是 leather"。那是当面给他一个和事实不符的交代（底线 3）。
+   所以换组、换步、开考之前一律清空，连「连着放」那 0.3 秒的定时器也掐掉。 */
+function pPlayReset(){
+  PN.rate=1;PN.onEnd=null;
+  if(PN.chainT){clearTimeout(PN.chainT);PN.chainT=null;}
+  if(PN.player)PN.player.onended=null;
+}
 function pMyShow(){
   pShow('pn-my',!!PN.myUrl);
   if(PN.myUrl)pText('pn-my-t','挨着听：标准音和你刚才念的「'+PN.mySay+'」');
@@ -608,7 +671,18 @@ function pMySlow(){
 /* 连着放：标准音 → 停 0.3 秒 → 他的录音。对比效果最好的那一个形式 */
 function pMyChain(){
   if(!PN.myWord||!PN.myUrl)return;
-  pSetNext(pRate(),function(){setTimeout(function(){pSetNext(pRate(),null);pPlay(PN.myUrl,'pn-msg');},300);});
+  pPlayReset();
+  pSetNext(pRate(),function(){
+    PN.chainT=setTimeout(function(){
+      PN.chainT=null;
+      /* 这 0.3 秒里他可能已经换组了（pMyDrop() 会 revoke 掉这个 url）。
+         不再确认一次就 pPlay('')，play() 会以 NotSupportedError 被拒，
+         于是当面蹦出一个「浏览器把这次播放挡住了」的**假错误**——
+         和 11/11 刚修掉的 AbortError 是同一类毛病（审查 🟡8）。 */
+      if(!PN.myUrl)return;
+      pSetNext(pRate(),null);pPlay(PN.myUrl,'pn-msg');
+    },300);
+  });
   pAudio(PN.myWord,'pn-msg');
 }
 
@@ -744,6 +818,8 @@ function pCoin(){return Math.random()<0.5?'a':'b';}
 function pOther(x){return x==='a'?'b':'a';}
 function pRound(){
   if(!PN.cur||!PN.cur['能听辨'])return;
+  /* 开考：把第 2 步留下的倍速和「连着放」的尾巴掐干净，**考题只能原速、只能放考题那个词**（审查 🔴3） */
+  pPlayReset();
   var minimal=(PN.cur['对']||[]).filter(function(p){return p['最小对立对']});
   if(!minimal.length)return;
   /* 不够 10 对就重复抽（页面上已经照实说过"同一对会考到好几次"）；放哪个词、左右位置都随机 */
@@ -846,6 +922,8 @@ function pDone(){
 /* ---- 四步之间切换 ---- */
 function pStep(n){
   PN.step=n;
+  /* 换一步就把上一步没打出去的播放意图清掉（审查 🔴3） */
+  pPlayReset();
   /* 离开第 1 步：**镜子一定关掉**（track.stop()，指示灯灭），切换动画也停掉，不在后台空转 */
   if(n!==1){pMirOff();if(PN.mo.on)pAnimStop();}
   pShow('pn-s1',n===1);pShow('pn-s2',n===2);pShow('pn-s3',n===3);pShow('pn-s4',n===4);
@@ -898,6 +976,21 @@ var ym=pq('pn-mine');if(ym)ym.addEventListener('click',pMyMine);
 var yw=pq('pn-slow');if(yw)yw.addEventListener('click',pMySlow);
 var yc=pq('pn-chain');if(yc)yc.addEventListener('click',pMyChain);
 window.pronOpen=function(){if(PN.loaded)return;PN.loaded=true;pLoad();};
+/* **离开这一块时必须叫一次**（2026-11-11 审查 🔴1）。
+   admin-page.ts 的 route() 切走一级菜单时只把 #v-work 藏起来，
+   **不会通知这一块**——于是他点完「照镜子」随手切到「基金观察」，
+   手机上的摄像头指示灯一直亮着，页面上却什么都看不见；450ms 的切换动画也在后台空转。
+   页面上那句「关掉镜子，摄像头指示灯就灭」必须是真的，所以切走 = 关掉。 */
+window.pronStop=function(){
+  if(!PN.loaded)return;
+  pMirOff();if(PN.mo.on)pAnimStop();
+  pPlayReset();
+  try{if(PN.player)PN.player.pause();}catch(e){}
+};
+/* 切到别的标签页 / 锁屏 / 最小化：同样关掉（兜底，route() 管不到这些） */
+try{document.addEventListener('visibilitychange',function(){
+  if(document.hidden&&window.pronStop)window.pronStop();
+});}catch(e){}
 }catch(e){}
 })();
 `;

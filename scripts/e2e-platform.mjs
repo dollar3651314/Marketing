@@ -1383,6 +1383,7 @@ try {
         n: 块.length,
         pos: 块.map(box),
         笔: 块.map((d) => [...d.querySelectorAll('svg *')].map((e) => ({ y: e.getAttribute('data-y'), frame: e.getAttribute('data-frame'),
+          f: e.getAttribute('data-f'), g: e.getAttribute('data-g'),
           k: e.tagName + ' ' + [...e.attributes].filter((a) => a.name !== 'data-y').map((a) => a.name + '=' + a.value).sort().join(' ') }))),
         svg: 块.map((d) => d.querySelectorAll('svg').length),
         note: (document.getElementById('pn-drawnote') || {}).textContent || '',
@@ -1403,6 +1404,23 @@ try {
     const 不同笔 = [...只在(DR.笔[0], DR.笔[1]), ...只在(DR.笔[1], DR.笔[0])];
     check(`${tg}：第 1 组两张图**只有上下齿那几笔不一样**（嘴型、舌位课件写的一样 → 画成一样）`,
       不同笔.length > 0 && 不同笔.every((e) => /1cm|2cm/.test(e.y || '')), 不同笔.map((e) => e.y).slice(0, 6));
+    // **光比依据原文是不够的**（2026-11-11 审查 🟡5）：嘴唇那一笔的 data-y 里本来就带着开口那条原文，
+    // 所以在嘴唇上凭空画一个课件没说的差别，上面那条照样过（反例实测：把 /æ/ 的嘴角从 44 画到 64 → 全绿）。
+    // 按特征核：接口的「差别特征」说哪几个该不一样，**不在那张表里的特征，两张图的 data-g 必须一样**。
+    const 该不一样 = new Set(G1['口型图']['差别特征'] || []);
+    const 按特征 = (i) => {
+      const m = {};
+      for (const e of DR.笔[i]) { if (!e.f) continue; (m[e.f] = m[e.f] || []).push(e.g || ''); }
+      for (const k of Object.keys(m)) m[k] = [...new Set(m[k])].sort();
+      return m;
+    };
+    const FA = 按特征(0), FB = 按特征(1);
+    const 不该不一样的却不一样 = [...new Set([...Object.keys(FA), ...Object.keys(FB)])]
+      .filter((f) => !该不一样.has(f) && !(f === '手指' && 该不一样.has('开口')))
+      .filter((f) => JSON.stringify(FA[f] || null) !== JSON.stringify(FB[f] || null))
+      .map((f) => [f, FA[f] || null, FB[f] || null]);
+    check(`${tg}：**不该不一样的特征，两张图画出来的数必须一样**（光比依据原文堵不住凭空画的差别）`,
+      不该不一样的却不一样.length === 0, 不该不一样的却不一样);
     check(`${tg}：图下面照实写明依据和食指参照（"可容纳一根食指 / 两根食指"是能拿手指量的）`,
       DR.note.includes('可容纳一根食指') && DR.note.includes('可容纳两根食指') && DR.note.includes('画成一模一样'), DR.note.slice(0, 80));
 

@@ -83,6 +83,14 @@ export interface MouthPair {
   画得出差别: boolean;
   /** 画面上哪几处不一样（逐条带两边的课件原文） */
   差别: string[];
+  /**
+   * 同一件事的**机器版**：哪几个特征该不一样（审查 🟡5）。
+   * 为什么要这个字段：原来测试只能去 `差别` 那句中文里找"1cm / 2cm"这种子串，
+   * 而嘴唇那一笔的 data-y 本来就带着开口那条原文，**于是在嘴唇上凭空画一个差别也能蒙混过关**
+   * （反例实测：把 /æ/ 的嘴角从 44 画到 64 —— 课件对两个音都只写「咧嘴」—— 89 条测试和 e2e 全绿）。
+   * 有了这个字段，测试就能按特征逐个核：**不在这张表里的特征，两张图必须一模一样**。
+   */
+  差别特征: 特征名[];
   /** 哪几处课件写的一样 → 必须画成一样（原文） */
   一样的: string[];
   /** 舌头那张是剖面（在嘴里面，镜子里看不到） */
@@ -199,6 +207,7 @@ export function mouthPair(g: PronGroup): MouthPair {
   const b = mouthSpec(g.b);
   const keys: 特征名[] = ['唇', '开口', '手指', '舌'];
   const 差别: string[] = [];
+  const 差别特征: 特征名[] = [];
   const 一样的: string[] = [];
   for (const k of keys) {
     const fa = 取(a, k);
@@ -210,6 +219,7 @@ export function mouthPair(g: PronGroup): MouthPair {
       continue;
     }
     if (k === '手指') continue;
+    差别特征.push(k);
     差别.push(`${特征说法[k]}：${g.a.ipa} 是「${fa ? fa.依据 : '课件没说'}」，${g.b.ipa} 是「${fb ? fb.依据 : '课件没说'}」`);
   }
   const 有剖面 = !!(a.剖面 || b.剖面);
@@ -256,5 +266,5 @@ export function mouthPair(g: PronGroup): MouthPair {
       ? `用手摸喉咙：振动的是 ${振动的那个}。`
       : `${两边都有.some((x) => x.类 === '振动') ? '两个都振动声带，摸喉咙也分不出来' : '摸喉咙也分不出来'} —— 课件说的差别是气流走哪里，没有任何外部动作看得见。`;
   }
-  return { a, b, 画得出差别, 差别, 一样的: [...new Set(一样的)], 有剖面, 摸喉咙, 说明 };
+  return { a, b, 画得出差别, 差别, 差别特征, 一样的: [...new Set(一样的)], 有剖面, 摸喉咙, 说明 };
 }

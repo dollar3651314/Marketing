@@ -851,7 +851,7 @@ describe('10. 口型图的依据：画面上每一处差别都指回 src/pron-co
 // 页面脚本（src/pron-page.ts 的 PRON_JS）在 jsdom 里**真的跑一遍**（写法照 test/funds-impl.test.ts）：
 // 口型图是不是照着依据画的、镜子有没有把画面送出去、录音回放的顺序对不对，这几件事光比字符串证明不了。
 // ----------------------------------------------------------------------
-type PWin = Window & typeof globalThis & { pronOpen(): void; eval(s: string): unknown };
+type PWin = Window & typeof globalThis & { pronOpen(): void; pronStop?(): void; eval(s: string): unknown };
 /** 一台假的摄像头 / 麦克风：轨道被 stop() 过没有，测试直接数 */
 const fakeStream = () => {
   const t = { stopped: 0, stop() { t.stopped++; }, kind: 'video' };
@@ -861,7 +861,7 @@ const fakeStream = () => {
  * 开一个只有 #w-pron 的 jsdom 页面，跑真的 PRON_JS。
  * 网络一律走替身并**逐条记下来**（镜子那一段要证明"一次都没往外发"）。
  */
-async function pronPage(opt: { cam?: 'ok' | 'deny' | 'none'; } = {}) {
+async function pronPage(opt: { cam?: 'ok' | 'deny' | 'none'; camDelay?: number } = {}) {
   const jsdomName = 'jsdom';
   const { JSDOM } = await import(jsdomName);
   const dom = new JSDOM(`<!doctype html><body><main id="app">${PRON_MOD}</main></body>`, { runScripts: 'outside-only', pretendToBeVisual: true });
@@ -901,6 +901,9 @@ async function pronPage(opt: { cam?: 'ok' | 'deny' | 'none'; } = {}) {
       configurable: true,
       value: {
         getUserMedia: async (c: { video?: unknown }) => {
+          // camDelay 模拟**真机上等权限弹窗那一段**：流不是立刻就回来的，
+          // 这中间他可能已经关掉镜子、走到第 2 步、或者又点了一下（审查 🔴2）
+          if (opt.camDelay && c.video) await new Promise((ok) => setTimeout(ok, opt.camDelay));
           if (opt.cam === 'deny' && c.video) { const e = new Error('denied'); e.name = 'NotAllowedError'; throw e; }
           const s = fakeStream(); cams.push(s); return s;
         },
@@ -1016,6 +1019,58 @@ describe('11. 页面照着依据画：课件没说的一笔都不画（jsdom 里
     } finally { await p.close(); }
   });
 
+  it('**不该不一样的特征，两张图的数必须一样**（光比 data-y 挡不住凭空画的差别 —— 审查 🟡5）', async () => {
+    const p = await pronPage();
+    try {
+      for (const g of GROUPS) {
+        p.useGroup(`${g.a.ipa} vs ${g.b.ipa}`);
+        await p.until(() => p.$('pn-draw').querySelectorAll('.pn-mo').length === 2);
+        const 该不一样 = new Set(mouthPair(g).差别特征 as string[]);
+        // 每个特征：这一笔画出来的那个数（data-g）在两张图里各是什么
+        const 数 = (i: number) => {
+          const d = [...p.w.document.querySelectorAll('#pn-draw .pn-mo')][i];
+          const m: Record<string, string[]> = {};
+          for (const e of [...d.querySelectorAll('svg *')]) {
+            const f = e.getAttribute('data-f'); if (!f) continue;
+            (m[f] ??= []).push(e.getAttribute('data-g') ?? '');
+          }
+          for (const k of Object.keys(m)) m[k] = [...new Set(m[k])].sort();
+          return m;
+        };
+        const A = 数(0), B = 数(1);
+        for (const f of new Set([...Object.keys(A), ...Object.keys(B)])) {
+          if (该不一样.has(f)) continue;
+          // 手指参照是跟着开口走的，开口算一处差别时它也跟着变
+          if (f === '手指' && 该不一样.has('开口')) continue;
+          expect([g.id, f, A[f] ?? null]).toEqual([g.id, f, B[f] ?? null]);
+        }
+        // 反过来：声明该不一样的特征，画出来**真的**不一样（不能声明了却画成一样）
+        for (const f of 该不一样) expect([g.id, f, JSON.stringify(A[f] ?? null)]).not.toEqual([g.id, f, JSON.stringify(B[f] ?? null)]);
+      }
+    } finally { await p.close(); }
+  });
+
+  it('第 1 步的标题不许写死：课件口型写的一样的组，不许说"是用嘴型分开的"（审查 🔴4）', async () => {
+    const p = await pronPage();
+    try {
+      for (const g of GROUPS) {
+        p.useGroup(`${g.a.ipa} vs ${g.b.ipa}`);
+        await p.until(() => p.$('pn-s1-t').textContent!.includes(g.a.ipa));
+        const t = p.$('pn-s1-t').textContent!;
+        if (mouthPair(g).画得出差别) expect([g.id, /是用嘴型分开的/.test(t)]).toEqual([g.id, true]);
+        else {
+          // 画不出差别的组：标题必须自己说清楚，而且不能和下面那段说明打架
+          expect([g.id, t]).toEqual([g.id, expect.stringContaining('不是用嘴型分开的')]);
+          // 两种画不出：一种是两个音画出来一样（g4/g6），一种是课件压根没给口型（g7）。
+          // 标题得分清楚，别拿"写的一样"去说一个课件根本没写的东西。
+          const 有图 = mouthSpec(g.a).画了.length + mouthSpec(g.b).画了.length > 0;
+          expect([g.id, t]).toEqual([g.id, expect.stringContaining(有图 ? '口型课件写的一样' : '课件没给')]);
+          expect([g.id, p.$('pn-drawnote').textContent]).toEqual([g.id, expect.stringContaining(有图 ? '一模一样' : '一张图都不画')]);
+        }
+      }
+    } finally { await p.close(); }
+  });
+
   it('第 7 组：一张图都不画，面板上照实说"课件没给这个音的口型"', async () => {
     const p = await pronPage();
     try {
@@ -1114,6 +1169,133 @@ describe('12. 照镜子：画面不上传、不保存、不录；关掉时摄像
         expect([cam, p.w.document.querySelectorAll('#pn-cmp .pn-pair button').length]).toEqual([cam, 8]);
       } finally { await p.close(); }
     }
+  });
+});
+
+describe('16. 后台页面那几段脚本必须是**能跑的纯 JS**（TypeScript 语法不许漏进去）', () => {
+  // 2026-11-11 真踩过：往 admin-page.ts 的 route() 里加了一行 `(window as any).pronStop()`。
+  // 那一段是**模板字符串装的纯 JS**，tsc 不看字符串里面，于是 `as any` 原样进了浏览器，
+  // **整个后台脚本当场崩**——登录框都填不进去，e2e 跑了十分钟才暴露。这条测试 10 毫秒就逮住。
+  it('ADMIN_PAGE 里每一段 <script> 都能被解析', () => {
+    const m = [...ADMIN_PAGE.matchAll(/<script>([\s\S]*?)<\/script>/g)];
+    expect(m.length).toBeGreaterThan(0);
+    m.forEach((x, i) => {
+      expect([i, (() => { try { new Function(x[1]); return ''; } catch (e) { return (e as Error).message; } })()]).toEqual([i, '']);
+    });
+  });
+  it('PRON_JS 本身能被解析', () => {
+    expect([(() => { try { new Function(PRON_JS); return ''; } catch (e) { return (e as Error).message; } })()]).toEqual(['']);
+  });
+});
+
+describe('14. 摄像头的三道竞态和一条出口（审查 🔴1、🔴2：指示灯必须真的灭）', () => {
+  const 睡 = (ms: number) => new Promise((ok) => setTimeout(ok, ms));
+
+  it('还在等权限弹窗时他按了「关掉镜子」：流一回来就当场掐掉，**不许自己又开起来**', async () => {
+    const p = await pronPage({ cam: 'ok', camDelay: 60 });
+    try {
+      p.click('pn-mir');            // 开（流 60ms 后才回）
+      await 睡(10);
+      p.click('pn-miroff');         // 他反悔了
+      await 睡(140);                // 等流回来
+      expect(p.cams.map((c) => c.track.stopped)).toEqual(p.cams.map(() => 1));
+      expect(p.$('pn-mirwrap').hidden).toBe(true);
+      expect((p.$('pn-mir') as HTMLButtonElement).getAttribute('aria-pressed')).toBe('false');
+      expect((p.w.document.getElementById('pn-cam') as HTMLVideoElement).srcObject ?? null).toBe(null);
+    } finally { await p.close(); }
+  });
+
+  it('还在等权限弹窗时他走到第 2 步：流一回来就掐掉，不许在看不见的 DOM 里亮着', async () => {
+    const p = await pronPage({ cam: 'ok', camDelay: 60 });
+    try {
+      p.click('pn-mir');
+      await 睡(10);
+      p.click('pn-go2');            // 去对照听
+      await 睡(140);
+      expect(p.cams.map((c) => c.track.stopped)).toEqual(p.cams.map(() => 1));
+      expect(p.$('pn-s1').hidden).toBe(true);
+      expect(p.$('pn-mirwrap').hidden).toBe(true);
+    } finally { await p.close(); }
+  });
+
+  it('连点两下「照镜子」（手机上等弹窗时很常见）：**只开一个流**，关掉后它真的停了', async () => {
+    const p = await pronPage({ cam: 'ok', camDelay: 60 });
+    try {
+      p.click('pn-mir'); p.click('pn-mir');
+      await 睡(140);
+      expect(p.cams.length).toBe(1);
+      p.click('pn-miroff');
+      expect(p.cams.map((c) => c.track.stopped)).toEqual([1]);
+    } finally { await p.close(); }
+  });
+
+  it('切到别的一级菜单（route() 调 window.pronStop）：摄像头关掉、切换动画停掉', async () => {
+    const p = await pronPage({ cam: 'ok' });
+    try {
+      p.click('pn-mir'); p.click('pn-anim');
+      await p.until(() => p.cams.length === 1 && !p.$('pn-mirwrap').hidden);
+      expect(typeof p.w.pronStop).toBe('function');
+      p.w.pronStop!();
+      expect(p.cams[0].track.stopped).toBe(1);
+      expect(p.$('pn-mirwrap').hidden).toBe(true);
+      // 动画也停了：等两拍（450ms × 2）高亮不再变
+      const 高亮 = () => [...p.w.document.querySelectorAll('#pn-draw .pn-mo')].map((d) => d.className).join('|');
+      const a = 高亮(); await 睡(1000);
+      expect(高亮()).toBe(a);
+    } finally { await p.close(); }
+  });
+
+  it('页面被藏起来（切标签页 / 锁屏）也关掉：visibilitychange 兜底', async () => {
+    const p = await pronPage({ cam: 'ok' });
+    try {
+      p.click('pn-mir');
+      await p.until(() => p.cams.length === 1 && !p.$('pn-mirwrap').hidden);
+      Object.defineProperty(p.w.document, 'hidden', { configurable: true, value: true });
+      p.w.document.dispatchEvent(new p.w.Event('visibilitychange'));
+      expect(p.cams[0].track.stopped).toBe(1);
+    } finally { await p.close(); }
+  });
+});
+
+describe('15. 播放的倍速和"放完做什么"不许漏到下一次（审查 🔴3）', () => {
+  const 睡 = (ms: number) => new Promise((ok) => setTimeout(ok, ms));
+
+  it('「连着放」的尾巴不许落到考题上：第 3 步只放考题那个词、只用原速', async () => {
+    const p = await pronPage();
+    try {
+      p.click('pn-go2');
+      await p.until(() => !p.$('pn-s2').hidden);
+      const 录 = [...p.w.document.querySelectorAll('#pn-saywords .btn')][0] as HTMLButtonElement;
+      录.click(); await 睡(5); 录.click();
+      await p.until(() => !p.$('pn-my').hidden);
+      p.click('pn-slow');                       // 慢速开着
+      p.click('pn-chain');                      // 连着放：标准音 → 停 0.3 秒 → 他的录音
+      const n0 = p.plays.length;
+      p.click('pn-go3');                        // **在那 0.3 秒里就开考**
+      await p.until(() => !p.$('pn-s3').hidden);
+      await 睡(500);                            // 等那个 300ms 的定时器本来该响的时候过去
+      const 之后 = p.plays.slice(n0);
+      // 他自己录的那一段绝不许在考题里再响一遍
+      expect(之后.filter((x) => x.src === 'blob:fake-1' || /fake/.test(x.src) === false).map((x) => x.src)).toEqual([]);
+      // 考题一律原速
+      expect(之后.map((x) => x.rate)).toEqual(之后.map(() => 1));
+    } finally { await p.close(); }
+  });
+
+  it('发音没取回来（页面当正常情况处理）也不许把 0.7 倍留在枪膛里', async () => {
+    const p = await pronPage();
+    try {
+      p.click('pn-go2');
+      await p.until(() => !p.$('pn-s2').hidden);
+      p.click('pn-slow');
+      // 没录过音时「连着放」不该做任何事，更不该把 rate 留下
+      p.click('pn-chain');
+      p.click('pn-slow');                        // 关掉慢速
+      p.click('pn-go3');
+      await p.until(() => !p.$('pn-s3').hidden);
+      await 睡(500);
+      expect(p.plays.map((x) => x.rate)).toEqual(p.plays.map(() => 1));
+    } finally { await p.close(); }
   });
 });
 
