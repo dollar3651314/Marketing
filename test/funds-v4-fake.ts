@@ -167,13 +167,14 @@ export function leakOf(text: string, token: string, min = 6): string | null {
 }
 
 /**
- * 跑 fn 时把"同一来源两个请求之间隔 ≥ 2 秒"那种等待变成虚拟时间：setTimeout 的延时在 [lo, hi] 毫秒之间的，立刻触发，同时让 Date.now 往前跳同样多
+ * 跑 fn 时把"同一来源两个请求之间隔 ≥ 5 秒"（原来 2 秒）那种等待变成虚拟时间：setTimeout 的延时在 [lo, hi] 毫秒之间的，立刻触发，同时让 Date.now 往前跳同样多
  * （被测代码看到的时间照样过去了那么久，等待的逻辑一点没少；测试不用真等约 20 秒）。只在 fn 运行期间生效；8 秒超时、undici 内部计时（< 1.5 秒）不受影响。
  * 回 fn 的结果；clock() 是虚拟的"现在"，替身 fetch 用它记每个请求的时间，好量间隔。
  */
 let skew = 0;
 export const clock = () => Date.now();
-export async function virtualGaps<T>(fn: () => Promise<T>, lo = 1500, hi = 2000): Promise<T> {
+// 估值取数修复（2026-11-11）：同一来源间隔从 2 秒改成 ≥ 5 秒，默认上限从 2000 放到 6000（8 秒超时等 > 6 秒的计时器照旧真计时）
+export async function virtualGaps<T>(fn: () => Promise<T>, lo = 1500, hi = 6000): Promise<T> {
   const realST = globalThis.setTimeout;
   const realNow = Date.now.bind(Date);
   const spy = vi.spyOn(Date, 'now').mockImplementation(() => realNow() + skew);
