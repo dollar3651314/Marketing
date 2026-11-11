@@ -48,6 +48,9 @@
  *      中国 ETF 详情来源写"不是场内成交价"；Z2 可能区间展开后滚到底点"收起"，按钮在吸顶栏下方可见、子菜单 aria-current 仍是"可能区间"（1200、400）。
  *   Y. 中国场内 ETF（510300）展开详情，"来源"写东方财富净值（"东方财富净值"或"东方财富累计净值"都认），不写 Yahoo。接口一侧（不请求 Yahoo / iShares / BlackRock、增量取）在 test/funds-v3-sources.test.ts。
  *   测试用例修正 4（第三版）：V1 / V2 原来断言可能区间"全部时 45 行"，第三版默认折叠到 10 行，改成先点"展开其余 N 只"再数（不改判定口径）。
+ *   第四版 ② 估值（Amos 2026-11-11「都按建议」；页面约定见 VA 段开头；接口一侧在 test/funds-v4-valuation.test.ts）：
+ *   VA. 1200 浅色："估值：现在贵不贵"6 张卡（data-val-code）、数值和判词（< 30 / 30～70 / > 70）、"不是预测、不是投资建议"、来源"中证指数有限公司、Robert Shiller"、
+ *       子菜单"估值"点了定位 / 滚动高亮、切"美国"只剩标普500、"中国"5 张、"新加坡"只剩标普500（含 XUS；主会话规格更正，依据原型 v3）、对比度；VB. 判词分界；VC. 400 深色不横向溢出、对比度。
  *   全程没有页面脚本报错（pageerror）。
  *
  * 页面约定（研发照加；要改名就在同一个提交里改这里并写明）：
@@ -959,6 +962,147 @@ if (!PROTO) {
     check('X refreshYields 整体失败（failed 里 code 为 "*"）：页面上不出现"（*）"，也没有多出 "*"', !m && stars(t1) <= stars(t0), { hit: m && m[0], before: stars(t0), after: stars(t1) });
     await ctx.close();
   });
+  // ================================================================ 第四版 ② 估值"现在贵不贵"（Amos 2026-11-11「都按建议」；测试先写，C154）
+  // 依据：原型《基金观察原型-v3.html》#valuation（主会话 scratchpad，未进仓库）；数据 test/fixtures/funds/valuation/val-ref.json（调研 2026-11-11 实抓算的标准答案）。
+  // 页面约定（研发照加；要改名就在同一个提交里改这里并写明）：
+  //   数据：GET /api/funds 顶层 valuation = { items: ValItem[] }，或单独 GET /api/funds/valuation 回 { items }（字段见 test/funds-v4-valuation.test.ts 文件头）；本段两种都给替身。
+  //   板块：标题（heading）含"估值：现在贵不贵"；每个指数一张卡，带 data-val-code="<code>"（000300 / 000016 / 000905 / 000015 / 000922 / SPX）。
+  //   卡里：名字、当前值（pe_now）、10 年分位（四舍五入到整数 + "%"）、中位 / 最低 / 最高、股息率、两种预期年化（1 位或 2 位小数）；
+  //     判词按分位：< 30 写"便宜"（不写"贵"），30～70（含两端）写"中间"（不写"便宜"、不写"比过去贵"），> 70 写"贵"（不写"便宜"）。
+  //   板块里写"不是预测"、"不是投资建议"；来源写"中证指数有限公司"、"Robert Shiller"。
+  //   子菜单多一项"估值"（data-target / href / aria-controls 指到这个板块）：点了滚到板块；滚到板块时高亮它。
+  //   市场切换：全部 6 张；"美国"只有 SPX；"中国"只有 5 张 A 股；"新加坡"只有 SPX 这 1 张、卡上基金列表含 XUS（XUS 在新加坡上市、跟踪标普500）。
+  //     （主会话规格更正，依据 Amos 审过的原型 v3：原派工单写的"新加坡显示说明无卡"是主会话写错了）
+  //   400 宽不横向溢出；1200 浅色、400 深色对比度 ≥ 4.5；全程无 pageerror。
+  // VA. 1200 浅色：以上全部；VB. 判词分界（替身把分位改成 29.2 / 30 / 70 / 70.8）；VC. 400 深色：6 张、不横向溢出、对比度、市场切换。
+  const VREF = JSON.parse(readFileSync(path.join(ROOT, 'test/fixtures/funds/valuation/val-ref.json'), 'utf8'));
+  const VCN = ['000300', '000016', '000905', '000015', '000922'];
+  const VALL = [...VCN, 'SPX'];
+  const snapV = (items) => ({ ...SNAP2, valuation: { items, fetched_at: '2026-11-11T03:00:00.000Z' } });
+  /** 打开带估值数据的页面：GET /api/funds 带 valuation；GET /api/funds/valuation 回同一份；POST /api/funds/valuation/refresh 回空结果 */
+  async function openV(opts, items = VREF.items) {
+    const o = await open({ ...opts, snap: snapV(items) });
+    await o.ctx.route(/\/api\/funds\/valuation(\/refresh)?(\?.*)?$/, async (r) => {
+      if (r.request().method() === 'GET') return r.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ items, fetched_at: '2026-11-11T03:00:00.000Z' }) });
+      return r.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ next: null, updated: [], failed: [] }) });
+    });
+    return o;
+  }
+  /** 估值板块：标题"估值：现在贵不贵"所在的 section（或 [id] 祖先），打上 data-qa-val */
+  const markVal = (page) => page.evaluate((R) => {
+    document.querySelectorAll('[data-qa-val]').forEach((x) => x.removeAttribute('data-qa-val'));
+    const root = document.querySelector(R);
+    const h = root && [...root.querySelectorAll('h1,h2,h3,h4,[role="heading"]')].find((e) => /估值[：:]\s*现在贵不贵/.test(e.textContent || ''));
+    if (!h) return null;
+    const sec = h.closest('section') || h.closest('[id]') || h.parentElement;
+    sec.setAttribute('data-qa-val', '');
+    return { id: sec.id, visible: !!sec.getClientRects().length && !!h.getClientRects().length };
+  }, R);
+  const valCards = (page) => page.locator(`${R} [data-val-code]`).filter({ visible: true });
+  const valCodes = (page) => valCards(page).evaluateAll((es) => es.map((e) => e.getAttribute('data-val-code')));
+  const cardText = async (page, c) => (await page.locator(`${R} [data-val-code="${c}"]`).first().innerText({ timeout: 1500 }).catch(() => '')).replace(/\s+/g, ' ');
+  const numIn = (t, v) => [v.toFixed(2), v.toFixed(1), String(v)].some((s) => new RegExp(`(^|[^\\d.])${s.replace('.', '\\.')}(?![\\d])`).test(t));
+  const verdictOk = (t, pct) => (pct < 30 ? /便宜/.test(t) && !/贵/.test(t) : pct > 70 ? /贵/.test(t) && !/便宜/.test(t) : /中间/.test(t) && !/便宜/.test(t) && !/比过去贵/.test(t));
+  async function pickMarket(page, m) {
+    await tabOf(page, m).first().click();
+    await page.waitForTimeout(250);
+  }
+  /** 子菜单里文字是"估值"的那一项的下标 */
+  const valSubIdx = (page) => page.evaluate(() => [...document.querySelectorAll('[data-qa-subnav] [data-qa-i]')].findIndex((a) => /估值/.test((a.textContent || '').trim())));
+
+  await section('VA 估值 1200 浅色', async () => {
+    const { page, ctx } = await openV({ width: 1200, height: 900 });
+    await enter(page);
+    await page.locator(`${R} [data-val-code]`).first().waitFor({ state: 'attached', timeout: WAIT }).catch(() => {});
+    const mv = await markVal(page);
+    check('VA 有"估值：现在贵不贵"板块（标题看得见）', !!mv && mv.visible, mv);
+    const codes = await valCodes(page);
+    check('VA 全部：6 张卡（[data-val-code]），就是 6 个指数', codes.length === 6 && VALL.every((c) => codes.includes(c)), codes);
+    const bad = [];
+    for (const v of VREF.items) {
+      const t = await cardText(page, v.code);
+      const miss = [];
+      if (!t.includes(v.name)) miss.push('名字');
+      if (!numIn(t, v.pe_now)) miss.push(`当前 ${v.pe_now}`);
+      if (!new RegExp(`(^|[^\\d.])${Math.round(v.pe_pct10y)}\\s*%`).test(t)) miss.push(`分位 ${Math.round(v.pe_pct10y)}%`);
+      for (const k of ['pe_median10y', 'pe_min10y', 'pe_max10y']) if (!numIn(t, v[k])) miss.push(`${k} ${v[k]}`);
+      if (!numIn(t, v.dy_now)) miss.push(`股息率 ${v.dy_now}`);
+      for (const k of ['exp_a', 'exp_b']) if (![v[k].toFixed(1), v[k].toFixed(2)].some((s) => t.includes(s + '%'))) miss.push(`${k} ${v[k]}%`);
+      if (!verdictOk(t, v.pe_pct10y)) miss.push(`判词（分位 ${v.pe_pct10y}）`);
+      if (miss.length) bad.push([v.code, miss, t.slice(0, 220)]);
+    }
+    check('VA 每张卡写出名字、当前值、10 年分位、中位 / 最低 / 最高、股息率、两种预期年化，判词按分位（< 30 便宜 / 30～70 中间 / > 70 贵）', bad.length === 0, bad);
+    const st = (await page.locator('[data-qa-val]').innerText().catch(() => '')).replace(/\s+/g, ' ');
+    check('VA 板块写"不是预测"和"不是投资建议"', /不是预测/.test(st) && /不是投资建议/.test(st), st.slice(-240));
+    check('VA 来源注明"中证指数有限公司"和"Robert Shiller"', /中证指数有限公司/.test(st) && /Robert Shiller/.test(st), st.slice(-240));
+    // 子菜单
+    await page.evaluate(() => scrollTo(0, 0));
+    const sub = await findSub(page);
+    const vi = sub ? await valSubIdx(page) : -1;
+    check('VA 子菜单多一项"估值"', vi >= 0, sub?.texts);
+    if (vi >= 0) {
+      const tg = await markTarget(page, vi);
+      const same = await page.evaluate(() => { const t = document.querySelector('[data-qa-target]'); const v = document.querySelector('[data-qa-val]'); return !!t && !!v && (t === v || t.contains(v) || v.contains(t)); });
+      check('VA 子菜单"估值"指到估值板块', !!tg?.found && same, tg);
+      await page.locator(`[data-qa-subnav] [data-qa-i="${vi}"]`).click();
+      await page.waitForTimeout(900);
+      const p = await targetPos(page);
+      check('VA 点子菜单"估值"→ 板块滚到视口上部 40% 内（或已到页底），地址仍是 #/funds', !!p && /^#\/(tools\/)?funds/.test(p.hash) && p.top < p.vh && p.bottom > 0 && ((p.top >= -4 && p.top <= p.vh * 0.4) || p.atBottom), p);
+      await page.evaluate(() => scrollTo(0, 0));
+      await page.waitForTimeout(300);
+      await page.evaluate(() => { const t = document.querySelector('[data-qa-target]'); scrollTo(0, scrollY + t.getBoundingClientRect().top - 140); });
+      await page.waitForTimeout(600);
+      const act = await activeIdx(page);
+      check('VA 滚动（不点）到估值板块 → 子菜单高亮"估值"（只有它）', act.length === 1 && act[0] === vi, act.map((a) => sub.texts[a]));
+    }
+    const lc = await lowContrast(page, ['[data-qa-val]']);
+    check('VA 浅色：估值板块文字对比度 ≥ 4.5', lc.bad.length === 0, lc.bad);
+    // 市场切换
+    await pickMarket(page, '美国');
+    check('VA 切到"美国"：只显示标普500（SPX）', JSON.stringify(await valCodes(page)) === JSON.stringify(['SPX']), await valCodes(page));
+    await pickMarket(page, '中国');
+    const cn = await valCodes(page);
+    check('VA 切到"中国"：只显示 5 张（000300、000016、000905、000015、000922）', cn.length === 5 && VCN.every((c) => cn.includes(c)), cn);
+    await pickMarket(page, '新加坡');
+    const sgc = await valCodes(page);
+    const sgt = await cardText(page, 'SPX');
+    check('VA 切到"新加坡"：只显示标普500（SPX）这 1 张，卡上基金列表含 XUS（主会话规格更正，依据原型 v3）', JSON.stringify(sgc) === JSON.stringify(['SPX']) && /XUS/.test(sgt), { sgc, sgt: sgt.slice(0, 160) });
+    await pickMarket(page, '');
+    check('VA 切回"全部"：6 张', (await valCards(page).count()) === 6, await valCodes(page));
+    await ctx.close();
+  });
+
+  await section('VB 估值判词分界', async () => {
+    const pcts = { '000300': 29.2, '000016': 30, '000905': 70, '000015': 70.8, '000922': 49.2, SPX: 99.2 };
+    const items = VREF.items.map((x) => ({ ...x, pe_pct10y: pcts[x.code] }));
+    const { page, ctx } = await openV({ width: 1200, height: 900 }, items);
+    await enter(page);
+    await page.locator(`${R} [data-val-code]`).first().waitFor({ state: 'attached', timeout: WAIT }).catch(() => {});
+    const bad = [];
+    for (const [c, p] of Object.entries(pcts)) { const t = await cardText(page, c); if (!verdictOk(t, p)) bad.push([c, p, t.slice(0, 120)]); }
+    check('VB 分位 29.2 → 便宜；30、70 → 中间；70.8、99.2 → 贵；49.2 → 中间', bad.length === 0, bad);
+    await ctx.close();
+  });
+
+  await section('VC 估值 400 深色', async () => {
+    const { page, ctx } = await openV({ width: 400, height: 860, colorScheme: 'dark' });
+    await enter(page);
+    await page.locator(`${R} [data-val-code]`).first().waitFor({ state: 'attached', timeout: WAIT }).catch(() => {});
+    const mv = await markVal(page);
+    check('VC 400 宽：估值板块在、6 张卡', !!mv?.visible && (await valCards(page).count()) === 6, { mv, n: await valCards(page).count() });
+    await page.locator('[data-qa-val]').scrollIntoViewIfNeeded().catch(() => {});
+    check('VC 400 宽：页面不横向溢出', await noHScroll(page), await page.evaluate(() => [document.documentElement.scrollWidth, document.documentElement.clientWidth]));
+    const wide = await page.evaluate(() => [...document.querySelectorAll('[data-qa-val] [data-val-code]')].map((e) => [e.getAttribute('data-val-code'), Math.round(e.getBoundingClientRect().right)]).filter(([, r]) => r > innerWidth + 1));
+    check('VC 400 宽：每张卡都在屏幕宽度里', wide.length === 0, wide);
+    const lc = await lowContrast(page, ['[data-qa-val]']);
+    check('VC 深色：估值板块文字对比度 ≥ 4.5', lc.bad.length === 0, lc.bad);
+    await pickMarket(page, '美国');
+    check('VC 400 宽切到"美国"：只有 SPX', JSON.stringify(await valCodes(page)) === JSON.stringify(['SPX']), await valCodes(page));
+    await pickMarket(page, '新加坡');
+    check('VC 400 宽切到"新加坡"：只有 SPX（卡上含 XUS）、不横向溢出', JSON.stringify(await valCodes(page)) === JSON.stringify(['SPX']) && /XUS/.test(await cardText(page, 'SPX')) && (await noHScroll(page)), await valCodes(page));
+    await ctx.close();
+  });
+
 }
 
 check('全程没有页面脚本报错', errors.length === 0, errors.slice(0, 5));

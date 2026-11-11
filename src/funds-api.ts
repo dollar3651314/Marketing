@@ -13,10 +13,12 @@
  * （CALL_BUDGET_MS；15 秒后不再开新的一只，到点还没处理的留给下一批，next 指向它；已经发出的请求照样计入 ≤45）；
  * 被 25 秒截止打断的那只（不是这一批的第一只）整只留给下一批，不记失败；失败原因写实际等了几秒、实际试了几次，Yahoo 回 chart.error 时带上它的 description；
  * 404 之类不重试。取不到的那只**保留上次的数据**，只记原因。不在任何事务里调外部接口（先取完，再写库）。
- * 不花钱（底线 8）：两个来源都是公开免费接口，不用密钥。
+ * 不花钱（底线 8）：Yahoo、东方财富是公开免费接口；第四版美国 15 只走 Tiingo（免费账号，key = 加密变量 TIINGO_API_TOKEN，
+ * 只放在 Authorization 请求头里，不进地址、不下发前端、不写日志、不进错误文字；没配置或取不到退回 Yahoo，快照 source 照实写）。
  */
 import type { Env } from './env';
-import { bandCoverage, bondCenter, cleanPoints, eastmoneyMoneyIndex, eastmoneyPageOldest, FUNDS, MIN_POINTS, parseEastmoney, parseYahoo, rangeBand, summarize, type FundDef, type FundSnapshot, type Point } from './funds';
+import { cfbStream, mergeMonths, parseCsIndicator, parseCsPerf, shillerCell, shillerDone, shillerInit, shillerLocate, shillerXlsUrl, valCard, VAL_INDEXES, VAL_KEEP, xlsWalk, type ShillerState, type ValCard, type ValIndexDef, type ValStored } from './funds-val';
+import { bandCoverage, bondCenter, cleanPoints, eastmoneyMoneyIndex, eastmoneyPageOldest, FUNDS, MIN_POINTS, parseEastmoney, parseTiingo, parseYahoo, rangeBand, summarize, usesTiingo, type FundDef, type FundSnapshot, type Point } from './funds';
 import {
   approxYield, autoYield, BOND_YIELDS, parseChinabond, parseEm7d, parseEmNav, parseMasHtml, parseTreasuryCsv, parseVanguard,
   type BondYield, type BondYieldDef, type Curve, type CurvePoints, type ParsedYield,
@@ -71,12 +73,21 @@ export function yahooErrorText(body: unknown): string {
  */
 export class Http {
   used = 0;
+  /** 上一个请求结束的时间（第四版 gapMs 用） */
+  private lastAt = 0;
   constructor(
     private f: FetchLike,
     public max = MAX_REQUESTS,
     private sleep: (ms: number) => Promise<unknown> = (ms) => new Promise((r) => setTimeout(r, ms)),
     public deadline = Infinity,
-  ) {}
+    /** 第四版（估值来源，安全经理限制）：gapMs = 两个请求之间至少隔多久（从上一个结束算）；lastAt = 上一次调用里同一来源最后一个请求结束的时间（跨调用也隔得开）；
+     *  tries = 每个请求最多试几次（估值来源每天最多 1 次，所以是 1，不重试） */
+    private opts: { gapMs?: number; tries?: number; lastAt?: number } = {},
+  ) {
+    if (opts.gapMs && opts.lastAt) this.lastAt = opts.lastAt;
+  }
+  /** 上一个请求结束的时间（估值把它存起来，下一次调用接着隔 2 秒） */
+  get lastEnd() { return this.lastAt; }
   get left() { return this.max - this.used; }
   async get(url: string, headers: Record<string, string>, what: string): Promise<unknown> {
     return (await this.send(url, { headers }, what, 'json')).body;
@@ -86,11 +97,23 @@ export class Http {
     const r = await this.send(url, init, what, 'text');
     return { text: r.body as string, cookie: r.cookie };
   }
-  private async send(url: string, init: { method?: string; headers: Record<string, string>; body?: string }, what: string, as: 'json' | 'text'): Promise<{ body: unknown; cookie: string }> {
+  /** 取二进制（第四版估值：中证 indicator.xls、Shiller ie_data.xls）；超过 maxBytes 算失败 */
+  async bin(url: string, init: { headers: Record<string, string> }, what: string, maxBytes = 8 * 1024 * 1024): Promise<Uint8Array> {
+    const b = (await this.send(url, init, what, 'bin')).body as Uint8Array;
+    if (b.length > maxBytes) throw new FetchFail(`${what}的文件太大（${Math.round(b.length / 1024 / 1024)}MB），没解析`);
+    return b;
+  }
+  private async send(url: string, init: { method?: string; headers: Record<string, string>; body?: string }, what: string, as: 'json' | 'text' | 'bin'): Promise<{ body: unknown; cookie: string }> {
     let last = '', tries = 0;
     const cut = () => new TimeUp(last ? `${last}（试了 ${tries} 次）` : '');
-    for (let i = 0; i < TRIES; i++) {
+    const TR = this.opts.tries ?? TRIES;
+    for (let i = 0; i < TR; i++) {
       if (this.used >= this.max) throw new BudgetOut();
+      if (this.opts.gapMs) {
+        // 离上一个同来源请求结束不到 gapMs：整整再等 gapMs（实际间隔 ≥ gapMs；不按剩下多少算，等的时长固定、好量）
+        const wait = Date.now() - this.lastAt < this.opts.gapMs ? this.opts.gapMs : 0;
+        if (wait > 0) { if (Date.now() + wait >= this.deadline) throw cut(); await this.sleep(wait); }
+      }
       const rest = this.deadline - Date.now();
       if (rest <= 0) throw cut();
       const limit = Math.min(TIMEOUT_MS, rest);
@@ -102,6 +125,7 @@ export class Http {
       try {
         const r = await this.f(url, { ...init, signal: ac.signal });
         if (r.ok) {
+          if (as === 'bin') return { body: new Uint8Array(await r.arrayBuffer()), cookie: '' };
           const text = await r.text();
           if (as === 'text') return { body: text, cookie: cookieOf(r.headers) };
           let body: unknown;
@@ -116,11 +140,12 @@ export class Http {
       } catch (e) {
         if (e instanceof FetchFail || e instanceof BudgetOut || e instanceof TimeUp) throw e;
         if (ac.signal.aborted && limit < TIMEOUT_MS) throw cut(); // 是 25 秒截止把它打断的，不是数据源慢
-        last = ac.signal.aborted ? `${what} ${Math.max(1, Math.round((Date.now() - t0) / 1000))} 秒没回应` : `连不上${what}`;
+        last = ac.signal.aborted ? `${what} ${Math.max(1, Math.round((Date.now() - t0) / 1000))} 秒没回应` : `连不上${/^[A-Za-z]/.test(what) ? ' ' : ''}${what}`;
       } finally {
         clearTimeout(timer);
+        this.lastAt = Date.now();
       }
-      if (i < TRIES - 1) {
+      if (i < TR - 1) {
         if (this.deadline - Date.now() <= 1000) throw cut(); // 来不及再试一次：留给下一批
         await this.sleep(1000);
       }
@@ -202,14 +227,29 @@ export function mergePoints(old: Point[], fresh: Point[]): Point[] {
   return [...by.values()].sort((a, b) => (a[0] < b[0] ? -1 : a[0] > b[0] ? 1 : 0));
 }
 
+/** Tiingo 的 key（加密变量）；没配置或是空的回 ''。只在服务端用 */
+export function tiingoToken(env: Pick<Env, 'TIINGO_API_TOKEN'>): string {
+  const t = env.TIINGO_API_TOKEN;
+  return typeof t === 'string' ? t.trim() : '';
+}
+
+/** Tiingo 日线：从 2 年前起（和 Yahoo 的 range=2y 一样，375 天窗口由 cleanPoints 截）。key 放请求头，不放地址 */
+const tiingoUrl = (sym: string, now: number) => `https://api.tiingo.com/tiingo/daily/${encodeURIComponent(sym.toLowerCase())}/prices?startDate=${new Date(now - 730 * 86_400_000).toISOString().slice(0, 10)}`;
+
+async function fromTiingo(http: Http, sym: string, now: number, token: string): Promise<Point[]> {
+  return parseTiingo(await http.get(tiingoUrl(sym, now), { authorization: `Token ${token}`, 'content-type': 'application/json', 'user-agent': UA }, 'Tiingo'));
+}
+
 /** 估一只最多要几个请求（不够就留到下一批，免得取到一半额度用完白取） */
-export function estimateRequests(def: FundDef, incremental = false): number {
+export function estimateRequests(def: FundDef, incremental = false, tiingo = false): number {
   if (def.source === 'eastmoney') return incremental ? 2 : 16;
+  // 第四版：Tiingo 1 个 + 取不到时退回 Yahoo 最多 2 个
+  if (tiingo && usesTiingo(def)) return 3;
   return def.symbol.endsWith('.SS') ? 3 : 2;
 }
 
 /** 取一只：Yahoo（2y → 1y）；.SS 清洗后不到 30 点或 Yahoo 取不到 → 改用东方财富（去掉 .SS）。返回快照；取不到抛 FetchFail，额度用完抛 BudgetOut */
-export async function fetchFund(def: FundDef, http: Http, now: number, prev?: Record<string, unknown> | null): Promise<FundSnapshot> {
+export async function fetchFund(def: FundDef, http: Http, now: number, prev?: Record<string, unknown> | null, opts: { tiingo?: string } = {}): Promise<FundSnapshot> {
   if (def.source === 'eastmoney') {
     // 第三版：库里已有这只的东方财富序列 → 只取比它新的那一页（通常 1 页）并进旧序列；首次才全量
     const old = prevPoints(prev);
@@ -229,6 +269,24 @@ export async function fetchFund(def: FundDef, http: Http, now: number, prev?: Re
     if (got.money && pts.length) { const k = 100 / pts[0][2]; pts = pts.map((p) => [p[0], r6(p[1] * k), r6(p[2] * k)] as Point); }
     return { ...summarize(def, 'CNY', pts), price_kind: got.money ? 'index' : 'nav' };
   }
+  // 第四版：美国 15 只先走 Tiingo（每只 1 个请求，计入 ≤45）；没配置 → 直接 Yahoo；Tiingo 回错 / 认不出 → 退回 Yahoo，快照写 source = 'yahoo' 和 fallback 原因
+  let fallback = '';
+  if (usesTiingo(def)) {
+    const token = opts.tiingo ?? '';
+    // 没配置：直接走 Yahoo，快照 source = 'yahoo'（页面来源写"Yahoo 复权价"；/health 的 tiingo 字段是 not_configured）
+    if (token) {
+      try {
+        const tp = cleanPoints(await fromTiingo(http, def.symbol, now, token));
+        if (tp.length >= MIN_POINTS) return { ...summarize({ ...def, source: 'tiingo' }, 'USD', tp), price_kind: 'price' };
+        fallback = tp.length ? `Tiingo 只回了 ${tp.length} 天` : 'Tiingo 没有这只的数据';
+      } catch (e) {
+        if (e instanceof BudgetOut || e instanceof TimeUp) throw e;
+        // FetchFail 的文字是我们自己拼的（"Tiingo回 401""Tiingo 8 秒没回应"……），不含地址和请求头，不会带出 key
+        fallback = e instanceof FetchFail ? e.message : '连不上 Tiingo';
+      }
+    }
+  }
+  const tagFb = (s: FundSnapshot): FundSnapshot => (fallback ? { ...s, fallback } : s);
   let yErr: unknown = null;
   let cur: string | null = null, pts: Point[] = [], why = '';
   try {
@@ -245,8 +303,12 @@ export async function fetchFund(def: FundDef, http: Http, now: number, prev?: Re
     const em = cleanPoints(await fromEastmoney(http, def.symbol.slice(0, -3), now));
     if (em.length) return { ...summarize({ ...def, source: 'eastmoney' }, 'CNY', em), price_kind: 'nav' };
   }
-  if (!pts.length) throw yErr instanceof Error ? new FetchFail(yErr.message) : new FetchFail(why ? `Yahoo 没有这只的数据：${why}` : 'Yahoo 没有这只的数据');
-  return { ...summarize(def, cur, pts), price_kind: 'price' };
+  if (!pts.length) {
+    const yw = yErr instanceof Error ? yErr.message : why ? `Yahoo 没有这只的数据：${why}` : 'Yahoo 没有这只的数据';
+    // Tiingo 配了却没取到、Yahoo 也没取到：两边的原因都写（没配置时只写 Yahoo 的，和第三版一样）
+    throw new FetchFail(fallback ? `${fallback}；${yw}` : yw);
+  }
+  return tagFb({ ...summarize(def, cur, pts), price_kind: 'price' });
 }
 
 const r6 = (v: number) => Math.round(v * 1e6) / 1e6;
@@ -284,14 +346,15 @@ export async function refreshBatch(env: Env, cursor: number, now: number, f: Fet
     for (const r of rows) { if (!r?.data) continue; try { prev.set(r.code, JSON.parse(r.data)); } catch { /* 坏行当没有 */ } }
   } catch { /* 读失败：照首次全量取 */ }
   const inc = (def: FundDef) => prevPoints(prev.get(def.code)).length > 0;
+  const tiingo = tiingoToken(env);
   let i = cursor, n = 0;
   while (i < total && n < MAX_FUNDS_PER_CALL) {
     const def = FUNDS[i];
-    if (n > 0 && (http.left < estimateRequests(def, inc(def)) || Date.now() - t0 > START_CUTOFF_MS)) break;
+    if (n > 0 && (http.left < estimateRequests(def, inc(def), !!tiingo) || Date.now() - t0 > START_CUTOFF_MS)) break;
     // 第二版 ③：最后一只之后要在同一次调用里取债券收益率——额度或时间不够留给它，就把最后一只留给下一批（下一批 = 最后一只 + 收益率）
-    if (n > 0 && i === total - 1 && (http.left - estimateRequests(def, inc(def)) < YIELD_RESERVE || Date.now() - t0 > YIELD_START_MS)) break;
+    if (n > 0 && i === total - 1 && (http.left - estimateRequests(def, inc(def), !!tiingo) < YIELD_RESERVE || Date.now() - t0 > YIELD_START_MS)) break;
     try {
-      ok.push(await fetchFund(def, http, now, prev.get(def.code)));
+      ok.push(await fetchFund(def, http, now, prev.get(def.code), { tiingo }));
     } catch (e) {
       if ((e instanceof BudgetOut || e instanceof TimeUp) && n > 0) {
         // 额度或时间在这只中途用完：这只整只留给下一批（不算失败）
@@ -522,9 +585,306 @@ export async function refreshYields(env: Env, now: number, f: FetchLike = (u, i)
   return { updated: ok.map((x) => x.code), failed, requests: http.used - used0, curves: curveErr };
 }
 
+// ---------------------------------------------------------------- 第四版 ②：估值（6 个指数；"刷新数据"里 45 只和收益率都取完以后，页面按 cursor 一步一步调 POST /api/funds/valuation/refresh）
+/**
+ * 安全经理限制（Amos 11/11 同意）+ 主会话 11/11 两次更正：
+ *   - 只在点"刷新数据"时取；**每个来源每天最多一轮**（Shiller 每月一轮）：一轮可以拆成多个小请求（中证首次全量按年分段），
+ *     **整轮取完、解析完、存好以后才记 ok_day**；一轮没成功不算取过，但**同一来源同一天最多开始 2 轮**（tries，开一轮先加一，硬上限）。
+ *   - 同一来源（中证 www + oss-ch 算一个，Shiller 首页 + 下载算一个）两个请求之间 ≥ 2 秒，**跨调用也算**（fund_val_work 的 run 行记着上次请求结束的时间）；不自动重试。
+ *   - Amos 11/11「表格或文档太大无法单次解析完成，可以分开成多个小文档，多次解析」→ **每次调用只做一小步**（免费版每次请求 CPU 10ms）：
+ *       中证 perf：首次全量按自然年分段（约 11 段 / 指数），每次调用取一段、解析一段；之后每天只取最近一段（从库里最后一个月的 1 号起）；
+ *       中证 indicator.xls：约 8KB，一步；
+ *       Shiller：第 1 步下载首页 + ie_data.xls、只把复合文档里的工作簿流拆成 ≤ 128KB 的块存进 D1（fund_val_blob）；
+ *       第 2 步读第一块里的目录和共享字符串表；第 3 步起每次只解析一块里的记录（xlsWalk + shillerCell，状态存 fund_val_work）；
+ *       读到表尾才算出 CAPE、存 fund_valuation、删掉块。
+ *   - 一次调用对外请求 ≤ 2 个（≤ 45）、25 秒截止照旧；只用中证指数官网和 shillerdata.com（下载链接只认 shillerdata.com / wsimg.com）。
+ * 存的是中证指数有限公司、Robert Shiller 的数据，只给 Amos 本人看，不转载。
+ */
+export const VAL_GAP_MS = 2_000;
+/** 一轮刷新最多走多少步（循环硬上限；首次全量约 5 × 12 + 10 = 70 步） */
+export const VAL_MAX_STEPS = 200;
+/** Shiller 工作簿流拆块的大小（每块一行，远低于 D1 单行上限） */
+export const VAL_BLOB = 128 * 1024;
+/** 跨块的记录最长 8224 字节：每步多读下一块开头这么多 */
+const VAL_TAIL = 9_000;
+const CS_HEADERS = { 'user-agent': BROWSER_UA, accept: 'application/json, text/plain, */*', referer: 'https://www.csindex.com.cn/' };
+const csPerfUrl = (code: string, start: string, end: string) => `https://www.csindex.com.cn/csindex-home/perf/index-perf?indexCode=${encodeURIComponent(code)}&startDate=${start}&endDate=${end}`;
+const csXlsUrl = (code: string) => `https://oss-ch.csindex.com.cn/static/html/csindex/public/uploads/file/autofile/indicator/${encodeURIComponent(code)}indicator.xls`;
+const SHILLER_HOME = 'https://shillerdata.com/';
+/** 来源键（fund_val_fetch.src），也是一轮刷新里的先后顺序 */
+export const valKeys = (def: ValIndexDef): string[] => (def.src === 'shiller' ? ['shiller'] : [`cs-perf:${def.code}`, `cs-xls:${def.code}`]);
+const ALL_KEYS = VAL_INDEXES.flatMap(valKeys);
+const keyDef = (key: string) => VAL_INDEXES.find((d) => valKeys(d).includes(key))!;
+const family = (key: string): 'cs' | 'sh' => (key === 'shiller' ? 'sh' : 'cs');
+/** 同一来源同一天最多开始几轮 */
+export const VAL_MAX_TRIES = 2;
+export interface ValLog { day: string; tries: number; ok_day: string | null }
+const okToday = (key: string, log: ValLog | undefined, now: number) => {
+  const today = day8(now);
+  return !!log?.ok_day && (key === 'shiller' ? log.ok_day.slice(0, 7) === today.slice(0, 7) : log.ok_day === today);
+};
+/** 这个来源还要不要开一轮：今天（Shiller：这个月）已经成功 → 不开；今天已经开过 2 轮 → 不开 */
+export function valDue(key: string, log: ValLog | undefined, now: number): boolean {
+  if (!log) return true;
+  if (okToday(key, log, now)) return false;
+  return !(log.day === day8(now) && log.tries >= VAL_MAX_TRIES);
+}
+/** 首次全量从多少个月前的 1 号开始取（窗口 120 个月，多留 2 个月） */
+const VAL_FULL_MONTHS = 122;
+function monthStart(now: number, back: number): string {
+  const d = new Date(now + 8 * 3600_000);
+  return new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth() - back, 1)).toISOString().slice(0, 10).replace(/-/g, '');
+}
+/** [起, 止]（YYYYMMDD）按自然年切段 */
+export function yearSegments(start: string, end: string): [string, string][] {
+  const out: [string, string][] = [];
+  for (let y = Number(start.slice(0, 4)), k = 0; y <= Number(end.slice(0, 4)) && k < 50; y++, k++) {
+    const a = y === Number(start.slice(0, 4)) ? start : `${y}0101`, b = y === Number(end.slice(0, 4)) ? end : `${y}1231`;
+    if (a <= b) out.push([a, b]);
+  }
+  return out;
+}
+
+export interface ValStepResult {
+  /** 下一步的 cursor；null = 这一轮没有要做的了 */
+  next: number | null;
+  /** 已经做完几步（含这一步） */
+  done: number;
+  /** 估计一共几步（已做 + 还剩的估计；页面写"第 n / m 段"） */
+  total: number;
+  code: string;
+  name: string;
+  /** 这一步做的是什么（"市盈率 2019 年""Shiller 第 3 块"……） */
+  part: string;
+  /** working 这个来源这一轮还没完；ok 这个来源这一轮完成了；failed 这一轮没成功（保留上次的值）；done 没有要做的了 */
+  status: 'working' | 'ok' | 'failed' | 'done';
+  reason?: string;
+  requests: number;
+}
+
+interface PerfWork { day: string; segs: [string, string][]; i: number; months: Record<string, [string, number]>; last: [string, number] | null; incr: boolean }
+interface ShWork { day: string; stage: 'globals' | 'rows'; n: number; len: number; pos?: number; sst?: string[]; st?: ShillerState; pend?: [number, number] | null }
+interface RunState { failed: string[]; last: { cs?: number; sh?: number } }
+
+async function readLog(env: Env): Promise<Map<string, ValLog>> {
+  const m = new Map<string, ValLog>();
+  try {
+    const rows = (await env.DB.prepare('SELECT src, day, tries, ok_day FROM fund_val_fetch').all<{ src: string; day: string; tries: number; ok_day: string | null }>())?.results ?? [];
+    for (const r of rows) if (r?.src) m.set(r.src, { day: r.day, tries: Number(r.tries) || 0, ok_day: r.ok_day ?? null });
+  } catch { /* 读不到：当没取过 */ }
+  return m;
+}
+async function readWork(env: Env): Promise<Map<string, any>> {
+  const m = new Map<string, any>();
+  try {
+    const rows = (await env.DB.prepare('SELECT src, data FROM fund_val_work').all<{ src: string; data: string }>())?.results ?? [];
+    for (const r of rows) { try { m.set(r.src, JSON.parse(r.data)); } catch { /* 坏行当没有 */ } }
+  } catch { /* 表没建：当没有 */ }
+  return m;
+}
+const putWork = (env: Env, src: string, data: unknown, now: number) => env.DB.prepare('INSERT INTO fund_val_work (src, data, at) VALUES (?1, ?2, ?3) ON CONFLICT (src) DO UPDATE SET data = ?2, at = ?3').bind(src, JSON.stringify(data), now);
+const delWork = (env: Env, src: string) => env.DB.prepare('DELETE FROM fund_val_work WHERE src = ?1').bind(src);
+const delBlobs = (env: Env) => env.DB.prepare("DELETE FROM fund_val_blob WHERE src = 'shiller'");
+/** 开一轮：今天开过几轮加一（不在事务里；记不上就不发，宁可少取不多取）。换了一天从 1 重新数 */
+async function markTry(env: Env, key: string, now: number) {
+  await env.DB.prepare('INSERT INTO fund_val_fetch (src, day, tries, at, ok_day) VALUES (?1, ?2, 1, ?3, NULL) ON CONFLICT (src) DO UPDATE SET tries = CASE WHEN fund_val_fetch.day = ?2 THEN fund_val_fetch.tries + 1 ELSE 1 END, day = ?2, at = ?3').bind(key, day8(now), now).run();
+}
+/** 一轮取完、解析完、存好才记"今天取过了" */
+const markOk = (env: Env, key: string, now: number) => env.DB.prepare('UPDATE fund_val_fetch SET ok_day = ?2 WHERE src = ?1').bind(key, day8(now));
+function readStored(raw: string | null | undefined): ValStored | null {
+  if (!raw) return null;
+  try { const j = JSON.parse(raw) as ValStored; return j && Array.isArray(j.series) ? j : null; } catch { return null; }
+}
+/** 存估值；keepErr = 只是补了股息率（市盈率那边这次没取到的原因留着） */
+const saveVal = (env: Env, st: ValStored, now: number, keepErr = false) => env.DB.prepare(keepErr
+  ? 'INSERT INTO fund_valuation (code, data, ok_at, err, err_at) VALUES (?1, ?2, ?3, NULL, NULL) ON CONFLICT (code) DO UPDATE SET data = ?2, ok_at = ?3'
+  : 'INSERT INTO fund_valuation (code, data, ok_at, err, err_at) VALUES (?1, ?2, ?3, NULL, NULL) ON CONFLICT (code) DO UPDATE SET data = ?2, ok_at = ?3, err = NULL, err_at = NULL').bind(st.code, JSON.stringify(st), now);
+const saveErr = (env: Env, code: string, reason: string, now: number) => env.DB.prepare('INSERT INTO fund_valuation (code, data, ok_at, err, err_at) VALUES (?1, NULL, NULL, ?2, ?3) ON CONFLICT (code) DO UPDATE SET err = ?2, err_at = ?3').bind(code, reason.slice(0, 200), now);
+async function storedOf(env: Env, code: string): Promise<ValStored | null> {
+  const row = await env.DB.prepare('SELECT data FROM fund_valuation WHERE code = ?1').bind(code).first<{ data: string | null }>().catch(() => null);
+  return readStored(row?.data);
+}
+/** 这个来源这一轮是不是还在进行（今天开的、还没完） */
+const active = (key: string, work: Map<string, any>, now: number) => work.get(key)?.day === day8(now);
+const keyDue = (key: string, log: Map<string, ValLog>, work: Map<string, any>, now: number) => active(key, work, now) || valDue(key, log.get(key), now);
+
+/** 估计这个来源这一轮还剩几步（页面写"第 n / m 段"用；估不准不要紧，只用来显示） */
+function stepsLeft(key: string, work: Map<string, any>, stored: Map<string, boolean>, now: number): number {
+  const w = active(key, work, now) ? work.get(key) : null;
+  if (key.startsWith('cs-xls:')) return 1;
+  if (key.startsWith('cs-perf:')) {
+    if (w) return (w as PerfWork).segs.length - (w as PerfWork).i;
+    return stored.get(key.slice(8)) ? 1 : yearSegments(monthStart(now, VAL_FULL_MONTHS), day8(now).replace(/-/g, '')).length;
+  }
+  if (!w) return 2 + Math.ceil(1.7e6 / VAL_BLOB);
+  const s = w as ShWork;
+  return s.stage === 'globals' ? 1 + s.n : Math.max(1, s.n - Math.floor((s.pos ?? 0) / VAL_BLOB));
+}
+
+/** Shiller 块：第 i 块全部 + 下一块开头 VAL_TAIL 字节（跨块的那条记录） */
+async function readBlob(env: Env, i: number): Promise<Uint8Array> {
+  const a = await env.DB.prepare("SELECT data FROM fund_val_blob WHERE src = 'shiller' AND idx = ?1").bind(i).first<{ data: unknown }>();
+  const b = await env.DB.prepare("SELECT substr(data, 1, ?2) AS data FROM fund_val_blob WHERE src = 'shiller' AND idx = ?1").bind(i + 1, VAL_TAIL).first<{ data: unknown }>();
+  const u = (x: unknown) => (x instanceof Uint8Array ? x : x instanceof ArrayBuffer ? new Uint8Array(x) : Array.isArray(x) ? Uint8Array.from(x as number[]) : new Uint8Array(0));
+  if (!a) throw new FetchFail(`Shiller 数据的第 ${i + 1} 块不见了`);
+  const A = u(a.data), B = b ? u(b.data) : new Uint8Array(0);
+  const out = new Uint8Array(A.length + B.length);
+  out.set(A); out.set(B, A.length);
+  return out;
+}
+
+/**
+ * 估值的一步（cursor 从 0 数；cursor = 0 开一次新的刷新）。挑顺序里第一个"今天还要取、这次刷新里还没失败"的来源，做它的下一小步。
+ */
+export async function refreshValuation(env: Env, cursor: number, now: number, f: FetchLike = (u, i) => fetch(u, i), sleep?: (ms: number) => Promise<unknown>): Promise<ValStepResult> {
+  const [log0, work] = await Promise.all([readLog(env), readWork(env)]);
+  let log = log0;
+  const prevRun = work.get('run') as RunState | undefined;
+  const run: RunState = cursor === 0 || !prevRun ? { failed: [], last: prevRun?.last ?? {} } : prevRun;
+  const rows = (await env.DB.prepare('SELECT code, data FROM fund_valuation').all<{ code: string; data: string | null }>().catch(() => null))?.results ?? [];
+  const stored = new Map(rows.map((r) => [r.code, !!readStored(r.data) && (readStored(r.data)!.series.length >= 100)]));
+  const todo = () => ALL_KEYS.filter((k) => !run.failed.includes(k) && keyDue(k, log, work, now));
+  const left = () => todo().reduce((a, k) => a + stepsLeft(k, work, stored, now), 0);
+  const key = cursor < VAL_MAX_STEPS ? todo()[0] : undefined;
+  if (!key) {
+    await putWork(env, 'run', run, now).run();
+    return { next: null, done: cursor, total: cursor, code: '', name: '', part: '', status: 'done', requests: 0 };
+  }
+  const def = keyDef(key), fam = family(key);
+  const http = new Http(f, MAX_REQUESTS, sleep, Date.now() + CALL_BUDGET_MS, { gapMs: VAL_GAP_MS, tries: 1, lastAt: run.last[fam] });
+  let status: ValStepResult['status'] = 'working', part = '', reason = '';
+  try {
+    if (key.startsWith('cs-perf:')) {
+      let w = active(key, work, now) ? (work.get(key) as PerfWork) : null;
+      const old = await storedOf(env, def.code);
+      if (!w) {
+        await markTry(env, key, now);
+        const incr = !!old && old.series.length >= 100;
+        const end = day8(now).replace(/-/g, '');
+        w = { day: day8(now), segs: incr ? [[old!.series[old!.series.length - 1][0].replace('-', '') + '01', end]] : yearSegments(monthStart(now, VAL_FULL_MONTHS), end), i: 0, months: {}, last: null, incr };
+      }
+      const [a, b] = w.segs[w.i];
+      // 产品复核 G2：只写哪一年（不写内层的第几段）；每天的增量写"最新"
+      part = w.segs.length > 1 ? `市盈率 ${a.slice(0, 4)} 年` : '市盈率 最新';
+      const daily = parseCsPerf(await http.get(csPerfUrl(def.code, a, b), CS_HEADERS, '中证'));
+      if (!daily) throw new FetchFail('中证的市盈率数据认不出来');
+      for (const p of daily) { const m = p[0].slice(0, 7); if (!w.months[m] || p[0] >= w.months[m][0]) w.months[m] = p; if (!w.last || p[0] >= w.last[0]) w.last = p; }
+      w.i++;
+      if (w.i < w.segs.length) { work.set(key, w); await putWork(env, key, w, now).run(); }
+      else {
+        if (!w.last) throw new FetchFail('中证这几段都没有市盈率');
+        const fresh = Object.keys(w.months).sort().map((m) => [m, Math.round(w!.months[m][1] * 100) / 100] as [string, number]);
+        const st: ValStored = { code: def.code, series: mergeMonths(w.incr && old ? old.series : [], fresh, VAL_KEEP), pe_now: w.last[1], pe_now_date: w.last[0], dy_now: old?.dy_now ?? null, dy_date: old?.dy_date ?? null };
+        await env.DB.batch([saveVal(env, st, now), markOk(env, key, now), delWork(env, key)]);
+        work.delete(key); stored.set(def.code, st.series.length >= 100);
+        status = 'ok';
+      }
+    } else if (key.startsWith('cs-xls:')) {
+      part = '股息率';
+      await markTry(env, key, now);
+      const old = await storedOf(env, def.code);
+      if (!old) throw new FetchFail('还没有市盈率序列，股息率先不存');
+      const x = parseCsIndicator(await http.bin(csXlsUrl(def.code), { headers: CS_HEADERS }, '中证'));
+      if (!x) throw new FetchFail('中证的股息率表认不出来');
+      await env.DB.batch([saveVal(env, { ...old, dy_now: x.dy, dy_date: x.date }, now, true), markOk(env, key, now)]);
+      status = 'ok';
+    } else {
+      let w = active(key, work, now) ? (work.get(key) as ShWork) : null;
+      if (!w) {
+        // 第 1 步：下载（首页 + ie_data.xls），只把工作簿流拆块存起来，不解析
+        part = '下载';
+        await markTry(env, key, now);
+        const home = await http.text(SHILLER_HOME, { headers: HTML_HEADERS }, 'Shiller 首页');
+        const url = shillerXlsUrl(home.text);
+        if (!url) throw new FetchFail('Shiller 首页上没找到 ie_data.xls 的下载链接（或链接不在 shillerdata.com / wsimg.com 上）');
+        const wb = cfbStream(await http.bin(url, { headers: { 'user-agent': BROWSER_UA, referer: SHILLER_HOME } }, 'Shiller 数据'), 'Workbook');
+        if (!wb) throw new FetchFail('Shiller 的 ie_data.xls 认不出来（不是 xls）');
+        const n = Math.ceil(wb.length / VAL_BLOB);
+        w = { day: day8(now), stage: 'globals', n, len: wb.length };
+        await env.DB.batch([delBlobs(env), ...Array.from({ length: n }, (_, i) => env.DB.prepare("INSERT INTO fund_val_blob (src, idx, data) VALUES ('shiller', ?1, ?2)").bind(i, wb.slice(i * VAL_BLOB, (i + 1) * VAL_BLOB))), putWork(env, key, w, now)]);
+        work.set(key, w);
+      } else if (w.stage === 'globals') {
+        // 第 2 步：第一块里的目录（各表起点）和共享字符串表
+        part = '目录';
+        const loc = shillerLocate(await readBlob(env, 0));
+        if (!loc) throw new FetchFail('Shiller 的 ie_data.xls 里没找到 Data 表');
+        w = { ...w, stage: 'rows', pos: loc.pos, sst: loc.sst.map((s) => s.slice(0, 40)), st: shillerInit(), pend: null };
+        work.set(key, w);
+        await putWork(env, key, w, now).run();
+      } else {
+        // 第 3 步起：每次只解析一块里的记录
+        const i = Math.floor(w.pos! / VAL_BLOB);
+        part = `解析第 ${i + 1} / ${w.n} 块`;
+        if (i >= w.n) throw new FetchFail('Shiller 的 Data 表没读到表尾');
+        const pend = { cell: w.pend ?? null };
+        const r = xlsWalk(await readBlob(env, i), i * VAL_BLOB, w.pos!, (i + 1) * VAL_BLOB, w.sst!, (rr, c, v) => shillerCell(w!.st!, rr, c, v), pend);
+        if (!r.eof && r.pos <= w.pos!) throw new FetchFail('Shiller 的表解析不往前走了');
+        if (!r.eof) { w = { ...w, pos: r.pos, pend: pend.cell }; work.set(key, w); await putWork(env, key, w, now).run(); }
+        else {
+          const p = shillerDone(w.st!);
+          if (!p) throw new FetchFail('Shiller 的 Data 表认不出来（没有表头或 CAPE）');
+          const last = p.series[p.series.length - 1];
+          await env.DB.batch([saveVal(env, { code: 'SPX', series: p.series, pe_now: last[1], pe_now_date: last[0], dy_now: p.dy, dy_date: p.dyDate }, now), markOk(env, key, now), delWork(env, key), delBlobs(env)]);
+          work.delete(key);
+          status = 'ok';
+        }
+      }
+    }
+  } catch (e) {
+    // 这一轮没成功：丢掉进行中的状态（今天还能再开一轮，最多 2 轮），这次刷新里不再碰它；保留上次的值，只记原因
+    status = 'failed';
+    reason = `${part ? part + '：' : ''}${why(e)}`;
+    run.failed.push(key);
+    work.delete(key);
+    await env.DB.batch([delWork(env, key), ...(key === 'shiller' ? [delBlobs(env)] : []), saveErr(env, def.code, reason, now)]).catch(() => {});
+  }
+  if (http.used) run.last[fam] = http.lastEnd;
+  await putWork(env, 'run', run, now).run();
+  log = await readLog(env); // 这一步可能刚记了"今天取成功了"或"又开了一轮"
+  const rest = left();
+  return { next: rest > 0 && cursor + 1 < VAL_MAX_STEPS ? cursor + 1 : null, done: cursor + 1, total: cursor + 1 + rest, code: def.code, name: def.name, part, status, ...(reason ? { reason } : {}), requests: http.used };
+}
+
+export interface ValuationList {
+  items: (ValCard & { ok_at: string | null; error?: string; error_at?: string })[];
+  /** 还没有数据的指数（从没取到过） */
+  missing: { code: string; name: string; market: string; error?: string }[];
+  /** 还有来源今天（Shiller 这个月）没取过：页面刷新完 45 只后才去调 POST /api/funds/valuation/refresh；false 就不调 */
+  due: boolean;
+}
+
+/** GET /api/funds 里的 valuation（表还没建等读不到时回 null，不影响 45 只） */
+export async function valuationList(env: Env, now: number): Promise<ValuationList | null> {
+  try {
+    const rows = (await env.DB.prepare('SELECT code, data, ok_at, err, err_at FROM fund_valuation').all<Row>()).results ?? [];
+    const [log, work] = await Promise.all([readLog(env), readWork(env)]);
+    const by = new Map(rows.map((r) => [r.code, r]));
+    const items: ValuationList['items'] = [];
+    const missing: ValuationList['missing'] = [];
+    for (const def of VAL_INDEXES) {
+      const r = by.get(def.code);
+      const st = readStored(r?.data);
+      const card = st ? valCard(def, st) : null;
+      if (!card) { missing.push({ code: def.code, name: def.name, market: def.market, ...(r?.err ? { error: r.err } : {}) }); continue; }
+      items.push({ ...card, ok_at: r?.ok_at ? new Date(r.ok_at).toISOString() : null, ...(r?.err ? { error: r.err, ...(r.err_at ? { error_at: new Date(r.err_at).toISOString() } : {}) } : {}) });
+    }
+    const due = ALL_KEYS.some((k) => keyDue(k, log, work, now));
+    return { items, missing, due };
+  } catch {
+    return null;
+  }
+}
+
 /** /api/funds 和 /api/funds/refresh（第二版：最后一批顺带取债券收益率）；别的地址回 null（由 adminApi 回 404） */
 export async function fundsApi(env: Env, req: Request, now: number, sub: string, f?: FetchLike): Promise<Response | null> {
-  if (sub === '' && req.method === 'GET') return json(await fundsList(env));
+  // 第四版：GET 多一个 valuation（估值卡片 + due）；表还没建时是 null
+  if (sub === '' && req.method === 'GET') return json({ ...(await fundsList(env)), valuation: await valuationList(env, now) });
+  if (sub === 'valuation/refresh' && req.method === 'POST') {
+    const body = (await req.json().catch(() => ({}))) as Record<string, unknown>;
+    const st = body?.cursor ?? 0;
+    if (typeof st !== 'number' || !Number.isInteger(st) || st < 0 || st >= VAL_MAX_STEPS) return json({ error: '估值的进度不对，请重新点一次「刷新数据」' }, 400);
+    return json(await refreshValuation(env, st, now, f));
+  }
   if (sub === 'refresh' && req.method === 'POST') {
     const body = (await req.json().catch(() => ({}))) as Record<string, unknown>;
     const c = body?.cursor ?? 0;

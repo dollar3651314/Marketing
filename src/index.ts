@@ -24,6 +24,7 @@ import { ADMIN_PAGE } from './admin-page';
 import { adminApi, adminEnabled, DEFAULT_PROJECT, doneToday, replyCap, saveToQueue } from './queue';
 import { companyEnabled, companyIngest } from './company';
 import { githubHook } from './hooks';
+import { tiingoToken } from './funds-api';
 
 const RULES: Record<string, string> = { forecast: FORECAST_RULES };
 const PER_MINUTE = 60;
@@ -214,7 +215,7 @@ export async function handle(req: Request, env: Env, now: number, fetcher?: Fetc
   const url = new URL(req.url);
   const p = url.pathname;
   if (p === '/health' && req.method === 'GET') {
-    return json({ status: 'UP', environment: env.ENVIRONMENT ?? 'unknown', version: env.VERSION ?? 'dev', copilot: configured(env) ? 'ok' : 'not_configured', admin: adminEnabled(env) ? 'ok' : 'not_configured', company: companyEnabled(env) ? 'ok' : 'not_configured' });
+    return json({ status: 'UP', environment: env.ENVIRONMENT ?? 'unknown', version: env.VERSION ?? 'dev', copilot: configured(env) ? 'ok' : 'not_configured', admin: adminEnabled(env) ? 'ok' : 'not_configured', company: companyEnabled(env) ? 'ok' : 'not_configured', tiingo: tiingoToken(env) ? 'ok' : 'not_configured' });
   }
   if ((p === '/' || p === '/queue') && req.method === 'GET') {
     if (!adminEnabled(env)) return notFound();

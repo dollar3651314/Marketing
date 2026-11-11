@@ -12,7 +12,7 @@
 
 export type Market = '新加坡' | '美国' | '中国';
 export type Category = '宽基' | '债券' | '红利';
-export type Source = 'yahoo' | 'eastmoney';
+export type Source = 'yahoo' | 'eastmoney' | 'tiingo';
 export type PriceKind = 'price' | 'nav' | 'index';
 
 export interface FundDef {
@@ -41,8 +41,10 @@ export interface FundSnapshot {
   name: string;
   code: string;
   symbol: string;
-  /** 这次实际用的来源（.SS 回退到东方财富时是 'eastmoney'） */
+  /** 这次实际用的来源（.SS 回退到东方财富时是 'eastmoney'；第四版美国 15 只取到 Tiingo 时是 'tiingo'，Tiingo 没配置 / 没取到退回 Yahoo 时是 'yahoo'） */
   source: Source;
+  /** 第四版：美国那 15 只本该走 Tiingo、这次退回了 Yahoo 时写原因（不含密钥；没配置时是"没配置 Tiingo"） */
+  fallback?: string;
   tag: string;
   currency: string | null;
   /** 最新收盘价 / 单位净值（不复权） */
@@ -134,6 +136,27 @@ export const FUNDS: FundDef[] = L.map(([market, category, name, sym, src, tag]) 
   source: src === 'y' ? 'yahoo' : 'eastmoney',
   tag,
 }));
+
+/**
+ * 第四版（Amos 2026-11-11「都按建议」）：只有这 15 只美国基金走 Tiingo（日线 adjClose = 复权价、close = 收盘价）。
+ * **新加坡的 CFA、SRT 在 Tiingo 里是美国同名证券，绝不能拿去 Tiingo 查**——所以按"市场 = 美国 且 代码在这张白名单里"双重判断，不按代码猜。
+ * Tiingo 条款：只限个人内部使用、不得展示给他人（项目地图第 5 节写明）。
+ */
+export const TIINGO_CODES: readonly string[] = ['VOO', 'IVV', 'SPY', 'VTI', 'QQQ', 'AGG', 'BND', 'TLT', 'BSV', 'LQD', 'VIG', 'SCHD', 'VYM', 'DGRO', 'SDY'];
+export const usesTiingo = (def: FundDef): boolean => def.market === '美国' && TIINGO_CODES.includes(def.code) && def.symbol === def.code;
+
+/** Tiingo /tiingo/daily/<代码>/prices 的回包（数组，每天 {date: "2025-11-11T00:00:00.000Z", close, adjClose, …}）→ 点（升序、去重、跳过坏值） */
+export function parseTiingo(body: unknown): Point[] {
+  if (!Array.isArray(body)) return [];
+  const by = new Map<string, Point>();
+  for (const r of body as Record<string, unknown>[]) {
+    const d = typeof r?.date === 'string' ? r.date.slice(0, 10) : '';
+    const c = r?.close, a = r?.adjClose;
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(d) || typeof c !== 'number' || typeof a !== 'number' || !isFinite(c) || !isFinite(a) || c <= 0 || a <= 0) continue;
+    by.set(d, [d, c, a]);
+  }
+  return [...by.values()].sort((x, y) => (x[0] < y[0] ? -1 : x[0] > y[0] ? 1 : 0));
+}
 
 /** 清洗后少于这么多点就算"Yahoo 丢了历史"（.SS 回退东方财富、2y 退 1y 都用这个数） */
 export const MIN_POINTS = 30;

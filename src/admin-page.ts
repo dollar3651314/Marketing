@@ -483,7 +483,7 @@ ${ASSETS_CSS}${TTS_CSS}${VOICE_CSS}${PRON_CSS}${FUNDS_CSS}
 </div></nav>
 <!-- 基金观察第二版（Amos 11/10）：板块子菜单，顺序 = 页面顺序；点了定位到板块、滚动时当前板块高亮（同一套 subSpy），手机上横滑 -->
 <nav class="sub" id="sub-funds" aria-label="基金观察板块" hidden><div class="in">
-  <a href="#/funds/sum" data-s="fu-sum" data-target="fu-sum">总结</a><a href="#/funds/mk" data-s="fu-mk" data-target="fu-mk">市场卡</a><a href="#/funds/sc" data-s="fu-sc" data-target="fu-sc">散点</a><a href="#/funds/rg" data-s="fu-rg" data-target="fu-rg">可能区间</a><a href="#/funds/yb" data-s="fu-yb" data-target="fu-yb">债券预期</a><a href="#/funds/ls" data-s="fu-ls" data-target="fu-ls">逐只对比</a><a href="#/funds/note" data-s="fu-note" data-target="fu-note">说明</a>
+  <a href="#/funds/sum" data-s="fu-sum" data-target="fu-sum">总结</a><a href="#/funds/mk" data-s="fu-mk" data-target="fu-mk">市场卡</a><a href="#/funds/sc" data-s="fu-sc" data-target="fu-sc">散点</a><a href="#/funds/rg" data-s="fu-rg" data-target="fu-rg">可能区间</a><a href="#/funds/yb" data-s="fu-yb" data-target="fu-yb">债券预期</a><a href="#/funds/va" data-s="fu-va" data-target="fu-va">估值</a><a href="#/funds/ls" data-s="fu-ls" data-target="fu-ls">逐只对比</a><a href="#/funds/note" data-s="fu-note" data-target="fu-note">说明</a>
 </div></nav>
 </div></div>
 <form class="login" id="login" hidden>
