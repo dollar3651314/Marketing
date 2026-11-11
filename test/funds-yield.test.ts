@@ -2,8 +2,9 @@
  * 基金观察第二版：「债券类：未来 1～3 年预期年化」的清单和解析（src/funds-yield.ts）。**测试会话先写（agents C154）**，研发不改断言（底线 6）。
  * 规格（Amos 2026-11-10 已定）：
  *   BOND_YIELDS 正好 16 只 = 清单里全部债券类（A35、MBH、SBO、O9P、0P00006FY6、AGG、BND、TLT、BSV、LQD、511990、511880、511010、511360、000171、217003）；
- *   kind 'auto' 的有 AGG、TLT、LQD、BND、BSV、O9P、511990、511880（规格写"9 只"但只列了 8 只，第 9 只按研发定——本文件不断言它）；
- *   A35、MBH、0P00006FY6、SBO、511010、511360、000171、217003 是 'approx'。
+ *   kind 'auto' 的只有 BND、BSV、511990、511880；其余 12 只（A35、MBH、0P00006FY6、SBO、511010、511360、000171、217003、AGG、TLT、LQD、O9P）是 'approx'。
+ *   （第三版规格变化：Amos 2026-11-11「都按建议」，安全经理条款核对：iShares / BlackRock 条款禁止自动抓取 → AGG、TLT、LQD、O9P 改成"美国同期限国债 + 利差"近似。
+ *     原来断言"8 只 auto"，按新规格改成 4 只，是规格变化不是放宽。parseIshares / parseBlackrockSg 的解析检查暂时保留：函数还在就照样要解析对。）
  *   解析函数 parseIshares / parseVanguard / parseBlackrockSg（单只基金页 → {ytm, duration, asOf}）、
  *   parseTreasuryCsv / parseMasHtml / parseChinabond（国债曲线 → 曲线对象），坏输入返回 null（不抛错）。
  *
@@ -56,8 +57,8 @@ function numbers(x: unknown, out: number[] = []): number[] {
 const hasNum = (x: unknown, v: number, tol = 1e-4) => numbers(x).some((n) => Math.abs(n - v) <= tol);
 
 const BONDS = ['A35', 'MBH', 'SBO', 'O9P', '0P00006FY6', 'AGG', 'BND', 'TLT', 'BSV', 'LQD', '511990', '511880', '511010', '511360', '000171', '217003'];
-const AUTO8 = ['AGG', 'TLT', 'LQD', 'BND', 'BSV', 'O9P', '511990', '511880'];
-const APPROX8 = ['A35', 'MBH', '0P00006FY6', 'SBO', '511010', '511360', '000171', '217003'];
+const AUTO4 = ['BND', 'BSV', '511990', '511880'];
+const APPROX12 = ['A35', 'MBH', '0P00006FY6', 'SBO', '511010', '511360', '000171', '217003', 'AGG', 'TLT', 'LQD', 'O9P'];
 
 /** BOND_YIELDS 可能是数组（每项带 code）或以 code 为键的对象，两种都认 */
 function bondTable(): Record<string, any> {
@@ -73,18 +74,23 @@ describe('BOND_YIELDS：16 只债券类', () => {
     expect(Object.keys(t).sort()).toEqual([...BONDS].sort());
     expect(FUNDS.filter((f) => f.category === '债券').map((f) => f.code).sort()).toEqual([...BONDS].sort());
   });
-  it('AGG、TLT、LQD、BND、BSV、O9P、511990、511880 是 auto（第 9 只 auto 由研发定，这里不断言）', () => {
+  it('BND、BSV、511990、511880 是 auto（第三版）', () => {
     const t = bondTable();
-    expect(AUTO8.map((c) => [c, t[c]?.kind])).toEqual(AUTO8.map((c) => [c, 'auto']));
+    expect(AUTO4.map((c) => [c, t[c]?.kind])).toEqual(AUTO4.map((c) => [c, 'auto']));
   });
-  it('A35、MBH、0P00006FY6、SBO、511010、511360、000171、217003 是 approx', () => {
+  it('A35、MBH、0P00006FY6、SBO、511010、511360、000171、217003、AGG、TLT、LQD、O9P 是 approx（第三版：AGG、TLT、LQD、O9P 改成美国国债 + 利差）', () => {
     const t = bondTable();
-    expect(APPROX8.map((c) => [c, t[c]?.kind])).toEqual(APPROX8.map((c) => [c, 'approx']));
+    expect(APPROX12.map((c) => [c, t[c]?.kind])).toEqual(APPROX12.map((c) => [c, 'approx']));
+    for (const c of ['AGG', 'TLT', 'LQD', 'O9P']) expect([c, t[c]?.curve]).toEqual([c, 'ust']);
   });
-  it('kind 只有 auto / approx 两种，auto 的数量是 8 或 9', () => {
+  it('kind 只有 auto / approx 两种，auto 正好 4 只', () => {
     const kinds = Object.values(bondTable()).map((x: any) => x?.kind);
     expect(kinds.every((k) => k === 'auto' || k === 'approx'), JSON.stringify(kinds)).toBe(true);
-    expect([8, 9]).toContain(kinds.filter((k) => k === 'auto').length);
+    expect(kinds.filter((k) => k === 'auto').length).toBe(4);
+  });
+  it('没有一只的取数地址指向 ishares.com / blackrock.com（第三版）', () => {
+    const bad = Object.values(bondTable()).filter((x: any) => /(^|\/\/|\.)(ishares|blackrock)\.com/i.test(String(x?.url ?? ''))).map((x: any) => x.code);
+    expect(bad).toEqual([]);
   });
 });
 

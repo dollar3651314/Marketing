@@ -13,6 +13,7 @@
 export type Market = '新加坡' | '美国' | '中国';
 export type Category = '宽基' | '债券' | '红利';
 export type Source = 'yahoo' | 'eastmoney';
+export type PriceKind = 'price' | 'nav' | 'index';
 
 export interface FundDef {
   market: Market;
@@ -67,11 +68,15 @@ export interface FundSnapshot {
   first: string;
   /** [日期, 复权价]，给页面画走势和水下曲线 */
   series: [string, number][];
+  /** 第三版复核 R1：last / series 是什么——'price' 场内价格（Yahoo 复权价）、'nav' 基金净值（东方财富）、'index' 收益指数（货币基金按每天收益连乘，起点 100，不是价格）。旧快照没有这个字段，GET 时按 source 补 */
+  price_kind?: PriceKind;
 }
 
 type Row = [Market, Category, string, string, 'y' | 'em', string];
 
 // 顺序、名称、标签逐字照 fetch2.py 的 L（市场 → 类别）
+// 第三版（Amos 2026-11-11「都按建议」，安全经理核对 Yahoo 条款）：中国 14 只场内 ETF 改走东方财富净值（'em'，不带 .SS），不再请求 Yahoo；
+// 美国 15 只、新加坡 14 只仍走 Yahoo（Amos 知情保留，另有调研在找替代）
 const L: Row[] = [
   ['新加坡', '宽基', 'SPDR 海峡时报指数 ETF', 'ES3.SI', 'y', ''],
   ['新加坡', '宽基', 'Amova-StraitsTrading 亚洲除日本 REIT ETF', 'CFA.SI', 'y', ''],
@@ -102,22 +107,22 @@ const L: Row[] = [
   ['美国', '红利', 'Vanguard 高股息', 'VYM', 'y', ''],
   ['美国', '红利', 'iShares 核心股息增长', 'DGRO', 'y', ''],
   ['美国', '红利', 'SPDR 标普股息', 'SDY', 'y', ''],
-  ['中国', '宽基', '华泰柏瑞沪深300ETF', '510300.SS', 'y', ''],
-  ['中国', '宽基', '易方达沪深300ETF', '510310.SS', 'y', ''],
-  ['中国', '宽基', '华夏上证50ETF', '510050.SS', 'y', ''],
-  ['中国', '宽基', '南方中证500ETF', '510500.SS', 'y', ''],
-  ['中国', '宽基', '华夏科创50ETF', '588000.SS', 'y', ''],
-  ['中国', '债券', '华宝添益ETF', '511990.SS', 'y', '货币'],
-  ['中国', '债券', '银华日利ETF', '511880.SS', 'y', '货币'],
-  ['中国', '债券', '国泰上证5年期国债ETF', '511010.SS', 'y', '原写的 511010'],
-  ['中国', '债券', '海富通短融ETF', '511360.SS', 'y', ''],
+  ['中国', '宽基', '华泰柏瑞沪深300ETF', '510300', 'em', ''],
+  ['中国', '宽基', '易方达沪深300ETF', '510310', 'em', ''],
+  ['中国', '宽基', '华夏上证50ETF', '510050', 'em', ''],
+  ['中国', '宽基', '南方中证500ETF', '510500', 'em', ''],
+  ['中国', '宽基', '华夏科创50ETF', '588000', 'em', ''],
+  ['中国', '债券', '华宝添益ETF', '511990', 'em', '货币'],
+  ['中国', '债券', '银华日利ETF', '511880', 'em', '货币'],
+  ['中国', '债券', '国泰上证5年期国债ETF', '511010', 'em', '原写的 511010'],
+  ['中国', '债券', '海富通短融ETF', '511360', 'em', ''],
   ['中国', '债券', '易方达裕丰回报债券A', '000171', 'em', '场外 · 含少量股票'],
   ['中国', '债券', '招商安泰债券A', '217003', 'em', '场外'],
-  ['中国', '红利', '华泰柏瑞红利ETF', '510880.SS', 'y', ''],
-  ['中国', '红利', '景顺长城红利低波100ETF', '515100.SS', 'y', ''],
-  ['中国', '红利', '招商中证红利ETF', '515080.SS', 'y', ''],
-  ['中国', '红利', '易方达中证红利ETF', '515180.SS', 'y', ''],
-  ['中国', '红利', '华宝标普A股红利ETF', '562060.SS', 'y', ''],
+  ['中国', '红利', '华泰柏瑞红利ETF', '510880', 'em', ''],
+  ['中国', '红利', '景顺长城红利低波100ETF', '515100', 'em', ''],
+  ['中国', '红利', '招商中证红利ETF', '515080', 'em', ''],
+  ['中国', '红利', '易方达中证红利ETF', '515180', 'em', ''],
+  ['中国', '红利', '华宝标普A股红利ETF', '562060', 'em', ''],
 ];
 
 export const FUNDS: FundDef[] = L.map(([market, category, name, sym, src, tag]) => ({
@@ -174,6 +179,31 @@ export function parseEastmoney(pages: unknown[]): Point[] {
     }
   }
   return [...byDate.values()].sort((x, y) => (x[0] < y[0] ? -1 : x[0] > y[0] ? 1 : 0));
+}
+
+/**
+ * 第三版：东方财富 lsjz 的货币基金页（Data.SYType 是"每百份收益"/"每万份收益"，例如 511990 华宝添益）DWJZ 是当天收益、LJJZ 是 7 日年化，
+ * **不是净值**，不能直接当 close / adj。这时按每天的收益连乘出一条"含收益的指数"：第一天 = 100，之后 × (1 + DWJZ / 10000)
+ * （**每百份收益 × 面值 100 元 = 每万元收益**（511990 就是这种）；每万份收益 × 面值 1 元 = 每万元收益，两种都是"每 1 万元当天赚多少"）。
+ * 页面写"按东方财富每天公布的收益连乘"（不写"万份收益"：511990 公布的是每百份收益）。
+ * 周末、节假日的收益会记在节后那一行（或单独几行），连乘不丢。不是货币基金页回 null。
+ */
+export function eastmoneyMoneyIndex(pages: unknown[]): Point[] | null {
+  const rows = new Map<string, number>();
+  let money = false;
+  for (const pg of pages ?? []) {
+    const d = asJson(pg)?.Data;
+    if (typeof d?.SYType === 'string' && /每(百|万)份收益/.test(d.SYType)) money = true;
+    for (const x of Array.isArray(d?.LSJZList) ? d.LSJZList : []) {
+      const day = typeof x?.FSRQ === 'string' ? x.FSRQ : '';
+      const inc = parseFloat(x?.DWJZ);
+      if (/^\d{4}-\d{2}-\d{2}$/.test(day) && isFinite(inc) && inc >= 0 && inc < 100) rows.set(day, inc);
+    }
+  }
+  if (!money) return null;
+  const days = [...rows.keys()].sort();
+  let v = 100;
+  return days.map((day, i) => { if (i > 0) v *= 1 + rows.get(day)! / 10000; const r = Math.round(v * 1e6) / 1e6; return [day, r, r] as Point; });
 }
 
 /** 东方财富一页里最早的日期（判断翻到 400 天前没有）；这一页没数据回 null */

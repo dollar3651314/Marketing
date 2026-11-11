@@ -38,6 +38,16 @@
  *       近似的带"近似"和"≈"；写"不是投资建议"；展开 ES3 看得到"未来 1 个月"区间和喇叭区域；43 只详情里"最深 …"和喇叭区域包围盒不重叠；
  *       子菜单在主菜单下方一排、7 项（总结 / 市场 / 散点 / 可能区间 / 债券预期 / 逐只对比 / 说明）、点了滚到对应板块、滚动后高亮跟着变；对比度。
  *   V2. 400 深色：子菜单可横滑（或放得下）、页面不横向溢出、详情里"最深"不压喇叭、对比度。
+ *   第三版小改（Amos 2026-11-11 已定；页面约定见 W 段开头）：
+ *   W. 可能区间默认只显示从宽到窄的前 10 行 + 按钮"展开其余 N 只"（aria-expanded=false）→ 点了全显示、"收起"、aria-expanded=true；切市场 / 时间段恢复折叠；
+ *      ≤ 10 行没有按钮（替身数据：新加坡只留 10 只）；按钮高 ≥ 44px；1200 浅色和 400 深色都折叠；子菜单点"可能区间"仍定位到板块。
+ *   X. 刷新后债券提示按每只 yield.stale / yield.approx 分"过期 / 近似 / 没有收益率数据"、和行里的标签一致（服务端给了近似值的那只不说"过期""上次的值"）；
+ *      refreshYields 整体失败（yields.failed 里 code 为 '*'）时不写"（*）"。
+ *   第三版取数来源（Amos 2026-11-11「都按建议」，安全经理条款核对）：AGG、TLT、LQD、O9P 改近似（V1 的 auto / approx 名单和夹具同步改成 4 / 12）；
+ *   Z. 产品复核（2026-11-11）：Z1 511990（price_kind=index）行不写 CNY、写"收益指数（起点 100）"，"说明"讲 511990 是指数不是价格、讲溢价 / 折价，
+ *      中国 ETF 详情来源写"不是场内成交价"；Z2 可能区间展开后滚到底点"收起"，按钮在吸顶栏下方可见、子菜单 aria-current 仍是"可能区间"（1200、400）。
+ *   Y. 中国场内 ETF（510300）展开详情，"来源"写东方财富净值（"东方财富净值"或"东方财富累计净值"都认），不写 Yahoo。接口一侧（不请求 Yahoo / iShares / BlackRock、增量取）在 test/funds-v3-sources.test.ts。
+ *   测试用例修正 4（第三版）：V1 / V2 原来断言可能区间"全部时 45 行"，第三版默认折叠到 10 行，改成先点"展开其余 N 只"再数（不改判定口径）。
  *   全程没有页面脚本报错（pageerror）。
  *
  * 页面约定（研发照加；要改名就在同一个提交里改这里并写明）：
@@ -500,8 +510,10 @@ if (!PROTO) {
   const SNAP2 = JSON.parse(readFileSync(path.join(ROOT, 'test/fixtures/funds/snapshot-v2.json'), 'utf8'));
   const BY2 = Object.fromEntries(SNAP2.items.map((x) => [x.code, x]));
   const BONDS = SNAP2.items.filter((x) => x.category === '债券').map((x) => x.code);
-  const AUTO8 = ['AGG', 'TLT', 'LQD', 'BND', 'BSV', 'O9P', '511990', '511880'];
-  const APPROX8 = ['A35', 'MBH', '0P00006FY6', 'SBO', '511010', '511360', '000171', '217003'];
+  // 第三版规格变化（Amos 2026-11-11「都按建议」，安全经理条款核对：iShares / BlackRock 条款禁止自动抓取）：AGG、TLT、LQD、O9P 改成美国国债 + 利差近似，
+  // auto 只剩 4 只、approx 12 只（夹具 snapshot-v2.json 同步改了；原来是 8 + 8，规格变化不是放宽）
+  const AUTO8 = ['BND', 'BSV', '511990', '511880'];
+  const APPROX8 = ['A35', 'MBH', '0P00006FY6', 'SBO', '511010', '511360', '000171', '217003', 'AGG', 'TLT', 'LQD', 'O9P'];
   const SUBS = [['总结', /总结/], ['市场', /市场/], ['散点', /散点|赚了多少/], ['可能区间', /区间/], ['债券预期', /债券/], ['逐只对比', /逐只/], ['说明', /说明/]];
   const pct1 = (v) => { const a = Math.abs(v).toFixed(1).replace('.', '\\.'); return new RegExp(`(^|[^\\d.])${v > 0 ? '\\+?' : v < 0 ? '[−-]' : '[+−-]?'}${a}%`); };
   const bandRows = (page) => page.locator(`${R} [data-band-code]`).filter({ visible: true });
@@ -565,14 +577,35 @@ if (!PROTO) {
     return r;
   }
 
+  // 第三版（Amos 2026-11-11 已定）可能区间折叠按钮：板块里（不在 [data-code] 行、[data-detail] 里）看得见的 button / [role=button]，
+  //   文字是"展开其余 N 只"或"收起"，带 aria-expanded；找到就打上 data-qa-fold（每次重新找，按钮被重画也不怕）
+  const foldBtn = (page) => page.evaluate((R) => {
+    document.querySelectorAll('[data-qa-fold]').forEach((x) => x.removeAttribute('data-qa-fold'));
+    const root = document.querySelector(R);
+    if (!root) return null;
+    const b = [...root.querySelectorAll('button, [role="button"]')].find((e) => e.getClientRects().length && !e.closest('[data-code]') && !e.closest('[data-detail]')
+      && /^(展开其余\s*\d+\s*只|收起)$/.test((e.textContent || '').replace(/\s+/g, ' ').trim())
+      && (() => { let s = e.parentElement; while (s && s !== root) { if (s.querySelector('[data-band-code]')) return true; s = s.parentElement; } return false; })());
+    if (!b) return null;
+    b.setAttribute('data-qa-fold', '');
+    const r = b.getBoundingClientRect();
+    return { text: (b.textContent || '').replace(/\s+/g, ' ').trim(), expanded: b.getAttribute('aria-expanded'), h: Math.round(r.height * 10) / 10, w: Math.round(r.width) };
+  }, R);
+  /** 可能区间板块有折叠按钮、且是折叠着的，就点开（老的检查要看全部 45 行） */
+  async function expandBands(page) {
+    const f = await foldBtn(page);
+    if (f && f.expanded === 'false') { await page.locator('[data-qa-fold]').click(); await page.waitForTimeout(150); }
+  }
+
   // ---------------------------------------------------------------- V1：1280 浅色
   await section('V1 第二版 1280 浅色', async () => {
     const { page, ctx } = await open({ snap: SNAP2 });
     await enter(page);
     // 可能区间
     check('V1 有"未来 1 个月的可能区间"板块', await headingVisible(page, /未来 ?1 ?个月的可能区间/), null);
+    await expandBands(page); // 第三版起默认只显示前 10 行，先点"展开其余 N 只"（测试用例修正 4）
     const bcodes = await bandRows(page).evaluateAll((es) => es.map((e) => e.getAttribute('data-band-code')));
-    check('V1 可能区间：全部时每只一行（45 行，[data-band-code]）', bcodes.length === 45 && SNAP2.items.every((x) => bcodes.includes(x.code)), { n: bcodes.length, missing: SNAP2.items.map((x) => x.code).filter((c) => !bcodes.includes(c)) });
+    check('V1 可能区间：全部时（展开后）每只一行（45 行，[data-band-code]）', bcodes.length === 45 && SNAP2.items.every((x) => bcodes.includes(x.code)), { n: bcodes.length, missing: SNAP2.items.map((x) => x.code).filter((c) => !bcodes.includes(c)) });
     const rt = async (sel) => (await page.locator(`${R} ${sel}`).first().innerText({ timeout: 1500 }).catch(() => '')).replace(/\s+/g, ' ');
     const short = [];
     for (const c of ['XUS', 'XWR']) short.push([c, await rt(`[data-band-code="${c}"]`)]);
@@ -588,8 +621,8 @@ if (!PROTO) {
     const badA = [], badB = [];
     for (const c of APPROX8) { const t = await rt(`[data-yield-code="${c}"]`); const v = BY2[c].yield.value; if (!(/近似/.test(t) && /≈/.test(t) && (t.includes(v.toFixed(2)) || t.includes(v.toFixed(1))))) badA.push([c, t.slice(0, 120)]); }
     for (const c of AUTO8) { const t = await rt(`[data-yield-code="${c}"]`); const v = BY2[c].yield.value; if (/≈/.test(t) || !(t.includes(v.toFixed(2)) || t.includes(v.toFixed(1)))) badB.push([c, t.slice(0, 120)]); }
-    check('V1 债券：近似的 8 只带"近似"标签和"≈"，并写出数值', badA.length === 0, badA);
-    check('V1 债券：自动取的 8 只写出数值、不带"≈"', badB.length === 0, badB);
+    check('V1 债券：近似的 12 只带"近似"标签和"≈"，并写出数值', badA.length === 0, badA);
+    check('V1 债券：自动取的 4 只写出数值、不带"≈"', badB.length === 0, badB);
     // 不是投资建议
     const all = await page.locator(R).innerText().catch(() => '');
     check('V1 页面写"不是投资建议"（看得见的文字）', /不是投资建议/.test(all), null);
@@ -656,7 +689,8 @@ if (!PROTO) {
   await section('V2 第二版 400 深色', async () => {
     const { page, ctx } = await open({ snap: SNAP2, width: 400, height: 860, colorScheme: 'dark' });
     await enter(page);
-    check('V2 400 宽：有可能区间 45 行、债券 16 行', (await bandRows(page).count()) === 45 && (await yieldRows(page).count()) === 16, { band: await bandRows(page).count(), yld: await yieldRows(page).count() });
+    await expandBands(page); // 第三版：先展开（测试用例修正 4）
+    check('V2 400 宽：有可能区间 45 行（展开后）、债券 16 行', (await bandRows(page).count()) === 45 && (await yieldRows(page).count()) === 16, { band: await bandRows(page).count(), yld: await yieldRows(page).count() });
     const sub = await findSub(page);
     check('V2 400 宽：子菜单在（7 项）', !!sub, sub);
     if (sub) {
@@ -683,6 +717,246 @@ if (!PROTO) {
     check('V2 400 宽：展开 ES3 后页面不横向溢出', await noHScroll(page), await page.evaluate(() => [document.documentElement.scrollWidth, document.documentElement.clientWidth]));
     const lc = await lowContrast(page, sub ? [R, '[data-qa-subnav]'] : [R]);
     check('V2 深色：#v-funds（含新板块、展开详情）和子菜单文字对比度 ≥ 4.5', lc.bad.length === 0, lc.bad);
+    await ctx.close();
+  });
+
+  /** 点"刷新"、等发了 1 次 POST 且按钮恢复可点，再等结果文字画上去（同第二轮的 doRefresh，那个在别的块里够不着） */
+  async function refreshOnce(page, api) {
+    const btn = page.locator(R).getByRole('button', { name: /刷新/ }).first();
+    await btn.click();
+    const t0 = Date.now();
+    while (Date.now() - t0 < WAIT && (api.posts.length < 1 || !(await btn.isEnabled().catch(() => false)))) await new Promise((ok) => setTimeout(ok, 30));
+    await page.waitForTimeout(400);
+  }
+  // ================================================================ 第三版小改（Amos 2026-11-11 已定；测试先写，C154）
+  // W. 可能区间板块默认只显示前 10 行（从宽到窄），下面一个按钮"展开其余 N 只"（N = 当前市场的总行数 − 10）、aria-expanded=false；
+  //    点了全部显示、按钮写"收起"、aria-expanded=true；再点收回 10 行；切市场 / 时间段后恢复折叠；行数 ≤ 10 时没有这个按钮；
+  //    按钮高 ≥ 44px；1200 和 400 宽都折叠；子菜单点"可能区间"仍定位到板块。
+  //    页面约定：按钮是 button（或 role=button），在可能区间板块里、不带 data-code；文字正好是"展开其余 N 只"或"收起"。
+  // X. 刷新后债券那块的提示按每只 yield.stale / yield.approx 分三种说（"过期" / "近似" / "还没有收益率数据"），和那一行的标签一致；
+  //    refreshYields 整体失败（yields.failed 里 code 为 '*'）时不显示"（*）"。
+  const bw = (f) => f.band[3] - f.band[1];
+  /** 某个市场（'' = 全部）在可能区间板块里应有的行：有区间的按 68% 段从宽到窄，算不出的排最后 */
+  const bandOrder = (snap, m) => { const xs = snap.items.filter((x) => !m || x.market === m); return [...xs.filter((x) => x.band).sort((a, b) => bw(b) - bw(a)), ...xs.filter((x) => !x.band)].map((x) => x.code); };
+  const bandCodes = (page) => bandRows(page).evaluateAll((es) => es.map((e) => e.getAttribute('data-band-code')));
+  const clickFold = async (page) => { await foldBtn(page); await page.locator('[data-qa-fold]').click(); await page.waitForTimeout(150); };
+  /** 量一次：看得见的行、按钮状态 */
+  const foldState = async (page) => ({ codes: await bandCodes(page), btn: await foldBtn(page) });
+  const tabOf = (page, m) => page.locator(R).getByRole('tablist', { name: '市场' }).getByRole('tab', { name: new RegExp('^\\s*' + (m || '全部')) });
+  const periodOf = (page, label) => page.locator(R).getByRole('group', { name: '时间段' }).getByRole('button', { name: label });
+
+  for (const [vw, scheme] of [[1200, 'light'], [400, 'dark']]) {
+    await section(`W 可能区间折叠 ${vw} ${scheme}`, async () => {
+      const { page, ctx } = await open({ snap: SNAP2, width: vw, height: 900, colorScheme: scheme });
+      await enter(page);
+      await page.locator(`${R} [data-band-code]`).first().waitFor({ state: 'attached', timeout: WAIT }).catch(() => {});
+      const all45 = bandOrder(SNAP2, '');
+      let s = await foldState(page);
+      check(`W ${vw} 宽：默认只显示前 10 行，就是从宽到窄的前 10 只`, s.codes.length === 10 && JSON.stringify(s.codes) === JSON.stringify(all45.slice(0, 10)), { got: s.codes, want: all45.slice(0, 10) });
+      check(`W ${vw} 宽：下面有按钮"展开其余 35 只"、aria-expanded=false`, !!s.btn && /^展开其余 ?35 ?只$/.test(s.btn.text) && s.btn.expanded === 'false', s.btn);
+      check(`W ${vw} 宽：按钮高 ≥ 44px`, !!s.btn && s.btn.h >= 44, s.btn);
+      if (vw === 400) check('W 400 宽：折叠时页面不横向溢出', await noHScroll(page), await page.evaluate(() => [document.documentElement.scrollWidth, document.documentElement.clientWidth]));
+      if (!s.btn) { await ctx.close(); return; }
+      await clickFold(page);
+      s = await foldState(page);
+      check(`W ${vw} 宽：点了全部 45 行显示（顺序仍从宽到窄、算不出的在最后）、按钮写"收起"、aria-expanded=true`,
+        s.codes.length === 45 && JSON.stringify(s.codes) === JSON.stringify(all45) && !!s.btn && s.btn.text === '收起' && s.btn.expanded === 'true', { n: s.codes.length, btn: s.btn });
+      check(`W ${vw} 宽：展开后按钮高仍 ≥ 44px`, !!s.btn && s.btn.h >= 44, s.btn);
+      if (vw === 400) check('W 400 宽：展开后页面不横向溢出', await noHScroll(page), await page.evaluate(() => [document.documentElement.scrollWidth, document.documentElement.clientWidth]));
+      if (s.btn) {
+        await clickFold(page);
+        s = await foldState(page);
+        check(`W ${vw} 宽：再点"收起"回到 10 行、按钮回到"展开其余 35 只"、aria-expanded=false`, s.codes.length === 10 && !!s.btn && /^展开其余 ?35 ?只$/.test(s.btn.text) && s.btn.expanded === 'false', { n: s.codes.length, btn: s.btn });
+      }
+      // 展开着切市场：恢复折叠；N 按这个市场算
+      for (const [m, n] of [['美国', 15], ['中国', 16], ['新加坡', 14]]) {
+        await expandBands(page);
+        const opened = (await bandCodes(page)).length;
+        await tabOf(page, m).click();
+        await page.waitForTimeout(150);
+        s = await foldState(page);
+        const want = bandOrder(SNAP2, m);
+        check(`W ${vw} 宽：展开着切到"${m}"→ 恢复折叠，显示这个市场从宽到窄的前 10 只，按钮"展开其余 ${n - 10} 只"、aria-expanded=false`,
+          opened > 10 && JSON.stringify(s.codes) === JSON.stringify(want.slice(0, 10)) && !!s.btn && new RegExp(`^展开其余 ?${n - 10} ?只$`).test(s.btn.text) && s.btn.expanded === 'false',
+          { opened, got: s.codes, want: want.slice(0, 10), btn: s.btn });
+      }
+      // 展开着切时间段：恢复折叠
+      await tabOf(page, '').click();
+      await page.waitForTimeout(150);
+      await expandBands(page);
+      const opened = (await bandCodes(page)).length;
+      await periodOf(page, '近 1 月').click();
+      await page.waitForTimeout(150);
+      s = await foldState(page);
+      check(`W ${vw} 宽：展开着切时间段（近 1 月）→ 恢复折叠（10 行、"展开其余 35 只"、aria-expanded=false）`, opened === 45 && s.codes.length === 10 && !!s.btn && /^展开其余 ?35 ?只$/.test(s.btn.text) && s.btn.expanded === 'false', { opened, n: s.codes.length, btn: s.btn });
+      // 子菜单点"可能区间"仍定位到板块（折叠着、展开着各点一次）
+      const sub = await findSub(page);
+      const k = SUBS.findIndex(([n]) => n === '可能区间');
+      if (!sub) check(`W ${vw} 宽：子菜单在`, false, null);
+      else for (const how of ['折叠着', '展开着']) {
+        if (how === '展开着') await expandBands(page);
+        const tg = await markTarget(page, sub.idx[k]);
+        await page.evaluate(() => scrollTo(0, 0));
+        await page.waitForTimeout(150);
+        await page.locator(`[data-qa-subnav] [data-qa-i="${sub.idx[k]}"]`).click();
+        await page.waitForTimeout(900);
+        const p = await targetPos(page);
+        const head = await page.evaluate(() => { const h = document.querySelector('[data-qa-target]'); return !!h && /未来 ?1 ?个月的可能区间/.test(h.textContent || ''); });
+        check(`W ${vw} 宽：${how}时子菜单点"可能区间"仍滚到可能区间板块（板块顶在视口上部 40% 内）`, !!tg?.found && head && !!p && p.top >= -4 && p.top <= p.vh * 0.4, { tg, p, head });
+      }
+      await ctx.close();
+    });
+  }
+
+  await section('W 行数 ≤ 10 没有按钮', async () => {
+    // 替身数据：新加坡只留 10 只（正好 10 行，边界）；全部 = 41 行
+    const sg = SNAP2.items.filter((x) => x.market === '新加坡').slice(0, 10).map((x) => x.code);
+    const snap = { ...SNAP2, items: SNAP2.items.filter((x) => x.market !== '新加坡' || sg.includes(x.code)) };
+    const { page, ctx } = await open({ snap, width: 1200 });
+    await enter(page);
+    await page.locator(`${R} [data-band-code]`).first().waitFor({ state: 'attached', timeout: WAIT }).catch(() => {});
+    let s = await foldState(page);
+    check('W 41 只时：显示 10 行、按钮"展开其余 31 只"', s.codes.length === 10 && !!s.btn && /^展开其余 ?31 ?只$/.test(s.btn.text), { n: s.codes.length, btn: s.btn });
+    await tabOf(page, '新加坡').click();
+    await page.waitForTimeout(150);
+    s = await foldState(page);
+    check('W 切到"新加坡"（正好 10 行）：10 行全显示、没有"展开其余 / 收起"按钮', s.codes.length === 10 && sg.every((c) => s.codes.includes(c)) && !s.btn, s);
+    await ctx.close();
+  });
+
+  // ---------------------------------------------------------------- X 收益率提示按每只的状态分三种
+  /** 债券那块的提示：看得见、不在 [data-yield-code] / [data-code] / [data-detail] 行里、文字里同时有 codes 每只（代码或名字）的最小元素 */
+  const yNote = (page, codes) => page.evaluate(({ R, keys }) => {
+    const root = document.querySelector(R);
+    if (!root) return null;
+    const hit = [...root.querySelectorAll('*')].filter((e) => e.getClientRects().length && !e.closest('[data-yield-code]') && !e.closest('[data-code]') && !e.closest('[data-detail]') && !e.closest('svg'))
+      .map((e) => (e.innerText || '').replace(/\s+/g, ' ').trim()).filter((t) => t.length <= 600 && keys.every((ks) => ks.some((k) => t.includes(k))));
+    return hit.length ? hit.sort((a, b) => a.length - b.length)[0] : null;
+  }, { R, keys: codes.map((c) => [c, BY2[c].name]) });
+  const yRow = async (page, c) => (await page.locator(`${R} [data-yield-code="${c}"]`).first().innerText({ timeout: 1500 }).catch(() => '')).replace(/\s+/g, ' ');
+
+  await section('X 收益率提示分三种', async () => {
+    // AGG：有过值、这次美国国债曲线没取到 → stale=true（页面标"过期"）
+    // BSV：第一次刷新时 Vanguard 页网络失败、服务端用美国国债给了近似值 → approx=true、stale=false（页面标"近似"，没有"过期"）——它照样在 yields.failed 里
+    //   （原来用 TLT / iShares；第三版 TLT 本来就是近似、不再抓 iShares，换成仍是 auto 的 BSV，守的事不变）
+    // BND：从没取到过 → value=null（页面写"还没有收益率数据"）
+    const nul = (c) => ({ ...BY2[c].yield, value: null, asOf: null, source: '', stale: false });
+    const before = { ...SNAP2, items: SNAP2.items.map((x) => (x.code === 'BSV' || x.code === 'BND' ? { ...x, yield: nul(x.code) } : x)) };
+    const after = { ...SNAP2, fetched_at: '2026-11-10T10:30:00Z', items: SNAP2.items.map((x) =>
+      x.code === 'AGG' ? { ...x, yield: { ...x.yield, stale: true, error: '美国国债也没取到：Treasury 回 503' } }
+      : x.code === 'BSV' ? { ...x, yield: { ...x.yield, value: 4.41, kind: 'auto', approx: true, label: '近似：美国国债 + 利差', asOf: '2026-11-10', source: '美国财政部', stale: false } }
+      : x.code === 'BND' ? { ...x, yield: { ...nul('BND'), stale: true, error: 'Vanguard 回 503；美国国债也没取到：Treasury 回 503' } }
+      : x) };
+    const CODES = SNAP2.items.map((x) => x.code);
+    const { page, api, ctx } = await open({
+      snap: before,
+      onRefresh: () => { api.snap = after; return { next: null, done: 45, total: 45, updated: CODES, failed: [], requests: 45,
+        yields: { updated: BONDS.filter((c) => !['AGG', 'BSV', 'BND'].includes(c)), failed: [{ code: 'AGG', reason: '美国国债也没取到：Treasury 回 503' }, { code: 'BSV', reason: 'Vanguard 8 秒没回应（试了 2 次）' }, { code: 'BND', reason: 'Vanguard 回 503；美国国债也没取到：Treasury 回 503' }], requests: 12, curves: { ust: 'ok', sgs: 'ok', cgb: 'ok' } } }; },
+    });
+    await enter(page);
+    await refreshOnce(page, api);
+    // 先确认到了要检查的状态（C29）：刷新发了、行里的标签已经是新的
+    const rAGG = await yRow(page, 'AGG'), rBSV = await yRow(page, 'BSV'), rBND = await yRow(page, 'BND');
+    check('X 前提：刷了一次；AGG 行标"过期"、BSV 行标"近似"不标"过期"、BND 行写"还没有收益率数据"',
+      api.posts.length === 1 && /过期/.test(rAGG) && /近似/.test(rBSV) && !/过期/.test(rBSV) && /没有收益率数据/.test(rBND), { posts: api.posts.length, rAGG, rBSV, rBND });
+    const t = (await yNote(page, ['AGG', 'BSV', 'BND'])) ?? '';
+    const cl = (c) => t.split(/[；;。\n]/).filter((x) => x.includes(c) || x.includes(BY2[c].name));
+    const [cA, cT, cB] = [cl('AGG'), cl('BSV'), cl('BND')];
+    check('X 刷新后有一句提示同时说到 AGG、BSV、BND', !!t, t);
+    check('X AGG（stale=true）：提示里说它"过期"', cA.length > 0 && cA.every((x) => /过期/.test(x)), cA);
+    check('X BSV（approx=true、stale=false）：提示里说它退回"近似"，不说"过期"、不说"显示的是上次的值"', cT.length > 0 && cT.every((x) => /近似/.test(x) && !/过期/.test(x) && !/上次/.test(x)), cT);
+    check('X BND（value=null）：提示里说它"没有收益率数据"，不说"过期" / "上次的值"', cB.length > 0 && cB.every((x) => /没有收益率数据/.test(x) && !/过期/.test(x) && !/上次/.test(x)), cB);
+    await ctx.close();
+  });
+
+  await section('Y 中国场内 ETF 来源', async () => {
+    const { page, ctx } = await open({ snap: SNAP2 });
+    await enter(page);
+    const row = page.locator(`${R} [data-code="510300"][aria-expanded]`).first();
+    await row.scrollIntoViewIfNeeded().catch(() => {});
+    await row.click();
+    const dt = (await page.locator(`${R} [data-detail="510300"]`).first().innerText({ timeout: 2000 }).catch(() => '')).replace(/\s+/g, ' ');
+    check('Y 510300 详情的"来源"写东方财富净值、不写 Yahoo', /来源[：:]?\s*东方财富(累计)?净值/.test(dt) && !/Yahoo/i.test(dt), dt.slice(-160));
+    await ctx.close();
+  });
+
+  // ---------------------------------------------------------------- Z 产品复核（2026-11-11，R1 / Y1 / Y2；测试先写，C154）
+  // Z1（R1）：511990 是收益指数（price_kind = 'index'，夹具里 currency 仍留 CNY）→ 逐只对比那一行不写"CNY"、写"收益指数（起点 100）"；"说明"里讲清 511990 是指数不是价格。
+  // Z1（Y2）：中国场内 ETF 详情的来源写"不是场内成交价"；"说明"里讲溢价 / 折价。
+  // Z2（Y1）：可能区间展开后滚到底点"收起"→ 按钮在吸顶栏（子菜单所在的 sticky / fixed 那一层）下方看得见，子菜单 aria-current 仍是"可能区间"；1200 和 400 都测。
+  /** "说明"板块（子菜单"说明"那一项指到的元素）：是 <details> 就先打开，回它的文字 */
+  const helpText = async (page) => {
+    const sub = await findSub(page);
+    if (!sub) return '';
+    const tg = await markTarget(page, sub.idx[SUBS.findIndex(([n]) => n === '说明')]);
+    if (!tg?.found) return '';
+    return page.evaluate(() => { const t = document.querySelector('[data-qa-target]'); t.querySelectorAll('details').forEach((d) => { d.open = true; }); if (t.tagName === 'DETAILS') t.open = true; return (t.innerText || t.textContent || ''); });
+  };
+  await section('Z1 511990 收益指数、来源说明', async () => {
+    const { page, ctx } = await open({ snap: SNAP2 });
+    await enter(page);
+    const row = (await rowText(page, '511990')).replace(/\s+/g, ' ');
+    check('Z1 511990（price_kind=index）那一行不写"CNY"、写"收益指数（起点 100）"', !!row && !/CNY/.test(row) && /收益指数[（(]起点 ?100[)）]/.test(row), row.slice(0, 200));
+    const r510 = page.locator(`${R} [data-code="510300"][aria-expanded]`).first();
+    await r510.scrollIntoViewIfNeeded().catch(() => {});
+    await r510.click();
+    const dt = (await page.locator(`${R} [data-detail="510300"]`).first().innerText({ timeout: 2000 }).catch(() => '')).replace(/\s+/g, ' ');
+    check('Z1 510300 详情的来源写东方财富净值，并写明"不是场内成交价"', /东方财富/.test(dt) && /不是场内成交价/.test(dt), dt.slice(-200));
+    await r510.click().catch(() => {});
+    const help = await helpText(page);
+    const parts = help.split(/[。；;\n]/);
+    const idx = parts.filter((x) => x.includes('511990') && /指数/.test(x) && /不是[^，,。]{0,8}价格/.test(x));
+    check('Z1 "说明"里有一句讲 511990 画的是收益指数、不是价格', idx.length > 0, parts.filter((x) => x.includes('511990')).map((x) => x.trim()).slice(0, 4));
+    check('Z1 "说明"里讲到溢价 / 折价（东方财富净值和场内成交价的差别）', /溢价/.test(help) && /折价/.test(help), help.replace(/\s+/g, ' ').slice(0, 120));
+    await ctx.close();
+  });
+  for (const [vw, scheme] of [[1200, 'light'], [400, 'dark']]) {
+    await section(`Z2 收起后按钮可见 ${vw}`, async () => {
+      const { page, ctx } = await open({ snap: SNAP2, width: vw, height: 900, colorScheme: scheme });
+      await enter(page);
+      const sub = await findSub(page);
+      const k = sub ? sub.idx[SUBS.findIndex(([n]) => n === '可能区间')] : -1;
+      await expandBands(page);
+      const f0 = await foldBtn(page);
+      check(`Z2 ${vw} 宽：前提：可能区间已展开（按钮写"收起"、45 行）`, !!f0 && f0.text === '收起' && (await bandRows(page).count()) === 45, f0);
+      if (!f0 || f0.text !== '收起') { await ctx.close(); return; }
+      // 滚到底：让"收起"按钮落在视口最下面，再点
+      await page.evaluate(() => document.querySelector('[data-qa-fold]').scrollIntoView({ block: 'end' }));
+      await page.waitForTimeout(300);
+      await page.locator('[data-qa-fold]').click();
+      await page.waitForTimeout(900);
+      const f1 = await foldBtn(page);
+      const pos = await page.evaluate(() => {
+        const b = document.querySelector('[data-qa-fold]');
+        const nav = document.querySelector('[data-qa-subnav]');
+        // 吸顶栏：子菜单自己或往上第一层 position 是 sticky / fixed 的元素；找不到就用子菜单本身
+        let bar = nav;
+        for (let e = nav; e && e !== document.body; e = e.parentElement) { const ps = getComputedStyle(e).position; if (ps === 'sticky' || ps === 'fixed') { bar = e; break; } }
+        const r = b && b.getBoundingClientRect(), br = bar && bar.getBoundingClientRect();
+        const cur = [...document.querySelectorAll('[data-qa-subnav] [data-qa-i]')].filter((a) => { const c = a.getAttribute('aria-current'); return c && c !== 'false'; }).map((a) => Number(a.getAttribute('data-qa-i')));
+        return r && br ? { top: Math.round(r.top), bottom: Math.round(r.bottom), barBottom: Math.round(br.bottom), vh: innerHeight, cur } : { err: !b ? '找不到按钮' : '找不到吸顶栏', cur };
+      });
+      check(`Z2 ${vw} 宽：滚到底点"收起"→ 收回 10 行、按钮写"展开其余 35 只"`, (await bandRows(page).count()) === 10 && !!f1 && /^展开其余 ?35 ?只$/.test(f1.text), f1);
+      check(`Z2 ${vw} 宽：收起后按钮在吸顶栏下方看得见（按钮 top ≥ 吸顶栏底边、bottom ≤ 视口底）`, !pos.err && pos.top >= pos.barBottom - 1 && pos.bottom <= pos.vh, pos);
+      check(`Z2 ${vw} 宽：收起后子菜单 aria-current 仍是"可能区间"`, !!sub && pos.cur.length === 1 && pos.cur[0] === k, { cur: pos.cur.map((i) => sub?.texts[i]), want: '可能区间' });
+      await ctx.close();
+    });
+  }
+
+  await section('X 收益率整体失败不写（*）', async () => {
+    const { page, api, ctx } = await open({
+      snap: SNAP2,
+      onRefresh: () => ({ next: null, done: 45, total: 45, updated: SNAP2.items.map((x) => x.code), failed: [], requests: 45,
+        yields: { updated: [], failed: [{ code: '*', reason: 'iShares 回 503' }], requests: 0, curves: { ust: 'iShares 回 503', sgs: 'iShares 回 503', cgb: 'iShares 回 503' } } }),
+    });
+    await enter(page);
+    const stars = (txt) => (txt.match(/\*/g) || []).length;
+    const t0 = await page.locator(R).innerText().catch(() => '');
+    await refreshOnce(page, api);
+    const t1 = await page.locator(R).innerText().catch(() => '');
+    check('X 前提：刷了一次、按钮恢复可点', api.posts.length === 1 && (await page.locator(R).getByRole('button', { name: /刷新/ }).first().isEnabled().catch(() => false)), api.posts.length);
+    const m = t1.match(/[^。\n]*[（(]\s*\*\s*[)）][^。\n]*/);
+    check('X refreshYields 整体失败（failed 里 code 为 "*"）：页面上不出现"（*）"，也没有多出 "*"', !m && stars(t1) <= stars(t0), { hit: m && m[0], before: stars(t0), after: stars(t1) });
     await ctx.close();
   });
 }
