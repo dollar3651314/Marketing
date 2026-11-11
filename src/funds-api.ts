@@ -584,8 +584,8 @@ export async function refreshYields(env: Env, now: number, f: FetchLike = (u, i)
 
 // ---------------------------------------------------------------- 第四版 ②：估值（6 个指数；"刷新数据"里 45 只和收益率都取完以后，页面再按 cursor 一个指数一批调 POST /api/funds/valuation/refresh）
 /**
- * 安全经理限制（Amos 11/11 同意）：只在点"刷新数据"时取；**每个来源每天最多 1 次**（fund_val_fetch 记上次去取的日期，UTC+8，当天已取过就跳过；
- * Shiller 每月 1 次）；同一来源两个请求之间都隔 ≥ 2 秒（同一批里靠 Http gapMs；中证批与批之间：第 2～5 批开头先等 2 秒）；不重试（tries = 1，重试也是一次请求）。
+ * 安全经理限制（Amos 11/11 同意）：只在点"刷新数据"时取；**每个来源每天最多取成功 1 次**（fund_val_fetch：取到、解析、存好以后才记 ok_day，UTC+8，当天已成功就跳过；
+ * Shiller 每月 1 次）；主会话 11/11 改：被掐断 / 没取到不算取过，但**同一来源同一天最多尝试 2 次**（发请求前先把 tries 加一，硬上限）；同一来源两个请求之间都隔 ≥ 2 秒（同一批里靠 Http gapMs；中证批与批之间：第 2～5 批开头先等 2 秒）；不重试（tries = 1，重试也是一次请求）。
  * 一个指数一批（中证：index-perf + indicator.xls 2 个请求；Shiller：首页 + ie_data.xls 2 个请求），远在 ≤ 45、25 秒截止之内。
  * 只用中证指数官网和 shillerdata.com（下载链接在首页上找，主机只认 shillerdata.com / wsimg.com）；不用蛋卷、multpl、MSCI、FTSE。
  * 存的是中证指数有限公司、Robert Shiller 的数据，只给 Amos 本人看，不转载。
@@ -597,11 +597,21 @@ const csXlsUrl = (code: string) => `https://oss-ch.csindex.com.cn/static/html/cs
 const SHILLER_HOME = 'https://shillerdata.com/';
 /** 来源键（fund_val_fetch.src） */
 export const valKeys = (def: ValIndexDef): string[] => (def.src === 'shiller' ? ['shiller'] : [`cs-perf:${def.code}`, `cs-xls:${def.code}`]);
-/** 这个来源今天（Shiller：这个月）还能不能取 */
-export function valDue(key: string, lastDay: string | undefined, now: number): boolean {
-  if (!lastDay) return true;
+/** 同一来源同一天最多尝试几次（主会话 11/11：成功才算取过，但被掐断 / 失败也最多再试一次，硬上限） */
+export const VAL_MAX_TRIES = 2;
+export interface ValLog { day: string; tries: number; ok_day: string | null }
+/** 这个来源现在还要不要取：今天（Shiller：这个月）已经取成功过 → 不取；今天已经尝试了 2 次 → 不取 */
+export function valDue(key: string, log: ValLog | undefined, now: number): boolean {
+  if (!log) return true;
   const today = day8(now);
-  return key === 'shiller' ? lastDay.slice(0, 7) !== today.slice(0, 7) : lastDay !== today;
+  if (log.ok_day && (key === 'shiller' ? log.ok_day.slice(0, 7) === today.slice(0, 7) : log.ok_day === today)) return false;
+  return !(log.day === today && log.tries >= VAL_MAX_TRIES);
+}
+/** 这个来源这次不取的原因（给 skipped 的 reason 用） */
+function skipWhy(key: string, log: ValLog | undefined, now: number): string {
+  const today = day8(now);
+  if (log?.ok_day && (key === 'shiller' ? log.ok_day.slice(0, 7) === today.slice(0, 7) : log.ok_day === today)) return key === 'shiller' ? '这个月已经取过（Shiller 每月取一次）' : '今天已经取过（每个来源每天最多一次）';
+  return `今天已经试了 ${VAL_MAX_TRIES} 次都没取到，明天再取`;
 }
 /** 首次全量从多少个月前的 1 号开始取（窗口 120 个月，多留 2 个月） */
 const VAL_FULL_MONTHS = 122;
@@ -624,18 +634,20 @@ export interface ValStepResult {
   requests: number;
 }
 
-async function readLog(env: Env): Promise<Map<string, string>> {
-  const m = new Map<string, string>();
+async function readLog(env: Env): Promise<Map<string, ValLog>> {
+  const m = new Map<string, ValLog>();
   try {
-    const rows = (await env.DB.prepare('SELECT src, day FROM fund_val_fetch').all<{ src: string; day: string }>())?.results ?? [];
-    for (const r of rows) if (r?.src) m.set(r.src, r.day);
+    const rows = (await env.DB.prepare('SELECT src, day, tries, ok_day FROM fund_val_fetch').all<{ src: string; day: string; tries: number; ok_day: string | null }>())?.results ?? [];
+    for (const r of rows) if (r?.src) m.set(r.src, { day: r.day, tries: Number(r.tries) || 0, ok_day: r.ok_day ?? null });
   } catch { /* 读不到：当没取过 */ }
   return m;
 }
-/** 发请求前先记下"今天取过了"（不在事务里；记不上就不发，宁可少取不多取） */
-async function markFetched(env: Env, key: string, now: number) {
-  await env.DB.prepare('INSERT INTO fund_val_fetch (src, day, at) VALUES (?1, ?2, ?3) ON CONFLICT (src) DO UPDATE SET day = ?2, at = ?3').bind(key, day8(now), now).run();
+/** 发请求前先把"今天试了几次"加一（不在事务里；记不上就不发，宁可少取不多取）。换了一天从 1 重新数 */
+async function markTry(env: Env, key: string, now: number) {
+  await env.DB.prepare('INSERT INTO fund_val_fetch (src, day, tries, at, ok_day) VALUES (?1, ?2, 1, ?3, NULL) ON CONFLICT (src) DO UPDATE SET tries = CASE WHEN fund_val_fetch.day = ?2 THEN fund_val_fetch.tries + 1 ELSE 1 END, day = ?2, at = ?3').bind(key, day8(now), now).run();
 }
+/** 取到、解析成功并存好以后才记"今天取过了" */
+const markOk = (env: Env, key: string, now: number) => env.DB.prepare('UPDATE fund_val_fetch SET ok_day = ?2 WHERE src = ?1').bind(key, day8(now));
 function readStored(raw: string | null | undefined): ValStored | null {
   if (!raw) return null;
   try { const j = JSON.parse(raw) as ValStored; return j && Array.isArray(j.series) ? j : null; } catch { return null; }
@@ -649,7 +661,9 @@ export async function refreshValuation(env: Env, step: number, now: number, f: F
   const base = { next, step, total, code: def.code, name: def.name };
   const log = await readLog(env);
   const due = valKeys(def).filter((k) => valDue(k, log.get(k), now));
-  if (!due.length) return { ...base, status: 'skipped', reason: def.src === 'shiller' ? '这个月已经取过（Shiller 每月取一次）' : '今天已经取过（每个来源每天最多一次）', requests: 0 };
+  if (!due.length) return { ...base, status: 'skipped', reason: [...new Set(valKeys(def).map((k) => skipWhy(k, log.get(k), now)))].join('；'), requests: 0 };
+  /** 这一批取到并解析成功的来源（存好以后才记 ok_day） */
+  const okKeys: string[] = [];
   // 中证 5 个指数一批一个、紧挨着：第 2～5 批一开头也先等 2 秒（上一批最后一个请求也是中证）；第 1 批和 Shiller 前面不是同一来源，不用等
   const http = new Http(f, MAX_REQUESTS, sleep, Date.now() + CALL_BUDGET_MS, { gapMs: VAL_GAP_MS, tries: 1, waitFirst: def.src === 'csindex' && step > 0 });
   const row = await env.DB.prepare('SELECT data FROM fund_valuation WHERE code = ?1').bind(def.code).first<{ data: string | null }>().catch(() => null);
@@ -663,25 +677,26 @@ export async function refreshValuation(env: Env, step: number, now: number, f: F
         // 增量：库里有够长的序列就从最后一个月的 1 号取（重算这个月的月末值）；没有就全量取 122 个月
         const incr = old && old.series.length >= 100;
         const start = incr ? old!.series[old!.series.length - 1][0].replace('-', '') + '01' : monthStart(now, VAL_FULL_MONTHS);
-        await markFetched(env, `cs-perf:${def.code}`, now);
+        await markTry(env, `cs-perf:${def.code}`, now);
         const daily = parseCsPerf(await http.get(csPerfUrl(def.code, start, day8(now).replace(/-/g, '')), CS_HEADERS, '中证'));
         if (!daily || !daily.length) throw new FetchFail('中证的市盈率数据认不出来（或是空的）');
         const last = daily[daily.length - 1];
         st = { code: def.code, series: mergeMonths(incr ? old!.series : [], monthEnds(daily), VAL_KEEP), pe_now: last[1], pe_now_date: last[0], dy_now: st?.dy_now ?? null, dy_date: st?.dy_date ?? null };
         got++;
+        okKeys.push(`cs-perf:${def.code}`);
       } catch (e) { errs.push(`市盈率：${why(e)}`); }
     }
     if (due.includes(`cs-xls:${def.code}`)) {
       try {
-        await markFetched(env, `cs-xls:${def.code}`, now);
+        await markTry(env, `cs-xls:${def.code}`, now);
         const x = parseCsIndicator(await http.bin(csXlsUrl(def.code), { headers: CS_HEADERS }, '中证'));
         if (!x) throw new FetchFail('中证的股息率表认不出来');
-        if (st) { st = { ...st, dy_now: x.dy, dy_date: x.date }; got++; } else errs.push('股息率取到了，但还没有市盈率序列，先不存');
+        if (st) { st = { ...st, dy_now: x.dy, dy_date: x.date }; got++; okKeys.push(`cs-xls:${def.code}`); } else errs.push('股息率取到了，但还没有市盈率序列，先不存');
       } catch (e) { errs.push(`股息率：${why(e)}`); }
     }
   } else {
     try {
-      await markFetched(env, 'shiller', now);
+      await markTry(env, 'shiller', now);
       const home = await http.text(SHILLER_HOME, { headers: HTML_HEADERS }, 'Shiller 首页');
       const url = shillerXlsUrl(home.text);
       if (!url) throw new FetchFail('Shiller 首页上没找到 ie_data.xls 的下载链接（或链接不在 shillerdata.com / wsimg.com 上）');
@@ -690,11 +705,13 @@ export async function refreshValuation(env: Env, step: number, now: number, f: F
       const last = p.series[p.series.length - 1];
       st = { code: 'SPX', series: p.series, pe_now: last[1], pe_now_date: last[0], dy_now: p.dy, dy_date: p.dyDate };
       got++;
+      okKeys.push('shiller');
     } catch (e) { errs.push(why(e)); }
   }
   const reason = errs.join('；');
   // 先取完再写库（不在事务里调外部接口）；没取到的保留上次的 data，只记原因
-  if (got && st) await env.DB.prepare('INSERT INTO fund_valuation (code, data, ok_at, err, err_at) VALUES (?1, ?2, ?3, ?4, ?5) ON CONFLICT (code) DO UPDATE SET data = ?2, ok_at = ?3, err = ?4, err_at = ?5').bind(def.code, JSON.stringify(st), now, reason ? reason.slice(0, 200) : null, reason ? now : null).run();
+  // 数据和"今天取成功了"放在同一个 batch 里写（存好了才算取过；被掐断在这之前的，当天还能再试一次）
+  if (got && st) await env.DB.batch([env.DB.prepare('INSERT INTO fund_valuation (code, data, ok_at, err, err_at) VALUES (?1, ?2, ?3, ?4, ?5) ON CONFLICT (code) DO UPDATE SET data = ?2, ok_at = ?3, err = ?4, err_at = ?5').bind(def.code, JSON.stringify(st), now, reason ? reason.slice(0, 200) : null, reason ? now : null), ...okKeys.map((k) => markOk(env, k, now))]);
   else if (reason) await env.DB.prepare('INSERT INTO fund_valuation (code, data, ok_at, err, err_at) VALUES (?1, NULL, NULL, ?2, ?3) ON CONFLICT (code) DO UPDATE SET err = ?2, err_at = ?3').bind(def.code, reason.slice(0, 200), now).run();
   return { ...base, status: !got ? 'failed' : reason ? 'partial' : 'ok', ...(reason ? { reason } : {}), requests: http.used };
 }

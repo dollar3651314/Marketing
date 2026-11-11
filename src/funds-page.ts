@@ -229,11 +229,10 @@ export const FUNDS_MOD = `<section class="page plat" id="v-funds" hidden>
   </section>
   <section class="fu-card mod" id="fu-va" aria-labelledby="fu-va-h">
     <div class="fu-sec-h"><h2 id="fu-va-h">估值：现在贵不贵</h2><p>和自己过去 10 年比；只看股票类，第一版 6 个指数、11 只基金</p></div>
-    <p class="fu-vamsg" id="fu-va-sg" hidden>新加坡这 14 只没有自己的估值卡：XUS 跟踪的是标普500，看"美国"下的标普500 那张；其余新加坡基金免费公开渠道找不到可用的估值历史。</p>
     <div class="fu-va-grid" id="fu-va-grid"></div>
     <p class="fu-vamsg" id="fu-va-msg" role="status"></p>
     <div class="fu-vnone" id="fu-va-none"><b>还没有估值历史的 34 只</b>：债券和货币类 16 只不适用；其余 18 只（纳斯达克100、美国红利 5 只、美国全市场、MSCI World、科创50、恒生科技、红利低波、标普A股红利、海峡时报、4 只 REIT、东盟红利）免费公开渠道找不到可用的历史。以后打算从那时起每次刷新存一份当前值、慢慢攒出自己的历史——这一版还没有开始存。</div>
-    <p class="fu-disc">市盈率口径：A 股用中证指数官网公布的市盈率（官方没有写明是滚动还是静态）；标普500 用 Shiller 的周期调整市盈率（CAPE，10 年平均实际盈利）。"长期预期年化"是两种简单推算，<b>是推断、不是预测、不是投资建议</b>：盈利收益率法 = 1 ÷ 市盈率（标普为扣通胀的实际值）；分红 + 增长法 = 股息率 + 盈利增长假设（A 股 5%、美国 4%）+ 估值回到中位数的影响（名义值）。<b>两种口径不能直接比较。</b>数据来源：中证指数有限公司、Robert Shiller，仅供本人参考，不转载。只在点「刷新数据」时取：中证每天最多一次，Shiller 每月一次。</p>
+    <p class="fu-disc">市盈率口径：A 股用中证指数官网公布的市盈率（官方没有写明是滚动还是静态）；标普500 用 Shiller 的周期调整市盈率（CAPE，10 年平均实际盈利）。"长期预期年化"是两种简单推算，<b>是推断、不是预测、不是投资建议</b>：盈利收益率法 = 1 ÷ 市盈率（标普为扣通胀的实际值）；分红 + 增长法 = 股息率 + 盈利增长假设（A 股 5%、美国 4%）+ 估值回到中位数的影响（名义值）。<b>两种口径不能直接比较。</b>数据来源：中证指数有限公司、Robert Shiller，仅供本人参考，不转载。只在点「刷新数据」时取：中证每天最多取成功一次，Shiller 每月一次。</p>
   </section>
   <section class="fu-card mod" id="fu-ls" aria-labelledby="fu-ls-h">
     <div class="fu-sec-h"><h2 id="fu-ls-h">逐只对比</h2><p>点一行看一年走势和回撤过程</p></div>
@@ -538,15 +537,14 @@ function bonds(){var all=shown().filter(function(f){return f.category==='债券'
       src.appendChild(document.createTextNode(String(y.label||'').replace(/^近似：/,'')+(y.duration!=null?' · 久期 '+y.duration+' 年':'')+' · '+(y.source||'')+' '+(y.asOf||'').slice(5)+(y.stale&&y.error?' · 这次没取到：'+plainWhy(y.error):'')))}
     else src.appendChild(document.createTextNode(y&&y.error?'还没有收益率数据：'+plainWhy(y.error):'还没有收益率数据，点「刷新数据」时会一起取'));
     r.appendChild(src);L.appendChild(r)});}
-/** 第四版 ② 估值：6 张卡。市场切换：中国 → A 股 5 个；美国 → 标普500；新加坡 → 没有卡、写一句说明（测试会话 e2e VA 约定；原型 v3 在新加坡下显示标普500，交回时说明） */
+/** 第四版 ② 估值：6 张卡。市场切换（照 Amos 审过的原型 v3）：中国 → A 股 5 个；美国、新加坡 → 标普500 那 1 张（卡上基金含新加坡上市的 XUS） */
 function vaMk(v){return v.market||(v.code==='SPX'?'美国':'中国')}
-function vaShown(v){return!st.m||vaMk(v)===st.m}
+function vaShown(v){return!st.m||(st.m==='中国'?vaMk(v)==='中国':vaMk(v)==='美国')}
 function vaWord(p){return p==null?['mid','历史还不够 2 年，先不比']:p<30?['lo','比过去便宜']:p>70?['hi','比过去贵']:['mid','接近过去中间水平']}
 function fx(v){return v==null?'—':(+v).toFixed(2).replace(/\\.?0+$/,'')}
 function vaDate(d){d=String(d||'');return/^\\d{8}$/.test(d)?d.slice(0,4)+'-'+d.slice(4,6)+'-'+d.slice(6):d}
-function valuation(){var G=$('fu-va-grid'),N=$('fu-va-sg');G.replaceChildren();var V=D&&D.valuation;
+function valuation(){var G=$('fu-va-grid');G.replaceChildren();var V=D&&D.valuation;
   var items=V&&Array.isArray(V.items)?V.items.filter(vaShown):[],miss=V&&Array.isArray(V.missing)?V.missing.filter(vaShown):V?[]:VAL_DEFS.filter(vaShown);
-  N.hidden=st.m!=='新加坡';
   items.forEach(function(v){var spx=v.code==='SPX'||v.metric==='CAPE',c=el('div',{'class':'fu-vc','data-val-code':v.code});
     var top=el('div');top.appendChild(el('h3',null,v.name+(spx?'（CAPE，周期调整市盈率）':'')));top.appendChild(el('div',{'class':'fd'},(v.funds||[]).join(' · ')+' · '+(v.source||'')+' · '+vaDate(v.pe_now_date)));c.appendChild(top);
     var p=v.pe_pct10y,n=v.n_months||(v.pe_series||[]).length,w=vaWord(p),yrs=n>=120?'10 年':(n/12).toFixed(1).replace(/\\.0$/,'')+' 年';
@@ -657,7 +655,7 @@ async function valRefresh(){var M=$('fu-va-msg'),step=0,n=0,fail=[],ok=0,skip=0,
       if(r.status==='ok')ok++;else if(r.status==='skipped')skip++;else fail.push(r.name+(r.status==='partial'?'（只取到一部分）':'')+'：'+plainWhy(r.reason||''));
       if(r.next!=null&&!(r.next>step))throw new Error('服务器回的估值进度没有往前走');step=r.next}
     await load();
-    M.className='fu-vamsg'+(fail.length?' err':'');M.textContent=fail.length?'估值：'+fail.length+' 个指数这次没取全（'+fail.join('；')+'），显示的是上次的数据；今天不会再去取，明天再刷新会再取。':'估值数据已更新'+(skip?'（'+skip+' 个今天已经取过，没有再取）':'')+'。'}
+    M.className='fu-vamsg'+(fail.length?' err':'');M.textContent=fail.length?'估值：'+fail.length+' 个指数这次没取全（'+fail.join('；')+'），显示的是上次的数据；没取到的今天再点「刷新数据」还会再试一次（每个来源每天最多试 2 次）。':'估值数据已更新'+(skip?'（'+skip+' 个今天已经取过，没有再取）':'')+'。'}
   catch(e){await load();M.className='fu-vamsg err';M.textContent='估值这次没取完（'+e.message+'），显示的是上次的数据。'}}
 document.querySelectorAll('#fu-periods .fu-chip').forEach(function(b){b.addEventListener('click',function(){st.p=b.dataset.p;rgOpen=false;document.querySelectorAll('#fu-periods .fu-chip').forEach(function(x){x.setAttribute('aria-pressed',x===b?'true':'false')});render()})});
 document.querySelectorAll('#fu-markets .fu-chip').forEach(function(b){b.addEventListener('click',function(){st.m=b.dataset.m;rgOpen=false;document.querySelectorAll('#fu-markets .fu-chip').forEach(function(x){x.setAttribute('aria-selected',x===b?'true':'false')});render()})});
