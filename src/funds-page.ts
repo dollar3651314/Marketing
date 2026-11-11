@@ -129,6 +129,9 @@ export const FUNDS_CSS = `
 #v-funds .fu-disc{font-size:12px;color:var(--muted);margin:var(--s3) 0 0;line-height:1.6}
 #v-funds .fu-rg-na{grid-column:2 / -1;font-size:12px;color:var(--muted)}
 @media (max-width:760px){#v-funds .fu-rg-na{grid-column:1 / -1}}
+/* 第三版：可能区间默认只显示前 10 行，下面一个"展开其余 N 只 / 收起"（触控区 44px） */
+#v-funds .fu-more{display:flex;width:100%;min-height:44px;margin-top:var(--s2);color:var(--teal-ink)}
+#v-funds .fu-more[hidden]{display:none}
 /* 第二版 ③ 债券类预期年化（近似的条用斜纹） */
 #v-funds .fu-yb{display:grid;grid-template-columns:minmax(0,1.6fr) minmax(0,2fr) 76px minmax(0,1.8fr);gap:var(--s3);align-items:center;padding:8px var(--s2);border-bottom:1px solid var(--line)}
 #v-funds .fu-yb .nm{min-width:0}#v-funds .fu-yb .nm b{font-weight:600;display:block;line-height:1.35;overflow-wrap:anywhere}
@@ -192,6 +195,7 @@ export const FUNDS_MOD = `<section class="page plat" id="v-funds" hidden>
     <div class="fu-legend"><span><i class="bar" style="background:var(--fu-broad);opacity:.8"></i>大约 2/3 的可能落在这段</span><span><i class="bar" style="background:var(--fu-broad);opacity:.3"></i>大约 95% 的可能落在这段</span><span>竖线：区间中心（股票类为 0；债券类按下面的预期年化折成 1 个月）</span></div>
     <div class="fu-rg-scale" id="fu-rg-scale" aria-hidden="true"><div></div><div></div><div></div></div>
     <div id="fu-rg-list"></div>
+    <button class="btn fu-more" type="button" id="fu-rg-more" aria-controls="fu-rg-list" aria-expanded="false" hidden></button>
     <p class="fu-disc" id="fu-rg-disc"></p>
   </section>
   <section class="fu-card mod" id="fu-yb" aria-labelledby="fu-yb-h">
@@ -460,7 +464,7 @@ function ranges(){var arr=shown().filter(band).sort(function(a,b){return(b.band[
   $('fu-rg-sub').textContent='按过去一年的波动推算，不是预测涨跌'+(young.length?' · '+young.length+' 只上市不满两个月，算不出':'')+(none?' · '+none+' 只没有数据':'');
   var cov=D&&typeof D.band_coverage==='number'?D.band_coverage:null;
   $('fu-rg-disc').textContent=(cov!=null?'回测：拿过去一年每一段 1 个月（21 个交易日）对照，平均 '+Math.round(cov*100)+'% 的时候真实涨跌落在深色段里（设计目标约 2/3）。':'')+'只说明波动有多大，不代表会涨或会跌；不是投资建议。';
-  if(!ITEMS.some(has)){L.appendChild(el('div',{'class':'fu-empty'},'还没有数据'));return}
+  if(!ITEMS.some(has)){L.appendChild(el('div',{'class':'fu-empty'},'还没有数据'));rgFold();return}
   var lim=5;if(arr.length){lim=Math.max.apply(null,arr.map(function(f){return Math.max(Math.abs(f.band[0]),Math.abs(f.band[4]))}));lim=Math.max(1,Math.ceil(lim/5)*5)}
   var X=function(v){return 50+v/lim*50};
   [-lim,-lim/2,0,lim/2,lim].forEach(function(v){sc.appendChild(el('span',{style:'left:'+X(v)+'%'},(v>0?'+':v<0?'−':'')+Math.abs(v)+'%'))});
@@ -474,7 +478,13 @@ function ranges(){var arr=shown().filter(band).sort(function(a,b){return(b.band[
     r.appendChild(t);r.appendChild(el('div',{'class':'fu-rg-v'},'约 2/3：'+pct(B[1],1)+' ～ '+pct(B[3],1)));L.appendChild(r)});
   // 算不出的也各占一行（排在最后），写明原因
   shown().filter(function(f){return!band(f)}).forEach(function(f){var r=el('div',{'class':'fu-rg-row','data-band-code':f.code}),nm=el('div',{'class':'nm'});nm.appendChild(document.createTextNode(f.name));nm.appendChild(el('small',null,f.code));r.appendChild(nm);
-    r.appendChild(el('div',{'class':'fu-rg-na'},has(f)?'上市不满两个月，算不出':'没有数据'));L.appendChild(r)});}
+    r.appendChild(el('div',{'class':'fu-rg-na'},has(f)?'上市不满两个月，算不出':'没有数据'));L.appendChild(r)});
+  rgFold();}
+/** 第三版：可能区间折叠。默认只显示前 RG_FOLD 行（已按宽到窄排），其余 N 只点按钮展开；切换市场 / 时间段时恢复折叠（rgOpen = false） */
+var RG_FOLD=10,rgOpen=false;
+function rgFold(){var rows=[].slice.call($('fu-rg-list').querySelectorAll('[data-band-code]')),b=$('fu-rg-more'),n=rows.length-RG_FOLD;
+  rows.forEach(function(r,i){r.hidden=!rgOpen&&i>=RG_FOLD});
+  b.hidden=n<=0;b.setAttribute('aria-expanded',rgOpen&&n>0?'true':'false');b.textContent=n>0?(rgOpen?'收起':'展开其余 '+n+' 只'):''}
 /** 第二版 ③：债券类预期年化（从高到低；没取到过的排最后） */
 function bonds(){var all=shown().filter(function(f){return f.category==='债券'});$('fu-yb').hidden=!all.length;
   var L=$('fu-yb-list');L.replaceChildren();if(!all.length)return;
@@ -513,13 +523,22 @@ function prog(parts,err){progAt=D&&D.fetched_at||null;var P=$('fu-prog');P.repla
 function names(codes){return codes.length<=5?'（'+codes.join('、')+'）':''}
 /** 一次刷新最多发几次 POST：每批至少 1 只，正常最多"基金总数"批（现在 45）；超了说明进度没往前走，停下（防请求失控） */
 function maxPosts(){return Math.max(45,ITEMS.length)}
-/** 这次刷新里没取到收益率的那几只（最后一批回包里的 yields.failed）；读到新数据后分"从没取到过"和"显示上次的值"两种说 */
+/** 这次刷新里没取到收益率的那几只（最后一批回包里的 yields.failed）。读到新数据后按每只的 yield 分三种说，和行上的标签一致：
+ *  标了「过期」（stale：显示的是上次的值）/ 退回了近似（approx 且没过期：页面第一次取，网络失败时服务器写的美国国债近似值）/ 还没有收益率数据（value 为 null）。
+ *  refreshYields 整个抛错时 failed 只有一条 code '*'：说"这次没取到收益率：<原因>"，不当成某一只 */
 var yFail=null;
 function yMsg(){var M=$('fu-yb-msg');if(!yFail){return}var by={};ITEMS.forEach(function(f){by[f.code]=f});
-  var never=yFail.filter(function(x){var f=by[x.code];return!(f&&f.yield&&typeof f.yield.value==='number')}),old=yFail.filter(function(x){return never.indexOf(x)<0});
+  var all=yFail.filter(function(x){return x.code==='*'})[0];
+  if(all){M.textContent='这次没取到收益率：'+plainWhy(all.reason)+'。';yFail=null;return}
+  var val=function(x){var f=by[x.code];return f&&f.yield&&typeof f.yield.value==='number'?f.yield:null};
+  var never=[],stale=[],apx=[],old=[];
+  yFail.forEach(function(x){var y=val(x);if(!y)never.push(x);else if(y.stale)stale.push(x);else if(y.kind==='approx'||y.approx)apx.push(x);else old.push(x)});
+  var cs=function(a){return'（'+a.map(function(x){return x.code}).join('、')+'）'};
   var parts=[];
-  if(never.length)parts.push(never.length+' 只还没有收益率数据（'+never.map(function(x){return x.code}).join('、')+'）：'+plainWhy(never[0].reason));
-  if(old.length)parts.push(old.length+' 只这次没取到（'+old.map(function(x){return x.code}).join('、')+'），显示的是上次的值，标了「过期」');
+  if(stale.length)parts.push(stale.length+' 只这次没取到'+cs(stale)+'，显示的是上次的值，标了「过期」');
+  if(apx.length)parts.push(apx.length+' 只这次没取到本身的数据'+cs(apx)+'，先用同期限国债 + 利差估，标了「近似」');
+  if(old.length)parts.push(old.length+' 只这次没取到'+cs(old)+'，显示的是上次的值');
+  if(never.length)parts.push(never.length+' 只还没有收益率数据'+cs(never)+'：'+plainWhy(never[0].reason));
   M.textContent=parts.length?parts.join('；')+'。':'';yFail=null}
 async function refresh(){if(busy)return;yFail=null;busy=true;var btn=$('fu-refresh');btn.disabled=true;btn.textContent='正在刷新…';
   var cur=0,total=ITEMS.length||45,updated=[],failed=[],before=D&&D.fetched_at;
@@ -553,9 +572,11 @@ async function refresh(){if(busy)return;yFail=null;busy=true;var btn=$('fu-refre
     if(!updated.length)prog([['这次没取到，'+was+'，可以再点一次'+why]],true);
     else prog([['前 '+updated.length+' 只已更新，其余 '+(total-updated.length)+' 只'+(before?'还是 '+tw(before)+' 的数据':'还没有数据')+'，再点会从头取'+why]],true);}
   finally{busy=false;btn.disabled=false;btn.textContent='↻ 刷新数据'}}
-document.querySelectorAll('#fu-periods .fu-chip').forEach(function(b){b.addEventListener('click',function(){st.p=b.dataset.p;document.querySelectorAll('#fu-periods .fu-chip').forEach(function(x){x.setAttribute('aria-pressed',x===b?'true':'false')});render()})});
-document.querySelectorAll('#fu-markets .fu-chip').forEach(function(b){b.addEventListener('click',function(){st.m=b.dataset.m;document.querySelectorAll('#fu-markets .fu-chip').forEach(function(x){x.setAttribute('aria-selected',x===b?'true':'false')});render()})});
+document.querySelectorAll('#fu-periods .fu-chip').forEach(function(b){b.addEventListener('click',function(){st.p=b.dataset.p;rgOpen=false;document.querySelectorAll('#fu-periods .fu-chip').forEach(function(x){x.setAttribute('aria-pressed',x===b?'true':'false')});render()})});
+document.querySelectorAll('#fu-markets .fu-chip').forEach(function(b){b.addEventListener('click',function(){st.m=b.dataset.m;rgOpen=false;document.querySelectorAll('#fu-markets .fu-chip').forEach(function(x){x.setAttribute('aria-selected',x===b?'true':'false')});render()})});
 $('fu-refresh').addEventListener('click',refresh);
+// 第三版：展开 / 收起可能区间（只切换行的显示，焦点留在按钮上；收起后按钮若滚出了屏幕就把它拉回来）
+$('fu-rg-more').addEventListener('click',function(){rgOpen=!rgOpen;rgFold();if(!rgOpen){var b=$('fu-rg-more'),r=b.getBoundingClientRect();if(r.top<0||r.bottom>innerHeight)b.scrollIntoView({block:'nearest'})}});
 // 触屏抽屉：点抽屉和散点图以外的地方、滚动页面、按 Esc 都关掉
 function tipOpen(){var t=$('fu-tip');return!t.hidden&&t.classList.contains('touch')}
 document.addEventListener('pointerdown',function(e){if(!tipOpen()||!tipOff)return;if($('fu-tip').contains(e.target)||$('fu-scatter').contains(e.target))return;tipOff()},true);
