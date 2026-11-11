@@ -8,8 +8,8 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vites
 import { getPlatformProxy } from 'wrangler';
 import type { Env } from '../src/env';
 import { handle } from '../src/index';
-import { cleanPoints, FUNDS, maxDrawdown, parseEastmoney, parseYahoo, periodReturn, summarize, type Point } from '../src/funds';
-import { Http, MAX_REQUESTS, refreshBatch, TimeUp, type FetchLike } from '../src/funds-api';
+import { cleanPoints, eastmoneyMoneyIndex, FUNDS, maxDrawdown, parseEastmoney, parseYahoo, periodReturn, summarize, type Point } from '../src/funds';
+import { Http, MAX_REQUESTS, mergePoints, prevPoints, refreshBatch, TimeUp, type FetchLike } from '../src/funds-api';
 import { ROOT } from './helpers';
 
 const PASS = 'ci_only_copilot_password_01';
@@ -47,11 +47,12 @@ const ok = (body: unknown) => new Response(JSON.stringify(body), { status: 200 }
 const noSleep = async () => {};
 
 describe('1. 清单', () => {
-  it('45 只：新加坡 14、美国 15、中国 16；代码去掉 .SI / .SS；东方财富两只', () => {
+  // 第三版（Amos 2026-11-11）：中国 16 只都走东方财富（原来只有场外两只），断言随规格改
+  it('45 只：新加坡 14、美国 15、中国 16；代码去掉 .SI / .SS；中国 16 只都是东方财富', () => {
     expect(FUNDS.length).toBe(45);
     expect(['新加坡', '美国', '中国'].map((m) => FUNDS.filter((f) => f.market === m).length)).toEqual([14, 15, 16]);
     expect(FUNDS.every((f) => !/\.(SI|SS)$/.test(f.code))).toBe(true);
-    expect(FUNDS.filter((f) => f.source === 'eastmoney').map((f) => f.code)).toEqual(['000171', '217003']);
+    expect(FUNDS.filter((f) => f.source === 'eastmoney').map((f) => f.code)).toEqual(FUNDS.filter((f) => f.market === '中国').map((f) => f.code));
     expect(new Set(FUNDS.map((f) => f.code)).size).toBe(45);
   });
 });
@@ -131,7 +132,8 @@ describe('4. 取数：额度、重试、回退', () => {
       expect(urls.length - before).toBeLessThanOrEqual(MAX_REQUESTS);
       expect(r.requests).toBe(urls.length - before);
       updated += r.updated.length; cur = r.next; calls++;
-      expect(calls).toBeLessThan(10);
+      // 第三版：中国 16 只首次都要全量翻东方财富（替身每只约 16 页），批数比原来多；上限按 16 × 16 / 45 ≈ 6 批 + Yahoo 29 只估，仍远低于页面的 45 次上限
+      expect(calls).toBeLessThan(15);
     }
     expect(updated).toBe(45);
     const em = urls.filter((u) => u.includes('eastmoney'));
@@ -328,5 +330,30 @@ describe('页面：刷新循环有硬上限（第三轮 4）', () => {
       expect(p.api.posts.length).toBe(1);
       expect(p.$('fu-prog').textContent).toMatch(/进度没有往前走/);
     } finally { p.close(); }
+  });
+});
+
+// 第三版（研发加）：中国场内 ETF 改东方财富 lsjz 后的两个辅助函数
+describe('第三版：东方财富货币基金页和增量拼接', () => {
+  it('eastmoneyMoneyIndex：SYType 是"每百份收益"时按每天收益连乘（第一天 100，× (1 + 收益 / 10000)），LJJZ（7 日年化）不当价格；普通净值页回 null', () => {
+    const pg = { Data: { SYType: '每百份收益', LSJZList: [
+      { FSRQ: '2026-11-10', DWJZ: '0.2683', LJJZ: '1.0040' },
+      { FSRQ: '2026-11-09', DWJZ: '0.2720', LJJZ: '1.0080' },
+      { FSRQ: '2026-11-08', DWJZ: '0.5426', LJJZ: '1.0140' },
+    ] } };
+    const p = eastmoneyMoneyIndex([pg])!;
+    expect(p.map((x) => x[0])).toEqual(['2026-11-08', '2026-11-09', '2026-11-10']);
+    expect(p[0][2]).toBe(100);
+    expect(p[2][2]).toBeCloseTo(100 * (1 + 0.272 / 10000) * (1 + 0.2683 / 10000), 5);
+    expect(p[2][1]).toBe(p[2][2]);
+    expect(eastmoneyMoneyIndex([{ Data: { SYType: null, LSJZList: [{ FSRQ: '2026-11-10', DWJZ: '1', LJJZ: '1.5' }] } }])).toBeNull();
+  });
+  it('prevPoints 只认东方财富快照（Yahoo 复权价口径不同不拼）；最后一天补回单位净值；mergePoints 同一天以新的为准', () => {
+    const snap = { source: 'eastmoney', date: '2026-11-09', last: 0.5, series: [['2026-11-06', 1.1], ['2026-11-09', 1.2]] };
+    expect(prevPoints(snap)).toEqual([['2026-11-06', 1.1, 1.1], ['2026-11-09', 0.5, 1.2]]);
+    expect(prevPoints({ ...snap, source: 'yahoo' })).toEqual([]);
+    expect(prevPoints(null)).toEqual([]);
+    const m = mergePoints(prevPoints(snap), [['2026-11-09', 0.51, 1.21], ['2026-11-10', 0.52, 1.22]]);
+    expect(m).toEqual([['2026-11-06', 1.1, 1.1], ['2026-11-09', 0.51, 1.21], ['2026-11-10', 0.52, 1.22]]);
   });
 });

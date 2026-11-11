@@ -215,12 +215,12 @@ export const FUNDS_MOD = `<section class="page plat" id="v-funds" hidden>
     <summary>数据从哪来、什么叫最大回撤、哪些格子是空的</summary>
     <ul>
       <li><b>最大回撤</b>：所选时间段里，从最高点跌到之后最低点的最大跌幅。比如"近 1 年 −10.9%"表示这一年里最多从高点回落过 10.9%。</li>
-      <li>收益和回撤都按含分红的复权价算。场内 ETF 和新加坡场外基金来自 Yahoo Finance；000171、217003 和 Yahoo 缺历史的上交所 ETF（例如 511880）来自东方财富累计净值。</li>
+      <li>收益和回撤都按含分红的复权价算。美国、新加坡的基金来自 Yahoo Finance（复权价）；中国 16 只（场内 ETF 和 000171、217003）来自东方财富净值（最新价是单位净值，收益和回撤按累计净值算）。</li>
       <li>"刷新数据"由服务器分几批去取（每批最多 45 个请求），全部取完大约半分钟；某只没取到时保留上次的数据，并在那一行标出"没取到，显示的是哪天的数据"。</li>
       <li>上市不满某段时间的，那一段写"上市不足"；展开那一行看"上市以来"（最多一年）。</li>
       <li>0P00006FY6 是按名称推断的代码，净值比场内产品晚几天。511990、511880 是货币 ETF，几乎不动。</li>
       <li><b>未来 1 个月的可能区间</b>：用过去一年每天的涨跌算出日波动 σ，一个月（21 个交易日）的波动 h = σ × √21；深色段 = 中心 ± h（大约 2/3 的可能），浅色段 = 中心 ± 1.96h（大约 95%）。中心：股票类为 0，债券类 = 预期年化折成 1 个月。上市不满两个月（不到 40 个交易日）的算不出。只说明波动有多大，不代表会涨或会跌；不是投资建议。</li>
-      <li><b>债券类预期年化</b>：iShares（AGG、TLT、LQD）、Vanguard（BND、BSV）、BlackRock 新加坡（O9P）的产品页每天公布到期收益率；511990 用东方财富的 7 日年化，511880 用净值自己算 7 日年化。其余 7 只查不到本身的，用同期限国债（新加坡 MAS、中债）加一个固定利差估，标"近似"；利差每季度人工校准一次。iShares / Vanguard / BlackRock 页面取不到时，退回"美国同期限国债 + 利差"并标"近似"；都取不到就显示上次的值并标"过期"。</li>
+      <li><b>债券类预期年化</b>：Vanguard（BND、BSV）的产品页每天公布到期收益率；511990 用东方财富的 7 日年化，511880 用净值自己算 7 日年化。其余 12 只用同期限国债（美国财政部、新加坡 MAS、中债）加一个固定利差估，标"近似"；利差每季度人工校准一次。Vanguard 页面取不到时，退回"美国同期限国债 + 利差"并标"近似"；都取不到就显示上次的值并标"过期"。</li>
     </ul>
   </details>
 </section>`;
@@ -376,7 +376,7 @@ function spark(f){var s=f.series,W=120,H=36,vals=s.map(function(x){return x[1]})
   svg.appendChild(sv('path',{d:d,fill:'none',stroke:col,'stroke-width':1.4,'vector-effect':'non-scaling-stroke'}));
   return svg;}
 
-function srcName(f){return f.source==='eastmoney'?'东方财富累计净值':'Yahoo 复权价'}
+function srcName(f){return f.source==='eastmoney'?'东方财富净值':'Yahoo 复权价'}
 // 画布宽度按实际可用宽度算（不靠 viewBox 缩放），手机上字也是 12px，不会缩成看不清
 function detailW(){var lw=$('fu-list').clientWidth||700,narrow=matchMedia('(max-width:760px)').matches;return Math.round(Math.max(280,Math.min(760,narrow?lw-16:lw-16-260-24)))}
 function band(f){return Array.isArray(f.band)&&f.band.length===5?f.band:null}

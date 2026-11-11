@@ -16,9 +16,9 @@
  * 不花钱（底线 8）：两个来源都是公开免费接口，不用密钥。
  */
 import type { Env } from './env';
-import { bandCoverage, bondCenter, cleanPoints, eastmoneyPageOldest, FUNDS, MIN_POINTS, parseEastmoney, parseYahoo, rangeBand, summarize, type FundDef, type FundSnapshot, type Point } from './funds';
+import { bandCoverage, bondCenter, cleanPoints, eastmoneyMoneyIndex, eastmoneyPageOldest, FUNDS, MIN_POINTS, parseEastmoney, parseYahoo, rangeBand, summarize, type FundDef, type FundSnapshot, type Point } from './funds';
 import {
-  approxYield, autoYield, BOND_YIELDS, parseBlackrockSg, parseChinabond, parseEm7d, parseEmNav, parseIshares, parseMasHtml, parseTreasuryCsv, parseVanguard,
+  approxYield, autoYield, BOND_YIELDS, parseChinabond, parseEm7d, parseEmNav, parseMasHtml, parseTreasuryCsv, parseVanguard,
   type BondYield, type BondYieldDef, type Curve, type CurvePoints, type ParsedYield,
 } from './funds-yield';
 
@@ -154,7 +154,16 @@ async function fromYahoo(http: Http, sym: string): Promise<{ currency: string | 
   return { ...r, why };
 }
 
-async function fromEastmoney(http: Http, code: string, now: number): Promise<Point[]> {
+/**
+ * 东方财富历史净值（lsjz，每页 20 条，新的在前）。since = 库里已有序列的最后日期（第三版增量取）：翻到某一页最早的日期 ≤ since 就停（通常 1 页）；
+ * 没有 since 才全量翻到 400 天前。
+ */
+async function fromEastmoney(http: Http, code: string, now: number, since?: string): Promise<Point[]> {
+  return (await fromEastmoneyPages(http, code, now, since)).points;
+}
+
+/** 同上，另外说明这是不是货币基金页（是的话 points 是按每天收益连乘的指数，第一天 = 100，见 eastmoneyMoneyIndex） */
+async function fromEastmoneyPages(http: Http, code: string, now: number, since?: string): Promise<{ points: Point[]; money: boolean }> {
   const cut = new Date(now - 400 * 86_400_000).toISOString().slice(0, 10);
   const pages: unknown[] = [];
   for (let n = 1; n <= EM_MAX_PAGES; n++) {
@@ -162,22 +171,60 @@ async function fromEastmoney(http: Http, code: string, now: number): Promise<Poi
     const oldest = eastmoneyPageOldest(pg);
     if (oldest === null) break;
     pages.push(pg);
-    if (oldest < cut) break;
+    if (oldest < cut || (since && oldest <= since)) break;
   }
-  return parseEastmoney(pages).filter((p) => p[0] >= cut);
+  const mi = eastmoneyMoneyIndex(pages);
+  return { points: (mi ?? parseEastmoney(pages)).filter((p) => p[0] >= cut), money: !!mi };
+}
+
+/**
+ * 第三版增量：库里上次的东方财富快照（只认 source = eastmoney 的；原来 Yahoo 复权价的口径不同，不能拼）→ 旧点。
+ * 快照里的 series 只存了 [日期, 累计净值]，旧点的单位净值没有存：用累计净值占位（只有最后一个点的单位净值会显示成"最新价"，
+ * 而最新的点总是这次新取的那一页里的）；最后一天用快照里的 last 补回真的单位净值。
+ */
+export function prevPoints(prev: Record<string, unknown> | null | undefined): Point[] {
+  if (!prev || prev.source !== 'eastmoney' || !Array.isArray(prev.series)) return [];
+  const pts: Point[] = [];
+  for (const x of prev.series as unknown[]) {
+    if (!Array.isArray(x) || typeof x[0] !== 'string' || typeof x[1] !== 'number' || !isFinite(x[1]) || x[1] <= 0) continue;
+    pts.push([x[0], x[1], x[1]]);
+  }
+  const last = pts[pts.length - 1];
+  if (last && last[0] === prev.date && typeof prev.last === 'number') last[1] = prev.last;
+  return pts;
+}
+
+/** 旧点 + 新点：同一天以新的为准，按日期升序（375 天窗口由 cleanPoints 截） */
+export function mergePoints(old: Point[], fresh: Point[]): Point[] {
+  const by = new Map<string, Point>();
+  for (const p of old) by.set(p[0], p);
+  for (const p of fresh) by.set(p[0], p);
+  return [...by.values()].sort((a, b) => (a[0] < b[0] ? -1 : a[0] > b[0] ? 1 : 0));
 }
 
 /** 估一只最多要几个请求（不够就留到下一批，免得取到一半额度用完白取） */
-export function estimateRequests(def: FundDef): number {
-  if (def.source === 'eastmoney') return 16;
+export function estimateRequests(def: FundDef, incremental = false): number {
+  if (def.source === 'eastmoney') return incremental ? 2 : 16;
   return def.symbol.endsWith('.SS') ? 3 : 2;
 }
 
 /** 取一只：Yahoo（2y → 1y）；.SS 清洗后不到 30 点或 Yahoo 取不到 → 改用东方财富（去掉 .SS）。返回快照；取不到抛 FetchFail，额度用完抛 BudgetOut */
-export async function fetchFund(def: FundDef, http: Http, now: number): Promise<FundSnapshot> {
+export async function fetchFund(def: FundDef, http: Http, now: number, prev?: Record<string, unknown> | null): Promise<FundSnapshot> {
   if (def.source === 'eastmoney') {
-    const pts = cleanPoints(await fromEastmoney(http, def.symbol, now));
-    if (!pts.length) throw new FetchFail('东方财富没有这只的净值');
+    // 第三版：库里已有这只的东方财富序列 → 只取比它新的那一页（通常 1 页）并进旧序列；首次才全量
+    const old = prevPoints(prev);
+    const since = old.length ? old[old.length - 1][0] : undefined;
+    const got = await fromEastmoneyPages(http, def.symbol, now, since);
+    let fresh = got.points;
+    if (!fresh.length) throw new FetchFail('东方财富没有这只的净值');
+    // 货币基金（511990）的新指数从 100 起算：按和旧序列重合的最近一天对齐比例再拼；没有重合的一天就只用这次取到的
+    let base = old;
+    if (got.money && old.length) {
+      const oldBy = new Map(old.map((p) => [p[0], p[2]]));
+      const hit = [...fresh].reverse().find((p) => oldBy.has(p[0]));
+      if (hit) { const k = oldBy.get(hit[0])! / hit[2]; fresh = fresh.map((p) => [p[0], p[1] * k, p[2] * k] as Point); } else base = [];
+    }
+    const pts = cleanPoints(mergePoints(base, fresh));
     return summarize(def, 'CNY', pts);
   }
   let yErr: unknown = null;
@@ -226,14 +273,21 @@ export async function refreshBatch(env: Env, cursor: number, now: number, f: Fet
   const total = FUNDS.length;
   const ok: FundSnapshot[] = [];
   const failed: { code: string; reason: string }[] = [];
+  // 第三版：东方财富那几只要增量取，先读库里上次的快照（一次查询，不在事务里；读不到就当首次全量）
+  const prev = new Map<string, Record<string, unknown>>();
+  try {
+    const rows = (await env.DB.prepare('SELECT code, data FROM fund_snapshot').all<{ code: string; data: string | null }>())?.results ?? [];
+    for (const r of rows) { if (!r?.data) continue; try { prev.set(r.code, JSON.parse(r.data)); } catch { /* 坏行当没有 */ } }
+  } catch { /* 读失败：照首次全量取 */ }
+  const inc = (def: FundDef) => prevPoints(prev.get(def.code)).length > 0;
   let i = cursor, n = 0;
   while (i < total && n < MAX_FUNDS_PER_CALL) {
     const def = FUNDS[i];
-    if (n > 0 && (http.left < estimateRequests(def) || Date.now() - t0 > START_CUTOFF_MS)) break;
+    if (n > 0 && (http.left < estimateRequests(def, inc(def)) || Date.now() - t0 > START_CUTOFF_MS)) break;
     // 第二版 ③：最后一只之后要在同一次调用里取债券收益率——额度或时间不够留给它，就把最后一只留给下一批（下一批 = 最后一只 + 收益率）
-    if (n > 0 && i === total - 1 && (http.left - estimateRequests(def) < YIELD_RESERVE || Date.now() - t0 > YIELD_START_MS)) break;
+    if (n > 0 && i === total - 1 && (http.left - estimateRequests(def, inc(def)) < YIELD_RESERVE || Date.now() - t0 > YIELD_START_MS)) break;
     try {
-      ok.push(await fetchFund(def, http, now));
+      ok.push(await fetchFund(def, http, now, prev.get(def.code)));
     } catch (e) {
       if ((e instanceof BudgetOut || e instanceof TimeUp) && n > 0) {
         // 额度或时间在这只中途用完：这只整只留给下一批（不算失败）
@@ -318,7 +372,7 @@ export async function fundsList(env: Env): Promise<{ fetched_at: string | null; 
 }
 
 // ---------------------------------------------------------------- 第二版 ③：债券类预期年化（"刷新数据"循环的最后一批里、45 只取完之后顺带取）
-/** 最后一批给收益率留的对外请求数（首轮最多约 18 个：8 个页面 + 美国 1～2 + MAS 2 + 中债 1～6） */
+/** 最后一批给收益率留的对外请求数（首轮最多约 14 个：第三版 4 个页面 + 美国 1～2 + MAS 2 + 中债 1～6；仍留 22，不改） */
 export const YIELD_RESERVE = 22;
 /** 最后一批过了这么久还没轮到最后一只，就把它留给下一批（留约 15 秒给收益率） */
 const YIELD_START_MS = 10_000;
@@ -381,11 +435,12 @@ async function fetchCgb(http: Http, now: number): Promise<CurvePoints> {
 }
 
 const PARSE: Partial<Record<BondYieldDef['source'], (t: string) => ParsedYield | null>> = {
-  ishares: parseIshares, vanguard: parseVanguard, 'blackrock-sg': parseBlackrockSg,
+  // 第三版：iShares / BlackRock 条款禁止自动抓取，AGG / TLT / LQD / O9P 改成美国国债 + 利差近似，不再调用 parseIshares / parseBlackrockSg
+  vanguard: parseVanguard,
   'em-7d': (t) => { try { return parseEm7d(JSON.parse(t)); } catch { return null; } },
   'em-nav': (t) => { try { return parseEmNav(JSON.parse(t)); } catch { return null; } },
 };
-const PAGE_NAME: Record<string, string> = { ishares: 'iShares', vanguard: 'Vanguard', 'blackrock-sg': 'BlackRock', 'em-7d': '东方财富', 'em-nav': '东方财富' };
+const PAGE_NAME: Record<string, string> = { vanguard: 'Vanguard', 'em-7d': '东方财富', 'em-nav': '东方财富' };
 
 export interface YieldsResult {
   updated: string[];
@@ -423,7 +478,7 @@ export async function refreshYields(env: Env, now: number, f: FetchLike = (u, i)
         const p = PARSE[d.source]?.(t) ?? null;
         return { code: d.code, p, err: p ? '' : `${PAGE_NAME[d.source] ?? d.source}页面认不出收益率`, fetched: true };
       } catch (e) {
-        // 回 403（被拦了，例如 BlackRock 新加坡页）和"取到了却认不出"一样处理：直接退回国债近似，不当成一时没取到
+        // 回 403（被拦了）和"取到了却认不出"一样处理：直接退回国债近似，不当成一时没取到
         const err = why(e);
         return { code: d.code, p: null, err, fetched: / 403/.test(err) };
       }

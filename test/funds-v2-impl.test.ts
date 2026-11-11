@@ -100,11 +100,12 @@ describe('解析（按 2026-11-10 实抓页面的结构）', () => {
 });
 
 describe('BOND_YIELDS 配置和近似', () => {
-  it('正好 16 只，和 FUNDS 里债券类一一对应；8 只自动、8 只近似（任务写 9 / 7，逐只列出的是 8 + 8，按逐只列的做）', () => {
+  // 第三版（Amos 2026-11-11）：AGG / TLT / LQD / O9P 改成美国国债 + 利差近似，自动 4 只、近似 12 只，断言随规格改
+  it('正好 16 只，和 FUNDS 里债券类一一对应；4 只自动、12 只近似（第三版）', () => {
     const bonds = FUNDS.filter((f) => f.category === '债券').map((f) => f.code).sort();
     expect(BOND_YIELDS.map((d) => d.code).sort()).toEqual(bonds);
-    expect(BOND_YIELDS.filter((d) => d.kind === 'auto')).toHaveLength(8);
-    expect(BOND_YIELDS.filter((d) => d.kind === 'approx')).toHaveLength(8);
+    expect(BOND_YIELDS.filter((d) => d.kind === 'auto')).toHaveLength(4);
+    expect(BOND_YIELDS.filter((d) => d.kind === 'approx')).toHaveLength(12);
     expect(BOND_YIELDS.filter((d) => d.kind === 'approx').every((d) => d.curve && d.spread !== undefined && d.spreadNote)).toBe(true);
   });
   it('近似 = 曲线插值 + 利差；自动的兜底标"近似"并写明页面没取到', () => {

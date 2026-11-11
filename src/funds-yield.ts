@@ -2,7 +2,11 @@
  * 「基金观察」第二版：债券类 16 只的"未来 1～3 年预期年化"——配置 + 解析（**纯函数，不碰网络、不碰数据库**；取数在 src/funds-api.ts `refreshYields()`，
  * 存表 `fund_yield`（迁移 0018），页面在 src/funds-page.ts「债券类：未来 1～3 年预期年化」）。Amos 2026-11-10「都按建议」。
  *
- * 口径：
+ * 第三版（Amos 2026-11-11「都按建议」，安全经理条款核对：iShares / BlackRock 条款禁止自动抓取）：AGG、TLT、LQD、O9P **不再抓页面**，
+ *   改成"美国同期限国债（财政部 CSV）+ 利差"近似（kind approx）；**自动只剩 4 只**：BND、BSV（Vanguard）、511990、511880（东方财富）。
+ *   parseIshares / parseBlackrockSg 保留（有测试），refreshYields 不再调用。下面"第二版"的口径里关于这 4 只的部分已作废。
+ *
+ * 第二版口径：
  *   - **每天自动 8 只**（任务原文写 9 只、近似 7 只，但逐只列出的是 8 + 8，按逐只列的做）：AGG、TLT、LQD（iShares 产品页 HTML 里的 JSON：反转义后取 label = "Average Yield to Maturity" / "Effective Duration" 那一项的 formattedValue）；
  *     BND、BSV（Vanguard 产品页 HTML 里的 JSON 字段 yieldToMaturity、yieldToMaturityDate、averageDuration）；
  *     O9P（BlackRock 新加坡产品页，去标签后匹配 "Weighted Avg YTM as of …" 和 "Effective Duration as of …"）；
@@ -15,7 +19,7 @@
  */
 
 export type YieldKind = 'auto' | 'approx';
-export type YieldSource = 'ishares' | 'vanguard' | 'blackrock-sg' | 'em-7d' | 'em-nav' | 'sgs' | 'cgb';
+export type YieldSource = 'ishares' | 'vanguard' | 'blackrock-sg' | 'em-7d' | 'em-nav' | 'ust' | 'sgs' | 'cgb';
 export type Curve = 'ust' | 'sgs' | 'cgb';
 
 export interface BondYieldDef {
@@ -49,19 +53,22 @@ export const CURVE_NAME: Record<Curve, string> = { ust: '美国', sgs: '新加�
  *     LQD 11/06 5.91 − 4.77；BSV 11/06 4.8 − 4.56；O9P 11/09 8.30 − 4.54），四舍五入到 0.01。
  *   - A35 / MBH / 0P00006FY6：2026-09-30 月报加权 YTM 2.54 / 3.17 / 5.80 − 9/30 MAS 新加坡国债按久期插值（1/2/5/10 年 1.73/1.99/2.24/2.47）。
  *   - SBO：2 年新加坡国债 + 利差，以 2026-05-31 母基金 YTM 3.01 校准（5/29 是 5 月最后一个交易日，2 年 SGS 1.57）。
+ *   - 第三版 AGG / TLT / LQD / O9P 改为常驻近似（美国国债 + 利差）：利差 = 11/06～11/09 实取的 YTM − 美国财政部同一天、按久期插值的国债收益率
+ *     （按 test/fixtures/funds/yield/treasury-daily-2026.csv 的财政部原表重算：AGG 11/06 5.19 − 4.68 = 0.51；TLT 11/06 5.32 − 5.07 = 0.25；LQD 11/06 5.91 − 4.77 = 1.14；
+ *     O9P 11/09 8.30 − 4.58（2.98 年，原表 2 年 4.56 / 3 年 4.58 插值；第二版注释写的 4.54 和原表对不上）= 3.72）。**季度人工校准**，下次 2027-02。
  *   - 中国 4 只：**利差是推断值，未用中债曲线核对**（本会话取中债接口时连接被重置）；第一次真刷新后对照基金季报人工校准。
  */
 export const BOND_YIELDS: BondYieldDef[] = [
   { code: 'A35', kind: 'approx', source: 'sgs', label: '近似：新加坡 8 年国债 + 利差', curve: 'sgs', tenor: 8.2, spread: 0.15, spreadNote: '2026-09-30 月报加权 YTM 2.54 − 同日 8.2 年 SGS 2.39', duration: 8.18 },
   { code: 'MBH', kind: 'approx', source: 'sgs', label: '近似：新加坡 6 年国债 + 利差', curve: 'sgs', tenor: 5.8, spread: 0.89, spreadNote: '2026-09-30 月报加权 YTM 3.17 − 同日 5.8 年 SGS 2.28', duration: 5.76 },
   { code: 'SBO', kind: 'approx', source: 'sgs', label: '近似：新加坡 2 年国债 + 利差', curve: 'sgs', tenor: 2, spread: 1.44, spreadNote: '2026-05-31 母基金 YTM 3.01 − 5/29 2 年 SGS 1.57', duration: 2.5 },
-  { code: 'O9P', kind: 'auto', source: 'blackrock-sg', url: 'https://www.blackrock.com/sg/en/products/251722/ishares-barclays-usd-asia-high-yield-bond-index-etf', label: '加权 YTM（美元）', curve: 'ust', tenor: 2.98, spread: 3.76, spreadNote: '2026-11-09 加权 YTM 8.30 − 同日 3 年美债 4.54', duration: 2.98, note: '高收益债，含违约风险' },
+  { code: 'O9P', kind: 'approx', source: 'ust', label: '近似：美国 3 年国债 + 利差', curve: 'ust', tenor: 2.98, spread: 3.72, spreadNote: '2026-11-09 BlackRock 页加权 YTM 8.30 − 同日 2.98 年美债 4.58（财政部原表插值）；季度校准', duration: 2.98, note: '高收益债，含违约风险' },
   { code: '0P00006FY6', kind: 'approx', source: 'sgs', label: '近似：新加坡 7 年国债 + 利差', curve: 'sgs', tenor: 6.8, spread: 3.48, spreadNote: '2026-09-30 月报加权 YTM 5.80 − 同日 6.8 年 SGS 2.32', duration: 6.75 },
-  { code: 'AGG', kind: 'auto', source: 'ishares', url: 'https://www.ishares.com/us/products/239458/ishares-core-total-us-bond-market-etf', label: 'YTM', curve: 'ust', tenor: 5.73, spread: 0.5, spreadNote: '2026-11-09 YTM 5.20 − 同日 5.7 年美债 4.70', duration: 5.73 },
+  { code: 'AGG', kind: 'approx', source: 'ust', label: '近似：美国 6 年国债 + 利差', curve: 'ust', tenor: 5.73, spread: 0.51, spreadNote: '2026-11-06 iShares 页 YTM 5.19 − 同日 5.73 年美债 4.68（财政部原表插值）；季度校准', duration: 5.73 },
   { code: 'BND', kind: 'auto', source: 'vanguard', url: 'https://investor.vanguard.com/investment-products/etfs/profile/bnd', label: 'YTM', curve: 'ust', tenor: 5.7, spread: 0.53, spreadNote: '2026-11-06 YTM 5.2 − 同日 5.7 年美债 4.68', duration: 5.7 },
-  { code: 'TLT', kind: 'auto', source: 'ishares', url: 'https://www.ishares.com/us/products/239454/ishares-20-year-treasury-bond-etf', label: 'YTM', curve: 'ust', tenor: 14.9, spread: 0.25, spreadNote: '2026-11-06 YTM 5.32 − 同日 14.9 年美债 5.07', duration: 14.9 },
+  { code: 'TLT', kind: 'approx', source: 'ust', label: '近似：美国 15 年国债 + 利差', curve: 'ust', tenor: 14.9, spread: 0.25, spreadNote: '2026-11-06 iShares 页 YTM 5.32 − 同日 14.9 年美债 5.07（财政部原表插值）；季度校准', duration: 14.9 },
   { code: 'BSV', kind: 'auto', source: 'vanguard', url: 'https://investor.vanguard.com/investment-products/etfs/profile/bsv', label: 'YTM', curve: 'ust', tenor: 2.6, spread: 0.24, spreadNote: '2026-11-06 YTM 4.8 − 同日 2.6 年美债 4.56', duration: 2.6 },
-  { code: 'LQD', kind: 'auto', source: 'ishares', url: 'https://www.ishares.com/us/products/239566/ishares-iboxx-investment-grade-corporate-bond-etf', label: 'YTM', curve: 'ust', tenor: 7.67, spread: 1.14, spreadNote: '2026-11-06 YTM 5.91 − 同日 7.7 年美债 4.77', duration: 7.67 },
+  { code: 'LQD', kind: 'approx', source: 'ust', label: '近似：美国 8 年国债 + 利差', curve: 'ust', tenor: 7.67, spread: 1.14, spreadNote: '2026-11-06 iShares 页 YTM 5.91 − 同日 7.67 年美债 4.77（财政部原表插值）；季度校准', duration: 7.67 },
   { code: '511990', kind: 'auto', source: 'em-7d', url: 'https://api.fund.eastmoney.com/f10/lsjz?fundCode=511990&pageIndex=1&pageSize=20', label: '7 日年化', duration: 0.1 },
   { code: '511880', kind: 'auto', source: 'em-nav', url: 'https://api.fund.eastmoney.com/f10/lsjz?fundCode=511880&pageIndex=1&pageSize=20', label: '7 日年化（按净值算）', duration: 0.1 },
   { code: '511010', kind: 'approx', source: 'cgb', label: '近似：中债 5 年国债', curve: 'cgb', tenor: 5, spread: 0, spreadNote: '跟踪上证 5 年期国债指数，不加利差', duration: 4.3 },
@@ -339,7 +346,7 @@ export interface BondYield {
   source: string;
 }
 
-const SRC_NAME: Record<YieldSource, string> = { ishares: 'iShares', vanguard: 'Vanguard', 'blackrock-sg': 'BlackRock', 'em-7d': '东方财富', 'em-nav': '东方财富', sgs: 'MAS', cgb: '中债' };
+const SRC_NAME: Record<YieldSource, string> = { ishares: 'iShares', vanguard: 'Vanguard', 'blackrock-sg': 'BlackRock', 'em-7d': '东方财富', 'em-nav': '东方财富', ust: '美国财政部', sgs: 'MAS', cgb: '中债' };
 const CURVE_SRC: Record<Curve, string> = { ust: '美国财政部', sgs: 'MAS', cgb: '中债' };
 const r2 = (v: number) => Math.round(v * 100) / 100;
 
