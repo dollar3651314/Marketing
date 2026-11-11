@@ -140,7 +140,7 @@ export class Http {
       } catch (e) {
         if (e instanceof FetchFail || e instanceof BudgetOut || e instanceof TimeUp) throw e;
         if (ac.signal.aborted && limit < TIMEOUT_MS) throw cut(); // 是 25 秒截止把它打断的，不是数据源慢
-        last = ac.signal.aborted ? `${what} ${Math.max(1, Math.round((Date.now() - t0) / 1000))} 秒没回应` : `连不上${what}`;
+        last = ac.signal.aborted ? `${what} ${Math.max(1, Math.round((Date.now() - t0) / 1000))} 秒没回应` : `连不上${/^[A-Za-z]/.test(what) ? ' ' : ''}${what}`;
       } finally {
         clearTimeout(timer);
         this.lastAt = Date.now();
@@ -282,7 +282,7 @@ export async function fetchFund(def: FundDef, http: Http, now: number, prev?: Re
       } catch (e) {
         if (e instanceof BudgetOut || e instanceof TimeUp) throw e;
         // FetchFail 的文字是我们自己拼的（"Tiingo回 401""Tiingo 8 秒没回应"……），不含地址和请求头，不会带出 key
-        fallback = e instanceof FetchFail ? e.message : '连不上Tiingo';
+        fallback = e instanceof FetchFail ? e.message : '连不上 Tiingo';
       }
     }
   }
@@ -764,7 +764,8 @@ export async function refreshValuation(env: Env, cursor: number, now: number, f:
         w = { day: day8(now), segs: incr ? [[old!.series[old!.series.length - 1][0].replace('-', '') + '01', end]] : yearSegments(monthStart(now, VAL_FULL_MONTHS), end), i: 0, months: {}, last: null, incr };
       }
       const [a, b] = w.segs[w.i];
-      part = `市盈率 ${a.slice(0, 4)}${w.segs.length > 1 ? ` 年（${w.i + 1} / ${w.segs.length} 段）` : ''}`;
+      // 产品复核 G2：只写哪一年（不写内层的第几段）；每天的增量写"最新"
+      part = w.segs.length > 1 ? `市盈率 ${a.slice(0, 4)} 年` : '市盈率 最新';
       const daily = parseCsPerf(await http.get(csPerfUrl(def.code, a, b), CS_HEADERS, '中证'));
       if (!daily) throw new FetchFail('中证的市盈率数据认不出来');
       for (const p of daily) { const m = p[0].slice(0, 7); if (!w.months[m] || p[0] >= w.months[m][0]) w.months[m] = p; if (!w.last || p[0] >= w.last[0]) w.last = p; }

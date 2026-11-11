@@ -228,7 +228,8 @@ export const FUNDS_MOD = `<section class="page plat" id="v-funds" hidden>
     <p class="fu-disc">到期收益率是"现在买入、持有到债券到期、不违约"时的年化，扣费前。利率再变动时短期净值会波动（久期越长波动越大）。货币基金用 7 日年化。不是投资建议。</p>
   </section>
   <section class="fu-card mod" id="fu-va" aria-labelledby="fu-va-h">
-    <div class="fu-sec-h"><h2 id="fu-va-h">估值：现在贵不贵</h2><p>和自己过去 10 年比；只看股票类，第一版 6 个指数、11 只基金</p></div>
+    <div class="fu-sec-h"><h2 id="fu-va-h">估值：现在贵不贵</h2><p id="fu-va-sub">和自己过去 10 年比；只看股票类，第一版 6 个指数、11 只基金；推断，不是预测、不是投资建议</p></div>
+    <div class="fu-legend"><span><i class="bar" style="background:var(--muted)"></i>竖线：10 年中位数</span><span>色块：现在的市盈率</span><span>左绿右红：比过去便宜 → 比过去贵</span></div>
     <div class="fu-va-grid" id="fu-va-grid"></div>
     <p class="fu-vamsg" id="fu-va-msg" role="status"></p>
     <div class="fu-vnone" id="fu-va-none"><b>还没有估值历史的 34 只</b>：债券和货币类 16 只不适用；其余 18 只（纳斯达克100、美国红利 5 只、美国全市场、MSCI World、科创50、恒生科技、红利低波、标普A股红利、海峡时报、4 只 REIT、东盟红利）免费公开渠道找不到可用的历史。以后打算从那时起每次刷新存一份当前值、慢慢攒出自己的历史——这一版还没有开始存。</div>
@@ -249,7 +250,7 @@ export const FUNDS_MOD = `<section class="page plat" id="v-funds" hidden>
       <li>上市不满某段时间的，那一段写"上市不足"；展开那一行看"上市以来"（最多一年）。</li>
       <li>0P00006FY6 是按名称推断的代码，净值比场内产品晚几天。511990、511880 是货币 ETF，几乎不动。</li>
       <li><b>未来 1 个月的可能区间</b>：用过去一年每天的涨跌算出日波动 σ，一个月（21 个交易日）的波动 h = σ × √21；深色段 = 中心 ± h（大约 2/3 的可能），浅色段 = 中心 ± 1.96h（大约 95%）。中心：股票类为 0，债券类 = 预期年化折成 1 个月。上市不满两个月（不到 40 个交易日）的算不出。只说明波动有多大，不代表会涨或会跌；不是投资建议。</li>
-      <li><b>估值</b>：A 股 5 个指数的市盈率来自中证指数官网（字段口径官方没有写明），股息率是中证每天公布的"股息率1（总股本）"；标普500 用 Robert Shiller 公布的 CAPE（每月更新，最新一个月的价格常是月初的收盘价）。每月取月末那一天，和最近 120 个月比：分位 = 过去 120 个月里不高于现在的月份占比。数据来源：中证指数有限公司、Robert Shiller，仅供本人参考，不转载。</li>
+      <li><b>估值</b>：A 股 5 个指数的市盈率来自中证指数官网（字段口径官方没有写明），股息率是中证每天公布的"股息率1（总股本）"；标普500 用 Robert Shiller 公布的 CAPE（每月更新，最新一个月的价格常是月初的收盘价）。每月取月末那一天，和最近 120 个月比：分位 = 过去 120 个月里不高于现在的月份占比。数据来源：中证指数有限公司、Robert Shiller，仅供本人参考，不转载。"贵 / 便宜"是和这个指数自己的过去 10 年比（相对）；预期年化是按现在的市盈率、股息率推算的绝对值。所以一个指数可以"比过去贵"、预期年化却仍比别的高，两者不矛盾。</li>
       <li><b>债券类预期年化</b>：Vanguard（BND、BSV）的产品页每天公布到期收益率；511990 用东方财富的 7 日年化，511880 用净值自己算 7 日年化。其余 12 只用同期限国债（美国财政部、新加坡 MAS、中债）加一个固定利差估，标"近似"；利差每季度人工校准一次。Vanguard 页面取不到时，退回"美国同期限国债 + 利差"并标"近似"；都取不到就显示上次的值并标"过期"。</li>
     </ul>
   </details>
@@ -406,7 +407,7 @@ function spark(f){var s=f.series,W=120,H=36,vals=s.map(function(x){return x[1]})
   svg.appendChild(sv('path',{d:d,fill:'none',stroke:col,'stroke-width':1.4,'vector-effect':'non-scaling-stroke'}));
   return svg;}
 
-function srcName(f){return f.price_kind==='index'?'东方财富每日收益':f.source==='eastmoney'?'东方财富净值（不是场内成交价）':f.source==='tiingo'?'Tiingo 复权价':'Yahoo 复权价'+(f.fallback?'（Tiingo 没取到：'+plainWhy(f.fallback)+'，这次改用 Yahoo）':'')}
+function srcName(f){return f.price_kind==='index'?'东方财富每日收益':f.source==='eastmoney'?'东方财富净值（不是场内成交价）':f.source==='tiingo'?'Tiingo 复权价':'Yahoo 复权价'+(f.fallback?'（Tiingo 没取到：'+plainWhy(f.fallback).replace(/^Tiingo\s*/,'')+'，这次改用 Yahoo）':'')}
 /** 第三版复核 R1：收益指数（511990，按每天收益连乘、起点 100）不是价格，不带币种 */
 function isIdx(f){return f.price_kind==='index'}
 // 画布宽度按实际可用宽度算（不靠 viewBox 缩放），手机上字也是 12px，不会缩成看不清
@@ -545,6 +546,9 @@ function fx(v){return v==null?'—':(+v).toFixed(2).replace(/\\.?0+$/,'')}
 function vaDate(d){d=String(d||'');return/^\\d{8}$/.test(d)?d.slice(0,4)+'-'+d.slice(4,6)+'-'+d.slice(6):d}
 function valuation(){var G=$('fu-va-grid');G.replaceChildren();var V=D&&D.valuation;
   var items=V&&Array.isArray(V.items)?V.items.filter(vaShown):[],miss=V&&Array.isArray(V.missing)?V.missing.filter(vaShown):V?[]:VAL_DEFS.filter(vaShown);
+  // 产品复核 G5：副标题的指数 / 基金数按这个市场实际显示的算
+  var defs=VAL_DEFS.filter(vaShown),nf=defs.reduce(function(a,d){return a+d.funds.length},0);
+  $('fu-va-sub').textContent='和自己过去 10 年比；只看股票类，'+(st.m?st.m+' ':'第一版 ')+defs.length+' 个指数、'+nf+' 只基金；推断，不是预测、不是投资建议';
   items.forEach(function(v){var spx=v.code==='SPX'||v.metric==='CAPE',c=el('div',{'class':'fu-vc','data-val-code':v.code});
     var top=el('div');top.appendChild(el('h3',null,v.name+(spx?'（CAPE，周期调整市盈率）':'')));top.appendChild(el('div',{'class':'fd'},(v.funds||[]).join(' · ')+' · '+(v.source||'')+' · '+vaDate(v.pe_now_date)));c.appendChild(top);
     var p=v.pe_pct10y,n=v.n_months||(v.pe_series||[]).length,w=vaWord(p),yrs=n>=120?'10 年':(n/12).toFixed(1).replace(/\\.0$/,'')+' 年';
@@ -574,7 +578,7 @@ function valuation(){var G=$('fu-va-grid');G.replaceChildren();var V=D&&D.valuat
     G.appendChild(c)});
   miss.forEach(function(m){var c=el('div',{'class':'fu-vc','data-val-code':m.code});c.appendChild(el('h3',null,m.name));
     c.appendChild(el('div',{'class':'fu-vexp'},m.error?'还没有估值数据：'+plainWhy(m.error):'还没有估值数据，点「刷新数据」时会一起取（中证每天最多一次，Shiller 每月一次）'));G.appendChild(c)});}
-var VAL_DEFS=[{code:'000300',name:'沪深300',market:'中国'},{code:'000016',name:'上证50',market:'中国'},{code:'000905',name:'中证500',market:'中国'},{code:'000015',name:'上证红利',market:'中国'},{code:'000922',name:'中证红利',market:'中国'},{code:'SPX',name:'标普500',market:'美国'}];
+var VAL_DEFS=[{code:'000300',name:'沪深300',market:'中国',funds:['510300','510310']},{code:'000016',name:'上证50',market:'中国',funds:['510050']},{code:'000905',name:'中证500',market:'中国',funds:['510500']},{code:'000015',name:'上证红利',market:'中国',funds:['510880']},{code:'000922',name:'中证红利',market:'中国',funds:['515080','515180']},{code:'SPX',name:'标普500',market:'美国',funds:['VOO','IVV','SPY','XUS']}];
 function render(){meta();lede();mkcards();scatter();ranges();bonds();valuation();list_()}
 function showErr(m){$('fu-err').hidden=!m;$('fu-err-t').textContent=m||''}
 async function getJson(url,body){var r;try{r=await fetch(url,{method:body?'POST':'GET',headers:{'content-type':'application/json'},body:body?JSON.stringify(body):undefined,credentials:'same-origin'})}catch(e){throw new Error('网络断了或服务器没回应')}
@@ -635,9 +639,12 @@ async function refresh(){if(busy)return;yFail=null;busy=true;var btn=$('fu-refre
       var keep=failed.filter(function(x){return has(by[x.code])}).map(function(x){return x.code}),never=failed.filter(function(x){return!has(by[x.code])}).map(function(x){return x.code});
       if(keep.length)msg+='；'+keep.length+' 只没取到'+names(keep)+'，'+(keep.length>1?'那几行':'那一行')+'显示的是上次的数据，行里写了原因';
       if(never.length)msg+='；'+never.length+' 只没取到数据'+names(never)+'，以前也没取到过，'+(never.length>1?'那几行':'那一行')+'还是空的';}
+    // 产品复核 G1：这次刷新到的美国基金里有 Tiingo 没取到、退回 Yahoo 的，说一句
+    var fb=ITEMS.filter(function(f){return f.market==='美国'&&f.fallback&&f.source==='yahoo'&&updated.indexOf(f.code)>=0}).length;
+    if(fb)msg+='；美国 '+fb+' 只 Tiingo 没取到，这次用的 Yahoo';
     prog([[msg]],failed.length>0);
-    // 第四版 ②：45 只取完以后再取估值（服务器说还有来源今天没取过才取；一个指数一批，批之间服务器自己隔 2 秒）
-    if(D&&D.valuation&&D.valuation.due){btn.textContent='正在取估值…';await valRefresh()}}
+    // 第四版 ②：45 只取完以后再取估值（服务器说还有来源今天没取过才取；一步一小步，同一来源之间服务器自己隔 2 秒）
+    if(D&&D.valuation&&D.valuation.due){btn.textContent='正在取估值…';await valRefresh([[msg]],failed.length>0)}}
   catch(e){
     // 中途断了：只有已经回了结果的那几批算数（写库失败的那一批不算"已存好"）
     var why='（'+e.message+'）',codes={};
@@ -648,16 +655,21 @@ async function refresh(){if(busy)return;yFail=null;busy=true;var btn=$('fu-refre
     else prog([['前 '+updated.length+' 只已更新，其余 '+(total-updated.length)+' 只'+(before?'还是 '+tw(before)+' 的数据':'还没有数据')+'，再点会从头取'+why]],true);}
   finally{busy=false;btn.disabled=false;btn.textContent='↻ 刷新数据'}}
 /** 估值一步一步取（Amos 11/11：太大就分成多个小文档多次解析）：POST /api/funds/valuation/refresh {cursor}，直到 next 为 null；硬上限 VAL_MAX + 1 次，next 不往前走也停 */
-async function valRefresh(){var M=$('fu-va-msg'),step=0,n=0,fail=[],ok=0,LIM=VAL_MAX+1;M.className='fu-vamsg';
-  M.textContent='估值：正在取 第 1 段（同一来源每次之间隔 2 秒，首次要取 10 年的数据，可能要两三分钟）';
+async function valRefresh(base,baseErr){var M=$('fu-va-msg'),step=0,n=0,fail=[],ok=0,LIM=VAL_MAX+1;M.className='fu-vamsg';base=base||[];
+  // 产品复核 Y1：顶部 #fu-prog 也一直写估值进度（首次约两三分钟），并告诉他可以先看别的、别关标签页
+  var V=D&&D.valuation,first=!V||!Array.isArray(V.items)||V.items.length<VAL_DEFS.length;
+  var show=function(t){M.textContent=t;prog(base.concat([['；'],[t+'。可以先看别的板块或别的页，别关这个标签页；关了下次点刷新会接着取']]),baseErr)};
+  show('估值：正在取 第 1 段'+(first?'（首次约两三分钟）':''));
   try{while(step!=null){if(n>=LIM)throw new Error('已经发了 '+LIM+' 次请求还没取完，先停下了');n++;
       var r=await getJson(BASE+'/valuation/refresh',{cursor:step});
       if(r.status==='ok')ok++;else if(r.status==='failed')fail.push(r.name+'：'+plainWhy(r.reason||''));
       if(r.next!=null&&!(r.next>step))throw new Error('服务器回的估值进度没有往前走');step=r.next;
-      if(step!=null)M.textContent='估值：正在取 第 '+(r.done+1)+' / '+Math.max(r.total,r.done+1)+' 段'+(r.name?'（刚取完 '+r.name+' '+(r.part||'')+'）':'')}
+      if(r.total>20)first=true;
+      if(step!=null)show('估值：正在取 第 '+(r.done+1)+' / '+Math.max(r.total,r.done+1)+' 段'+(first?'（首次约两三分钟）':'')+(r.name?'，刚取完 '+r.name+' '+(r.part||''):''))}
     await load();
-    M.className='fu-vamsg'+(fail.length?' err':'');M.textContent=fail.length?'估值：'+fail.length+' 项这次没取到（'+fail.join('；')+'），显示的是上次的数据；今天再点「刷新数据」还会再试一轮（每个来源每天最多两轮）。':ok?'估值数据已更新。':'估值数据今天已经取过，没有再取。'}
-  catch(e){await load();M.className='fu-vamsg err';M.textContent='估值这次没取完（'+e.message+'），显示的是上次的数据；再点「刷新数据」会接着取。'}}
+    M.className='fu-vamsg'+(fail.length?' err':'');M.textContent=fail.length?'估值：'+fail.length+' 项这次没取到（'+fail.join('；')+'），显示的是上次的数据；今天再点「刷新数据」还会再试一轮（每个来源每天最多两轮）。':ok?'估值数据已更新。':'估值数据今天已经取过，没有再取。';
+    prog(base.concat([['；'+(fail.length?'估值有 '+fail.length+' 项没取到（见估值板块）':ok?'估值数据已更新':'估值今天已经取过')]]),baseErr||fail.length>0)}
+  catch(e){await load();M.className='fu-vamsg err';M.textContent='估值这次没取完（'+e.message+'），显示的是上次的数据；再点「刷新数据」会接着取。';prog(base.concat([['；估值这次没取完（'+e.message+'），再点「刷新数据」会接着取']]),true)}}
 /** 估值一次刷新最多走几步（和服务器 VAL_MAX_STEPS 一样） */
 var VAL_MAX=200;
 document.querySelectorAll('#fu-periods .fu-chip').forEach(function(b){b.addEventListener('click',function(){st.p=b.dataset.p;rgOpen=false;document.querySelectorAll('#fu-periods .fu-chip').forEach(function(x){x.setAttribute('aria-pressed',x===b?'true':'false')});render()})});
