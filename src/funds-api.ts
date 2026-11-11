@@ -13,10 +13,12 @@
  * （CALL_BUDGET_MS；15 秒后不再开新的一只，到点还没处理的留给下一批，next 指向它；已经发出的请求照样计入 ≤45）；
  * 被 25 秒截止打断的那只（不是这一批的第一只）整只留给下一批，不记失败；失败原因写实际等了几秒、实际试了几次，Yahoo 回 chart.error 时带上它的 description；
  * 404 之类不重试。取不到的那只**保留上次的数据**，只记原因。不在任何事务里调外部接口（先取完，再写库）。
- * 不花钱（底线 8）：两个来源都是公开免费接口，不用密钥。
+ * 不花钱（底线 8）：Yahoo、东方财富是公开免费接口；第四版美国 15 只走 Tiingo（免费账号，key = 加密变量 TIINGO_API_TOKEN，
+ * 只放在 Authorization 请求头里，不进地址、不下发前端、不写日志、不进错误文字；没配置或取不到退回 Yahoo，快照 source 照实写）。
  */
 import type { Env } from './env';
-import { bandCoverage, bondCenter, cleanPoints, eastmoneyMoneyIndex, eastmoneyPageOldest, FUNDS, MIN_POINTS, parseEastmoney, parseYahoo, rangeBand, summarize, type FundDef, type FundSnapshot, type Point } from './funds';
+import { mergeMonths, monthEnds, parseCsIndicator, parseCsPerf, parseShiller, shillerXlsUrl, valCard, VAL_INDEXES, VAL_KEEP, type ValCard, type ValIndexDef, type ValStored } from './funds-val';
+import { bandCoverage, bondCenter, cleanPoints, eastmoneyMoneyIndex, eastmoneyPageOldest, FUNDS, MIN_POINTS, parseEastmoney, parseTiingo, parseYahoo, rangeBand, summarize, usesTiingo, type FundDef, type FundSnapshot, type Point } from './funds';
 import {
   approxYield, autoYield, BOND_YIELDS, parseChinabond, parseEm7d, parseEmNav, parseMasHtml, parseTreasuryCsv, parseVanguard,
   type BondYield, type BondYieldDef, type Curve, type CurvePoints, type ParsedYield,
@@ -71,12 +73,19 @@ export function yahooErrorText(body: unknown): string {
  */
 export class Http {
   used = 0;
+  /** 上一个请求结束的时间（第四版 gapMs 用） */
+  private lastAt = 0;
   constructor(
     private f: FetchLike,
     public max = MAX_REQUESTS,
     private sleep: (ms: number) => Promise<unknown> = (ms) => new Promise((r) => setTimeout(r, ms)),
     public deadline = Infinity,
-  ) {}
+    /** 第四版（估值来源，安全经理限制）：gapMs = 两个请求之间至少隔多久（从上一个结束算）；waitFirst = 建好时就算"刚结束一个"（第一个也先等，上一批刚请求过同一个来源时跨批也隔得开）；
+     *  tries = 每个请求最多试几次（估值来源每天最多 1 次，所以是 1，不重试） */
+    private opts: { gapMs?: number; tries?: number; waitFirst?: boolean } = {},
+  ) {
+    if (opts.gapMs && opts.waitFirst) this.lastAt = Date.now();
+  }
   get left() { return this.max - this.used; }
   async get(url: string, headers: Record<string, string>, what: string): Promise<unknown> {
     return (await this.send(url, { headers }, what, 'json')).body;
@@ -86,11 +95,22 @@ export class Http {
     const r = await this.send(url, init, what, 'text');
     return { text: r.body as string, cookie: r.cookie };
   }
-  private async send(url: string, init: { method?: string; headers: Record<string, string>; body?: string }, what: string, as: 'json' | 'text'): Promise<{ body: unknown; cookie: string }> {
+  /** 取二进制（第四版估值：中证 indicator.xls、Shiller ie_data.xls）；超过 maxBytes 算失败 */
+  async bin(url: string, init: { headers: Record<string, string> }, what: string, maxBytes = 8 * 1024 * 1024): Promise<Uint8Array> {
+    const b = (await this.send(url, init, what, 'bin')).body as Uint8Array;
+    if (b.length > maxBytes) throw new FetchFail(`${what}的文件太大（${Math.round(b.length / 1024 / 1024)}MB），没解析`);
+    return b;
+  }
+  private async send(url: string, init: { method?: string; headers: Record<string, string>; body?: string }, what: string, as: 'json' | 'text' | 'bin'): Promise<{ body: unknown; cookie: string }> {
     let last = '', tries = 0;
     const cut = () => new TimeUp(last ? `${last}（试了 ${tries} 次）` : '');
-    for (let i = 0; i < TRIES; i++) {
+    const TR = this.opts.tries ?? TRIES;
+    for (let i = 0; i < TR; i++) {
       if (this.used >= this.max) throw new BudgetOut();
+      if (this.opts.gapMs) {
+        const wait = this.opts.gapMs - (Date.now() - this.lastAt);
+        if (wait > 0) { if (Date.now() + wait >= this.deadline) throw cut(); await this.sleep(wait); }
+      }
       const rest = this.deadline - Date.now();
       if (rest <= 0) throw cut();
       const limit = Math.min(TIMEOUT_MS, rest);
@@ -102,6 +122,7 @@ export class Http {
       try {
         const r = await this.f(url, { ...init, signal: ac.signal });
         if (r.ok) {
+          if (as === 'bin') return { body: new Uint8Array(await r.arrayBuffer()), cookie: '' };
           const text = await r.text();
           if (as === 'text') return { body: text, cookie: cookieOf(r.headers) };
           let body: unknown;
@@ -119,8 +140,9 @@ export class Http {
         last = ac.signal.aborted ? `${what} ${Math.max(1, Math.round((Date.now() - t0) / 1000))} 秒没回应` : `连不上${what}`;
       } finally {
         clearTimeout(timer);
+        this.lastAt = Date.now();
       }
-      if (i < TRIES - 1) {
+      if (i < TR - 1) {
         if (this.deadline - Date.now() <= 1000) throw cut(); // 来不及再试一次：留给下一批
         await this.sleep(1000);
       }
@@ -202,14 +224,29 @@ export function mergePoints(old: Point[], fresh: Point[]): Point[] {
   return [...by.values()].sort((a, b) => (a[0] < b[0] ? -1 : a[0] > b[0] ? 1 : 0));
 }
 
+/** Tiingo 的 key（加密变量）；没配置或是空的回 ''。只在服务端用 */
+export function tiingoToken(env: Pick<Env, 'TIINGO_API_TOKEN'>): string {
+  const t = env.TIINGO_API_TOKEN;
+  return typeof t === 'string' ? t.trim() : '';
+}
+
+/** Tiingo 日线：从 2 年前起（和 Yahoo 的 range=2y 一样，375 天窗口由 cleanPoints 截）。key 放请求头，不放地址 */
+const tiingoUrl = (sym: string, now: number) => `https://api.tiingo.com/tiingo/daily/${encodeURIComponent(sym.toLowerCase())}/prices?startDate=${new Date(now - 730 * 86_400_000).toISOString().slice(0, 10)}`;
+
+async function fromTiingo(http: Http, sym: string, now: number, token: string): Promise<Point[]> {
+  return parseTiingo(await http.get(tiingoUrl(sym, now), { authorization: `Token ${token}`, 'content-type': 'application/json', 'user-agent': UA }, 'Tiingo'));
+}
+
 /** 估一只最多要几个请求（不够就留到下一批，免得取到一半额度用完白取） */
-export function estimateRequests(def: FundDef, incremental = false): number {
+export function estimateRequests(def: FundDef, incremental = false, tiingo = false): number {
   if (def.source === 'eastmoney') return incremental ? 2 : 16;
+  // 第四版：Tiingo 1 个 + 取不到时退回 Yahoo 最多 2 个
+  if (tiingo && usesTiingo(def)) return 3;
   return def.symbol.endsWith('.SS') ? 3 : 2;
 }
 
 /** 取一只：Yahoo（2y → 1y）；.SS 清洗后不到 30 点或 Yahoo 取不到 → 改用东方财富（去掉 .SS）。返回快照；取不到抛 FetchFail，额度用完抛 BudgetOut */
-export async function fetchFund(def: FundDef, http: Http, now: number, prev?: Record<string, unknown> | null): Promise<FundSnapshot> {
+export async function fetchFund(def: FundDef, http: Http, now: number, prev?: Record<string, unknown> | null, opts: { tiingo?: string } = {}): Promise<FundSnapshot> {
   if (def.source === 'eastmoney') {
     // 第三版：库里已有这只的东方财富序列 → 只取比它新的那一页（通常 1 页）并进旧序列；首次才全量
     const old = prevPoints(prev);
@@ -229,6 +266,24 @@ export async function fetchFund(def: FundDef, http: Http, now: number, prev?: Re
     if (got.money && pts.length) { const k = 100 / pts[0][2]; pts = pts.map((p) => [p[0], r6(p[1] * k), r6(p[2] * k)] as Point); }
     return { ...summarize(def, 'CNY', pts), price_kind: got.money ? 'index' : 'nav' };
   }
+  // 第四版：美国 15 只先走 Tiingo（每只 1 个请求，计入 ≤45）；没配置 → 直接 Yahoo；Tiingo 回错 / 认不出 → 退回 Yahoo，快照写 source = 'yahoo' 和 fallback 原因
+  let fallback = '';
+  if (usesTiingo(def)) {
+    const token = opts.tiingo ?? '';
+    // 没配置：直接走 Yahoo，快照 source = 'yahoo'（页面来源写"Yahoo 复权价"；/health 的 tiingo 字段是 not_configured）
+    if (token) {
+      try {
+        const tp = cleanPoints(await fromTiingo(http, def.symbol, now, token));
+        if (tp.length >= MIN_POINTS) return { ...summarize({ ...def, source: 'tiingo' }, 'USD', tp), price_kind: 'price' };
+        fallback = tp.length ? `Tiingo 只回了 ${tp.length} 天` : 'Tiingo 没有这只的数据';
+      } catch (e) {
+        if (e instanceof BudgetOut || e instanceof TimeUp) throw e;
+        // FetchFail 的文字是我们自己拼的（"Tiingo回 401""Tiingo 8 秒没回应"……），不含地址和请求头，不会带出 key
+        fallback = e instanceof FetchFail ? e.message : '连不上Tiingo';
+      }
+    }
+  }
+  const tagFb = (s: FundSnapshot): FundSnapshot => (fallback ? { ...s, fallback } : s);
   let yErr: unknown = null;
   let cur: string | null = null, pts: Point[] = [], why = '';
   try {
@@ -245,8 +300,12 @@ export async function fetchFund(def: FundDef, http: Http, now: number, prev?: Re
     const em = cleanPoints(await fromEastmoney(http, def.symbol.slice(0, -3), now));
     if (em.length) return { ...summarize({ ...def, source: 'eastmoney' }, 'CNY', em), price_kind: 'nav' };
   }
-  if (!pts.length) throw yErr instanceof Error ? new FetchFail(yErr.message) : new FetchFail(why ? `Yahoo 没有这只的数据：${why}` : 'Yahoo 没有这只的数据');
-  return { ...summarize(def, cur, pts), price_kind: 'price' };
+  if (!pts.length) {
+    const yw = yErr instanceof Error ? yErr.message : why ? `Yahoo 没有这只的数据：${why}` : 'Yahoo 没有这只的数据';
+    // Tiingo 配了却没取到、Yahoo 也没取到：两边的原因都写（没配置时只写 Yahoo 的，和第三版一样）
+    throw new FetchFail(fallback ? `${fallback}；${yw}` : yw);
+  }
+  return tagFb({ ...summarize(def, cur, pts), price_kind: 'price' });
 }
 
 const r6 = (v: number) => Math.round(v * 1e6) / 1e6;
@@ -284,14 +343,15 @@ export async function refreshBatch(env: Env, cursor: number, now: number, f: Fet
     for (const r of rows) { if (!r?.data) continue; try { prev.set(r.code, JSON.parse(r.data)); } catch { /* 坏行当没有 */ } }
   } catch { /* 读失败：照首次全量取 */ }
   const inc = (def: FundDef) => prevPoints(prev.get(def.code)).length > 0;
+  const tiingo = tiingoToken(env);
   let i = cursor, n = 0;
   while (i < total && n < MAX_FUNDS_PER_CALL) {
     const def = FUNDS[i];
-    if (n > 0 && (http.left < estimateRequests(def, inc(def)) || Date.now() - t0 > START_CUTOFF_MS)) break;
+    if (n > 0 && (http.left < estimateRequests(def, inc(def), !!tiingo) || Date.now() - t0 > START_CUTOFF_MS)) break;
     // 第二版 ③：最后一只之后要在同一次调用里取债券收益率——额度或时间不够留给它，就把最后一只留给下一批（下一批 = 最后一只 + 收益率）
-    if (n > 0 && i === total - 1 && (http.left - estimateRequests(def, inc(def)) < YIELD_RESERVE || Date.now() - t0 > YIELD_START_MS)) break;
+    if (n > 0 && i === total - 1 && (http.left - estimateRequests(def, inc(def), !!tiingo) < YIELD_RESERVE || Date.now() - t0 > YIELD_START_MS)) break;
     try {
-      ok.push(await fetchFund(def, http, now, prev.get(def.code)));
+      ok.push(await fetchFund(def, http, now, prev.get(def.code), { tiingo }));
     } catch (e) {
       if ((e instanceof BudgetOut || e instanceof TimeUp) && n > 0) {
         // 额度或时间在这只中途用完：这只整只留给下一批（不算失败）
@@ -522,9 +582,163 @@ export async function refreshYields(env: Env, now: number, f: FetchLike = (u, i)
   return { updated: ok.map((x) => x.code), failed, requests: http.used - used0, curves: curveErr };
 }
 
+// ---------------------------------------------------------------- 第四版 ②：估值（6 个指数；"刷新数据"里 45 只和收益率都取完以后，页面再按 cursor 一个指数一批调 POST /api/funds/valuation/refresh）
+/**
+ * 安全经理限制（Amos 11/11 同意）：只在点"刷新数据"时取；**每个来源每天最多 1 次**（fund_val_fetch 记上次去取的日期，UTC+8，当天已取过就跳过；
+ * Shiller 每月 1 次）；同一来源两个请求之间都隔 ≥ 2 秒（同一批里靠 Http gapMs；中证批与批之间：第 2～5 批开头先等 2 秒）；不重试（tries = 1，重试也是一次请求）。
+ * 一个指数一批（中证：index-perf + indicator.xls 2 个请求；Shiller：首页 + ie_data.xls 2 个请求），远在 ≤ 45、25 秒截止之内。
+ * 只用中证指数官网和 shillerdata.com（下载链接在首页上找，主机只认 shillerdata.com / wsimg.com）；不用蛋卷、multpl、MSCI、FTSE。
+ * 存的是中证指数有限公司、Robert Shiller 的数据，只给 Amos 本人看，不转载。
+ */
+export const VAL_GAP_MS = 2_000;
+const CS_HEADERS = { 'user-agent': BROWSER_UA, accept: 'application/json, text/plain, */*', referer: 'https://www.csindex.com.cn/' };
+const csPerfUrl = (code: string, start: string, end: string) => `https://www.csindex.com.cn/csindex-home/perf/index-perf?indexCode=${encodeURIComponent(code)}&startDate=${start}&endDate=${end}`;
+const csXlsUrl = (code: string) => `https://oss-ch.csindex.com.cn/static/html/csindex/public/uploads/file/autofile/indicator/${encodeURIComponent(code)}indicator.xls`;
+const SHILLER_HOME = 'https://shillerdata.com/';
+/** 来源键（fund_val_fetch.src） */
+export const valKeys = (def: ValIndexDef): string[] => (def.src === 'shiller' ? ['shiller'] : [`cs-perf:${def.code}`, `cs-xls:${def.code}`]);
+/** 这个来源今天（Shiller：这个月）还能不能取 */
+export function valDue(key: string, lastDay: string | undefined, now: number): boolean {
+  if (!lastDay) return true;
+  const today = day8(now);
+  return key === 'shiller' ? lastDay.slice(0, 7) !== today.slice(0, 7) : lastDay !== today;
+}
+/** 首次全量从多少个月前的 1 号开始取（窗口 120 个月，多留 2 个月） */
+const VAL_FULL_MONTHS = 122;
+function monthStart(now: number, back: number): string {
+  const d = new Date(now + 8 * 3600_000);
+  const t = new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth() - back, 1));
+  return t.toISOString().slice(0, 10).replace(/-/g, '');
+}
+
+export interface ValStepResult {
+  /** 下一批的 cursor；null = 6 个都过了一遍 */
+  next: number | null;
+  step: number;
+  total: number;
+  code: string;
+  name: string;
+  /** ok 取到了；partial 只取到一部分（另一部分保留上次的）；skipped 今天（Shiller 这个月）已经取过；failed 没取到（保留上次的） */
+  status: 'ok' | 'partial' | 'skipped' | 'failed';
+  reason?: string;
+  requests: number;
+}
+
+async function readLog(env: Env): Promise<Map<string, string>> {
+  const m = new Map<string, string>();
+  try {
+    const rows = (await env.DB.prepare('SELECT src, day FROM fund_val_fetch').all<{ src: string; day: string }>())?.results ?? [];
+    for (const r of rows) if (r?.src) m.set(r.src, r.day);
+  } catch { /* 读不到：当没取过 */ }
+  return m;
+}
+/** 发请求前先记下"今天取过了"（不在事务里；记不上就不发，宁可少取不多取） */
+async function markFetched(env: Env, key: string, now: number) {
+  await env.DB.prepare('INSERT INTO fund_val_fetch (src, day, at) VALUES (?1, ?2, ?3) ON CONFLICT (src) DO UPDATE SET day = ?2, at = ?3').bind(key, day8(now), now).run();
+}
+function readStored(raw: string | null | undefined): ValStored | null {
+  if (!raw) return null;
+  try { const j = JSON.parse(raw) as ValStored; return j && Array.isArray(j.series) ? j : null; } catch { return null; }
+}
+
+/** 估值的一批：step = VAL_INDEXES 的序号（接口里叫 cursor，和价格那边的刷新一样） */
+export async function refreshValuation(env: Env, step: number, now: number, f: FetchLike = (u, i) => fetch(u, i), sleep?: (ms: number) => Promise<unknown>): Promise<ValStepResult> {
+  const def = VAL_INDEXES[step];
+  const total = VAL_INDEXES.length;
+  const next = step + 1 < total ? step + 1 : null;
+  const base = { next, step, total, code: def.code, name: def.name };
+  const log = await readLog(env);
+  const due = valKeys(def).filter((k) => valDue(k, log.get(k), now));
+  if (!due.length) return { ...base, status: 'skipped', reason: def.src === 'shiller' ? '这个月已经取过（Shiller 每月取一次）' : '今天已经取过（每个来源每天最多一次）', requests: 0 };
+  // 中证 5 个指数一批一个、紧挨着：第 2～5 批一开头也先等 2 秒（上一批最后一个请求也是中证）；第 1 批和 Shiller 前面不是同一来源，不用等
+  const http = new Http(f, MAX_REQUESTS, sleep, Date.now() + CALL_BUDGET_MS, { gapMs: VAL_GAP_MS, tries: 1, waitFirst: def.src === 'csindex' && step > 0 });
+  const row = await env.DB.prepare('SELECT data FROM fund_valuation WHERE code = ?1').bind(def.code).first<{ data: string | null }>().catch(() => null);
+  const old = readStored(row?.data);
+  let st: ValStored | null = old ? { ...old } : null;
+  const errs: string[] = [];
+  let got = 0;
+  if (def.src === 'csindex') {
+    if (due.includes(`cs-perf:${def.code}`)) {
+      try {
+        // 增量：库里有够长的序列就从最后一个月的 1 号取（重算这个月的月末值）；没有就全量取 122 个月
+        const incr = old && old.series.length >= 100;
+        const start = incr ? old!.series[old!.series.length - 1][0].replace('-', '') + '01' : monthStart(now, VAL_FULL_MONTHS);
+        await markFetched(env, `cs-perf:${def.code}`, now);
+        const daily = parseCsPerf(await http.get(csPerfUrl(def.code, start, day8(now).replace(/-/g, '')), CS_HEADERS, '中证'));
+        if (!daily || !daily.length) throw new FetchFail('中证的市盈率数据认不出来（或是空的）');
+        const last = daily[daily.length - 1];
+        st = { code: def.code, series: mergeMonths(incr ? old!.series : [], monthEnds(daily), VAL_KEEP), pe_now: last[1], pe_now_date: last[0], dy_now: st?.dy_now ?? null, dy_date: st?.dy_date ?? null };
+        got++;
+      } catch (e) { errs.push(`市盈率：${why(e)}`); }
+    }
+    if (due.includes(`cs-xls:${def.code}`)) {
+      try {
+        await markFetched(env, `cs-xls:${def.code}`, now);
+        const x = parseCsIndicator(await http.bin(csXlsUrl(def.code), { headers: CS_HEADERS }, '中证'));
+        if (!x) throw new FetchFail('中证的股息率表认不出来');
+        if (st) { st = { ...st, dy_now: x.dy, dy_date: x.date }; got++; } else errs.push('股息率取到了，但还没有市盈率序列，先不存');
+      } catch (e) { errs.push(`股息率：${why(e)}`); }
+    }
+  } else {
+    try {
+      await markFetched(env, 'shiller', now);
+      const home = await http.text(SHILLER_HOME, { headers: HTML_HEADERS }, 'Shiller 首页');
+      const url = shillerXlsUrl(home.text);
+      if (!url) throw new FetchFail('Shiller 首页上没找到 ie_data.xls 的下载链接（或链接不在 shillerdata.com / wsimg.com 上）');
+      const p = parseShiller(await http.bin(url, { headers: { 'user-agent': BROWSER_UA, referer: SHILLER_HOME } }, 'Shiller 数据'));
+      if (!p) throw new FetchFail('Shiller 的 ie_data.xls 认不出来');
+      const last = p.series[p.series.length - 1];
+      st = { code: 'SPX', series: p.series, pe_now: last[1], pe_now_date: last[0], dy_now: p.dy, dy_date: p.dyDate };
+      got++;
+    } catch (e) { errs.push(why(e)); }
+  }
+  const reason = errs.join('；');
+  // 先取完再写库（不在事务里调外部接口）；没取到的保留上次的 data，只记原因
+  if (got && st) await env.DB.prepare('INSERT INTO fund_valuation (code, data, ok_at, err, err_at) VALUES (?1, ?2, ?3, ?4, ?5) ON CONFLICT (code) DO UPDATE SET data = ?2, ok_at = ?3, err = ?4, err_at = ?5').bind(def.code, JSON.stringify(st), now, reason ? reason.slice(0, 200) : null, reason ? now : null).run();
+  else if (reason) await env.DB.prepare('INSERT INTO fund_valuation (code, data, ok_at, err, err_at) VALUES (?1, NULL, NULL, ?2, ?3) ON CONFLICT (code) DO UPDATE SET err = ?2, err_at = ?3').bind(def.code, reason.slice(0, 200), now).run();
+  return { ...base, status: !got ? 'failed' : reason ? 'partial' : 'ok', ...(reason ? { reason } : {}), requests: http.used };
+}
+
+export interface ValuationList {
+  items: (ValCard & { ok_at: string | null; error?: string; error_at?: string })[];
+  /** 还没有数据的指数（从没取到过） */
+  missing: { code: string; name: string; market: string; error?: string }[];
+  /** 还有来源今天（Shiller 这个月）没取过：页面刷新完 45 只后才去调 POST /api/funds/valuation/refresh；false 就不调 */
+  due: boolean;
+}
+
+/** GET /api/funds 里的 valuation（表还没建等读不到时回 null，不影响 45 只） */
+export async function valuationList(env: Env, now: number): Promise<ValuationList | null> {
+  try {
+    const rows = (await env.DB.prepare('SELECT code, data, ok_at, err, err_at FROM fund_valuation').all<Row>()).results ?? [];
+    const log = await readLog(env);
+    const by = new Map(rows.map((r) => [r.code, r]));
+    const items: ValuationList['items'] = [];
+    const missing: ValuationList['missing'] = [];
+    for (const def of VAL_INDEXES) {
+      const r = by.get(def.code);
+      const st = readStored(r?.data);
+      const card = st ? valCard(def, st) : null;
+      if (!card) { missing.push({ code: def.code, name: def.name, market: def.market, ...(r?.err ? { error: r.err } : {}) }); continue; }
+      items.push({ ...card, ok_at: r?.ok_at ? new Date(r.ok_at).toISOString() : null, ...(r?.err ? { error: r.err, ...(r.err_at ? { error_at: new Date(r.err_at).toISOString() } : {}) } : {}) });
+    }
+    const due = VAL_INDEXES.some((d) => valKeys(d).some((k) => valDue(k, log.get(k), now)));
+    return { items, missing, due };
+  } catch {
+    return null;
+  }
+}
+
 /** /api/funds 和 /api/funds/refresh（第二版：最后一批顺带取债券收益率）；别的地址回 null（由 adminApi 回 404） */
 export async function fundsApi(env: Env, req: Request, now: number, sub: string, f?: FetchLike): Promise<Response | null> {
-  if (sub === '' && req.method === 'GET') return json(await fundsList(env));
+  // 第四版：GET 多一个 valuation（估值卡片 + due）；表还没建时是 null
+  if (sub === '' && req.method === 'GET') return json({ ...(await fundsList(env)), valuation: await valuationList(env, now) });
+  if (sub === 'valuation/refresh' && req.method === 'POST') {
+    const body = (await req.json().catch(() => ({}))) as Record<string, unknown>;
+    const st = body?.cursor ?? 0;
+    if (typeof st !== 'number' || !Number.isInteger(st) || st < 0 || st >= VAL_INDEXES.length) return json({ error: '估值的进度不对，请重新点一次「刷新数据」' }, 400);
+    return json(await refreshValuation(env, st, now, f));
+  }
   if (sub === 'refresh' && req.method === 'POST') {
     const body = (await req.json().catch(() => ({}))) as Record<string, unknown>;
     const c = body?.cursor ?? 0;

@@ -57,7 +57,9 @@ const fake = vi.fn(async (input: unknown, init?: RequestInit): Promise<Response>
 let db: D1Database;
 let dispose: () => Promise<void>;
 let ck = '';
-const env = (token: string | undefined = TOKEN): XEnv => ({ DB: db, ENVIRONMENT: 'test', COPILOT_PASSWORD: PASS, ...(token === undefined ? {} : { TIINGO_API_TOKEN: token }) });
+// 研发第四版交付时改（不动断言）：原来 `token = TOKEN` 的默认值让 env(undefined) 也变成「配了 token」（JS 默认参数遇到 undefined 就用默认值），
+// 「没配置」的两处测的其实是配置了的情况；所有「配置了」的调用都显式传了 TOKEN，去掉默认值后语义和文件头写的一致
+const env = (token?: string): XEnv => ({ DB: db, ENVIRONMENT: 'test', COPILOT_PASSWORD: PASS, ...(token === undefined ? {} : { TIINGO_API_TOKEN: token }) });
 const req = (p: string, init: RequestInit & { cookie?: string } = {}) =>
   new Request(`${HOST}${p}`, { ...init, headers: { 'content-type': 'application/json', origin: HOST, 'cf-connecting-ip': '203.0.113.9', ...(init.cookie ? { cookie: init.cookie } : {}) } });
 

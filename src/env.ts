@@ -17,4 +17,7 @@ export interface Env {
   ALLOWED_ORIGIN?: string;
   /** 公司运营仪表盘：各仓库自动检查推数据用的令牌（Secret，≥ 32 个字符）；没填时 /api/company/ingest 404、后台"公司"页显示"还没开通"（C103） */
   COMPANY_INGEST_TOKEN?: string;
+  /** 基金观察第四版：Tiingo 的 API Token（加密变量，Amos 在 Cloudflare 控制台填）。只在服务端读、只放在请求头里，
+   *  不下发前端、不写日志、不进任何错误文字；/health 只回 ok / not_configured。没填时美国 15 只退回 Yahoo */
+  TIINGO_API_TOKEN?: string;
 }
