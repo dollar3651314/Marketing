@@ -250,7 +250,15 @@ function pPlay(url,msgId){
     if(!PN.player)PN.player=new Audio();
     var a=PN.player;a.pause();a.src=url;a.playbackRate=1;
     var pr=a.play();
-    if(pr&&pr.catch)pr.catch(function(){pAuErr({'出错':'浏览器把这次播放挡住了。','怎么办':'再点一下这个按钮就会响。'},msgId);});
+    // **AbortError 不是错**（2026-11-11 修）：第 2 步就是让他来回点两个词对比，
+    // 后一次 play() 必然打断前一次，前一次的 promise 就以 AbortError 被拒
+    // （"The play() request was interrupted by a new load request"）。
+    // 原来这里不分青红皂白全报「浏览器把这次播放挡住了」——**他照我们设计的动作做，反而蹦出一个假错误**。
+    // 只有真被拦住（NotAllowedError）或别的毛病才报。
+    if(pr&&pr.catch)pr.catch(function(e){
+      if(e&&e.name==='AbortError')return;
+      pAuErr({'出错':'浏览器把这次播放挡住了。','怎么办':'再点一下这个按钮就会响。'},msgId);
+    });
   }catch(e){pAuErr({'出错':'这台设备放不了这段声音。'},msgId);}
 }
 function pAudio(id,msgId){
