@@ -8,6 +8,10 @@
  *   来源只请求 csindex.com.cn（含 oss-ch.csindex.com.cn）和 shillerdata.com（以及 shillerdata.com 首页下载链接指向的 ie_data.xls，实抓在 img1.wsimg.com）；
  *     不请求 danjuanfunds、multpl、msci、ftse。
  *   **同一来源同一天第二次刷新不再请求**（中证按 UTC+8 的日期；Shiller 当月不再请求）。
+ *   规格补充（Amos 11/11"表格或文档太大 无法单次解析完成，可以分开成多个小文档，多次解析"，主会话转述）：中证 perf 首次按年分段取、每次调用只处理一段
+ *     （每次调用对中证 ≤ 1 个请求，每段 ≤ 1 年），之后每天增量（每个指数 ≤ 1 个 perf 请求、从最近两个月内开始）；Shiller xls 每月下载 1 次、原始字节分块存 D1、
+ *     分多次调用逐步解析（下载那次不解析完、之后至少再 2 次）、解析完删块（D1 体积回到下载前 + 200 KB 内）；拼起来的结果仍和标准答案差 ≤ 0.05。
+ *     "每天最多 1 次"= 每天最多一轮；解析全部成功才记日期；当天最多 2 轮（第 3 轮不再请求）。
  *   无定时任务（wrangler 无 crons，src/index.ts 不导出 scheduled）。
  * 接口约定（研发照做；两种都认，要改就在同一个提交里改这里并写明）：
  *   取：GET /api/funds 回包顶层 valuation = { items: ValItem[], fetched_at? }；或者单独 GET /api/funds/valuation 回 { items: ValItem[] }（或 { valuation: { items } }）。
@@ -82,7 +86,9 @@ afterAll(async () => { vi.unstubAllGlobals(); await dispose(); });
 
 type Round = { urls: string[]; status: number; body: any; path: string };
 /** 一次完整刷新（见文件头的约定） */
-async function refreshAll(now: number): Promise<Round[]> {
+/** 每次估值调用之后调一次（第一轮量 D1 体积、SPX 何时出现用） */
+type AfterCall = (i: number, r: Round) => Promise<void>;
+async function refreshAll(now: number, after?: AfterCall): Promise<Round[]> {
   await login(now);
   const rounds: Round[] = [];
   let cursor: number | undefined;
@@ -97,13 +103,15 @@ async function refreshAll(now: number): Promise<Round[]> {
   // "同一来源隔 ≥ 2 秒"的等待走虚拟时间（virtualGaps：等待一点不少，只是不真等；CI 不会因为真等约 20 秒而超时）
   await virtualGaps(async () => {
     let next: unknown;
-    for (let i = 0; i < 10; i++) {
+    // 规格补充：首次按年分段、Shiller 分多次解析，一轮要调很多次；硬上限 400 次
+    for (let i = 0; i < 400; i++) {
       outbound = [];
       const r = await handle(req('/api/funds/valuation/refresh', { method: 'POST', cookie: ck, body: JSON.stringify(next == null ? {} : { cursor: next }) }), env(), now, fake as never);
       if (r.status === 404) break;
       let body: any = {};
       try { body = await r.json(); } catch { body = {}; }
       rounds.push({ urls: outbound.slice(), status: r.status, body, path: 'valuation/refresh' });
+      if (after) await after(i, rounds[rounds.length - 1]);
       next = body?.next;
       if (r.status !== 200 || next == null) break;
     }
@@ -121,6 +129,21 @@ async function getVal(now: number): Promise<Record<string, any>[] | null> {
   const j2 = (await r2.json()) as any;
   return Array.isArray(j2?.items) ? j2.items : Array.isArray(j2?.valuation?.items) ? j2.valuation.items : null;
 }
+/** D1 里所有业务表（不含 sqlite_ / _cf_ / d1_ 内部表）每一格内容的总字节数（BLOB 按字节、TEXT 按字符） */
+async function dbBytes(): Promise<number> {
+  const ts = ((await db.prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%' AND name NOT LIKE '_cf_%' AND name NOT LIKE 'd1_%'").all<{ name: string }>()).results ?? []).map((x) => x.name);
+  let n = 0;
+  for (const t of ts) {
+    const cols = ((await db.prepare(`PRAGMA table_info("${t}")`).all<{ name: string }>()).results ?? []).map((c) => c.name);
+    if (!cols.length) continue;
+    const r = await db.prepare(`SELECT ${cols.map((c) => `COALESCE(SUM(LENGTH("${c}")), 0)`).join(' + ')} AS n FROM "${t}"`).first<{ n: number }>();
+    n += Number(r?.n ?? 0);
+  }
+  return n;
+}
+const spxReady = async (now: number) => { const v = await getVal(now); const x = v?.find((i) => i.code === 'SPX'); return !!x && typeof x.pe_now === 'number' && x.pe_now > 0; };
+const XLS_BYTES = 1_675_264; // Shiller ie_data.xls 原始大小
+const ymd = (s: string | null) => (s && /^\d{8}$/.test(s) ? Date.UTC(+s.slice(0, 4), +s.slice(4, 6) - 1, +s.slice(6, 8)) : NaN);
 const valUrls = (rs: Round[]) => rs.flatMap((r) => r.urls).filter((u) => !isYahoo(u) && !isEm(u) && !isTiingo(u) && !yieldHost(u));
 const csUrls = (rs: Round[]) => rs.flatMap((r) => r.urls).filter(isCsindex);
 const shUrls = (rs: Round[]) => rs.flatMap((r) => r.urls).filter(isShiller);
@@ -147,9 +170,18 @@ function compare(items: Record<string, any>[] | null): string[] {
 
 describe('D 估值：接口', () => {
   let first: Round[] = [];
+  /** 第一轮：每次估值调用后 D1 的总字节数；下载 ie_data.xls 的是第几次调用；那次刚返回时 SPX 有没有出来；SPX 第一次出来是第几次调用 */
+  const bytesAfter: number[] = [];
+  let dl = -1, spxAtDl = false, readyAt = -1, bytes0 = 0;
+  beforeAll(async () => { bytes0 = await dbBytes(); });
   it('第一次完整刷新：每次 ≤ 45 个对外请求、都 200；中证 5 个指数的 PE（perf）和股息率（indicator.xls）、Shiller 都请求到了', async () => {
     stamps = [];
-    first = await refreshAll(D1A);
+    first = await refreshAll(D1A, async (i, r) => {
+      bytesAfter[i] = await dbBytes();
+      if (dl < 0 && r.urls.some((u) => /ie_data\.xls/i.test(u))) { dl = i; spxAtDl = await spxReady(D1A); }
+      else if (dl >= 0 && readyAt < 0 && (await spxReady(D1A))) readyAt = i;
+    });
+    bytes0 = bytesAfter[dl - 1] ?? bytes0;
     expect(first.filter((r) => r.status !== 200).map((r) => [r.path, r.status, r.body])).toEqual([]);
     expect(first.map((r) => r.urls.length).filter((n) => n > LIMIT)).toEqual([]);
     const cs = csUrls(first);
@@ -164,6 +196,24 @@ describe('D 估值：接口', () => {
       for (let i = 1; i < xs.length; i++) if (xs[i].t - xs[i - 1].t < 2000 - 5) bad.push(`${name}：${xs[i - 1].url.slice(0, 60)} → ${xs[i].url.slice(0, 60)} 只隔 ${xs[i].t - xs[i - 1].t} ms`);
     }
     expect(bad).toEqual([]);
+  });
+  it('（规格补充：太大分开解析）每次调用对中证最多发 1 个请求；中证 perf 每个请求都带 startDate / endDate、一段不超过 1 年（366 天）', () => {
+    const many = first.map((r, i) => [i, r.path, r.urls.filter(isCsindex).length] as const).filter(([, , n]) => n > 1);
+    expect(many, '每次调用对中证 ≤ 1 个请求').toEqual([]);
+    const perf = first.flatMap((r) => r.urls).filter((u) => isCsindex(u) && /perf/i.test(u));
+    const bad = perf.map((u) => { const q = new URL(u).searchParams; const a = ymd(q.get('startDate')), b = ymd(q.get('endDate')); return [u.replace(/^https?:\/\/[^/]+/, ''), (b - a) / 86400_000] as const; })
+      .filter(([, d]) => !(d >= 0 && d <= 366));
+    expect(bad, '首次按年分段取').toEqual([]);
+  });
+  it('（规格补充）Shiller：下载 ie_data.xls 那次调用里不解析完（刚返回时 SPX 还没有），之后至少再调 2 次才解析完；下载后原始字节分块存进 D1（D1 增加 ≥ 一半文件大小），解析完删掉（比下载前多不到 200 KB）', () => {
+    expect(dl, '这一轮下载了 ie_data.xls').toBeGreaterThanOrEqual(0);
+    expect(spxAtDl, '下载那次调用不该同时解析完').toBe(false);
+    expect(readyAt, 'SPX 最后要解析出来').toBeGreaterThan(dl);
+    expect(readyAt - dl, '分多次调用逐步解析').toBeGreaterThanOrEqual(2);
+    const grow = bytesAfter[dl] - bytes0;
+    expect(grow, `下载后 D1 应存着原始块（增加了 ${grow} 字节）`).toBeGreaterThanOrEqual(XLS_BYTES / 2);
+    const left = bytesAfter[bytesAfter.length - 1] - bytes0;
+    expect(left, `解析完原始块应删掉（还比下载前多 ${left} 字节）`).toBeLessThan(200_000);
   });
   it('来源只有中证、Shiller（及其首页给的 ie_data.xls 下载链接）；不请求蛋卷、multpl、MSCI、富时', () => {
     const v = valUrls(first);
@@ -185,15 +235,26 @@ describe('D 估值：接口', () => {
     const rs = await refreshAll(D2);
     expect(rs.map((r) => r.urls.length).filter((n) => n > LIMIT)).toEqual([]);
     expect(csUrls(rs).length, '新的一天中证要再取').toBeGreaterThan(0);
+    // 之后每天增量：每个指数最多 1 个 perf 请求，从最近两个月内开始
+    const perf = csUrls(rs).filter((u) => /perf/i.test(u));
+    const per = VAL_CN.map((c) => [c, perf.filter((u) => u.includes(c)).length] as const).filter(([, n]) => n > 1);
+    expect(per, '增量：每个指数 ≤ 1 个 perf 请求').toEqual([]);
+    expect(perf.filter((u) => !(ymd(new URL(u).searchParams.get('startDate')) >= Date.UTC(2026, 8, 1))).map((u) => u.replace(/^https?:\/\/[^/]+/, '')), '增量：startDate 在最近两个月内').toEqual([]);
     expect(shUrls(rs), 'Shiller 当月不再请求').toEqual([]);
     expect(compare(await getVal(D2))).toEqual([]);
   });
-  it('（补充）中证这天回 500：估值保留上次的值（6 个都在、数值不变、不变成 0）', async () => {
+  it('中证这天一直回 500：第 1 轮取不到（保留上次的值、6 个都在、不变成 0）→ 同一天第 2 轮再试（解析全部成功才记日期）→ 第 3 轮当天不再请求中证（每天最多 2 轮）', async () => {
     down = new Set(['csindex']);
     try {
-      const rs = await refreshAll(D3);
-      expect(rs.filter((r) => r.status >= 500).map((r) => [r.path, r.status])).toEqual([]);
+      const r1 = await refreshAll(D3);
+      expect(r1.filter((r) => r.status >= 500).map((r) => [r.path, r.status])).toEqual([]);
+      expect(csUrls(r1).length, '第 1 轮要请求中证').toBeGreaterThan(0);
       expect(compare(await getVal(D3))).toEqual([]);
+      const r2 = await refreshAll(D3 + 3600_000);
+      expect(csUrls(r2).length, '第 1 轮没成功，同一天第 2 轮要再试').toBeGreaterThan(0);
+      const r3 = await refreshAll(D3 + 2 * 3600_000);
+      expect(csUrls(r3), '同一天第 3 轮不再请求中证').toEqual([]);
+      expect(compare(await getVal(D3 + 2 * 3600_000))).toEqual([]);
     } finally { down = new Set(); }
   });
   it('下个月：Shiller 重新请求', async () => {

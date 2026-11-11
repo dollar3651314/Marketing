@@ -101,7 +101,7 @@ async function refreshAll(token?: string) {
   // 估值刷新（有这个接口才调）：按回的 next 一批一批调；"同一来源隔 ≥ 2 秒"的等待走虚拟时间（test/funds-v4-fake.ts 的 virtualGaps），不真等
   await virtualGaps(async () => {
     let next: unknown;
-    for (let i = 0; i < 10; i++) {
+    for (let i = 0; i < 400; i++) {
       outbound = [];
       const r = await handle(req('/api/funds/valuation/refresh', { method: 'POST', cookie: ck, body: JSON.stringify(next == null ? {} : { cursor: next }) }), env(token), NOW, fake as never);
       if (r.status === 404) break;
