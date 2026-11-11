@@ -277,7 +277,7 @@ describe('D3. 取数：每个来源每天最多 1 次、间隔 ≥ 2 秒、不�
     // 下个月 Shiller 又能取
     expect((await valuationList(env(), Date.UTC(2026, 11, 2, 2)))!.due).toBe(true);
   });
-  it('回 500 不重试（重试也算一次）；没取到保留上次的值、标 error；当天不再去取', async () => {
+  it('回 500 不自动重试；没取到保留上次的值、标 error；没取到不算取过：当天还能再试 1 次（只试没成功的那个来源），第 3 次不再试', async () => {
     const a = valFake();
     await refreshValuation(env(), 0, NOW - DAY, a.f, a.sleep);
     const before = (await valuationList(env(), NOW - DAY))!.items[0];
@@ -290,7 +290,29 @@ describe('D3. 取数：每个来源每天最多 1 次、间隔 ≥ 2 秒、不�
     expect(v.items[0]).toMatchObject({ code: '000300', error: expect.stringContaining('中证回 500') });
     expect([v.items[0].pe_now_date, v.items[0].pe_now]).toEqual([before.pe_now_date, before.pe_now]);
     expect(v.items[0].dy_now).toBe(3.03); // 股息率这次取到了
-    expect((await refreshValuation(env(), 0, NOW + 60_000, b.f, b.sleep)).status).toBe('skipped');
+    // 第 2 次：只试市盈率（股息率今天已经成功了），还是 500
+    const n0 = b.log.length;
+    const r2 = await refreshValuation(env(), 0, NOW + 60_000, b.f, b.sleep);
+    expect(r2.status).toBe('failed');
+    expect(b.log.slice(n0).map((x) => x.u.includes('index-perf'))).toEqual([true]);
+    // 第 3 次：今天已经试了 2 次，不再请求
+    const r3 = await refreshValuation(env(), 0, NOW + 120_000, b.f, b.sleep);
+    expect([r3.status, r3.requests, b.log.length]).toEqual(['skipped', 0, n0 + 1]);
+    expect(r3.reason).toContain('试了 2 次');
+    expect((await valuationList(env(), NOW + 120_000))!.due).toBe(true); // Shiller 等别的来源还没取
+    // 第二天又能试
+    const c = valFake();
+    expect((await refreshValuation(env(), 0, NOW + DAY, c.f, c.sleep)).status).toBe('ok');
+  });
+  it('第一次没取到、第二次取到：成功后当天不再取（解析失败 = 被掐断前没存好，不算取过）', async () => {
+    const bad = valFake((u) => (u.includes('index-perf') ? new Response('<html>busy</html>') : null));
+    // 库里还没有这个指数：市盈率认不出 → 股息率取到了也先不存（两个都不算取过）
+    expect((await refreshValuation(env(), 1, NOW, bad.f, bad.sleep)).status).toBe('failed');
+    const good = valFake();
+    const r = await refreshValuation(env(), 1, NOW + 1000, good.f, good.sleep);
+    expect([r.status, good.log.length]).toEqual(['ok', 2]);
+    expect((await refreshValuation(env(), 1, NOW + 2000, good.f, good.sleep)).status).toBe('skipped');
+    expect(good.log.length).toBe(2);
   });
   it('Shiller 首页上的链接不在白名单：不去取，记原因', async () => {
     const { f, log, sleep } = valFake((u) => (u === 'https://shillerdata.com/' ? new Response('<a href="https://evil.example.com/ie_data.xls">x</a>') : null));
@@ -354,8 +376,7 @@ describe('D4. 页面：估值板块', () => {
     tab('美国').click();
     expect(cards()).toEqual(['SPX']);
     tab('新加坡').click();
-    expect(cards()).toEqual([]); // 新加坡：没有卡，写一句说明（测试会话 e2e VA 约定）
-    expect(w.document.getElementById('fu-va-sg')!.hidden).toBe(false);
+    expect(cards()).toEqual(['SPX']); // 新加坡：标普500 那张（XUS 在新加坡上市；原型 v3）
     tab('').click();
     // 刷新：45 只取完 → due → 估值 6 批（step 0..5）
     (w.document.getElementById('fu-refresh') as HTMLButtonElement).click();
