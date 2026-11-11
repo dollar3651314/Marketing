@@ -60,7 +60,9 @@ function makeFetch(hang: (sym: string) => boolean, delay = 0) {
 
 // ---------- 替身 D1：只记语句 ----------
 function fakeEnv(): Env {
-  const stmt = (sql: string) => ({ sql, bind: (..._a: unknown[]) => ({ sql }) });
+  // 读（第三版东方财富增量取要先读库里已有的序列）一律当空库：all → 没有行，first → null
+  const rd = { all: async () => ({ results: [] }), first: async () => null };
+  const stmt = (sql: string) => ({ sql, ...rd, bind: (..._a: unknown[]) => ({ sql, ...rd }) });
   return { DB: { prepare: stmt, batch: async (s: unknown[]) => s.map(() => ({ success: true })) } as unknown as D1Database, ENVIRONMENT: 'test', COPILOT_PASSWORD: 'x' } as Env;
 }
 

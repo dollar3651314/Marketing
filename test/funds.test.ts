@@ -43,7 +43,7 @@ const zero = (v: number | null) => { expect(typeof v).toBe('number'); expect(Mat
 
 // ======================================================================
 describe('1. 清单 FUNDS：45 只，和参考脚本 fetch2.py 的 L 一字不差、顺序一样', () => {
-  // [市场, 类别, 显示名, Yahoo 代码 / 东方财富基金代码, 来源, 标签]，照抄 fetch2.py 的 L（y → yahoo，em → eastmoney）
+  // [市场, 类别, 显示名, Yahoo 代码 / 东方财富基金代码, 来源, 标签]，照抄 fetch2.py 的 L（y → yahoo，em → eastmoney）；第三版起中国 14 只场内 ETF 的来源改成 eastmoney
   const L: [string, string, string, string, string, string][] = [
     ['新加坡', '宽基', 'SPDR 海峡时报指数 ETF', 'ES3.SI', 'yahoo', ''],
     ['新加坡', '宽基', 'Amova-StraitsTrading 亚洲除日本 REIT ETF', 'CFA.SI', 'yahoo', ''],
@@ -74,22 +74,22 @@ describe('1. 清单 FUNDS：45 只，和参考脚本 fetch2.py 的 L 一字不�
     ['美国', '红利', 'Vanguard 高股息', 'VYM', 'yahoo', ''],
     ['美国', '红利', 'iShares 核心股息增长', 'DGRO', 'yahoo', ''],
     ['美国', '红利', 'SPDR 标普股息', 'SDY', 'yahoo', ''],
-    ['中国', '宽基', '华泰柏瑞沪深300ETF', '510300.SS', 'yahoo', ''],
-    ['中国', '宽基', '易方达沪深300ETF', '510310.SS', 'yahoo', ''],
-    ['中国', '宽基', '华夏上证50ETF', '510050.SS', 'yahoo', ''],
-    ['中国', '宽基', '南方中证500ETF', '510500.SS', 'yahoo', ''],
-    ['中国', '宽基', '华夏科创50ETF', '588000.SS', 'yahoo', ''],
-    ['中国', '债券', '华宝添益ETF', '511990.SS', 'yahoo', '货币'],
-    ['中国', '债券', '银华日利ETF', '511880.SS', 'yahoo', '货币'],
-    ['中国', '债券', '国泰上证5年期国债ETF', '511010.SS', 'yahoo', '原写的 511010'],
-    ['中国', '债券', '海富通短融ETF', '511360.SS', 'yahoo', ''],
+    ['中国', '宽基', '华泰柏瑞沪深300ETF', '510300.SS', 'eastmoney', ''],
+    ['中国', '宽基', '易方达沪深300ETF', '510310.SS', 'eastmoney', ''],
+    ['中国', '宽基', '华夏上证50ETF', '510050.SS', 'eastmoney', ''],
+    ['中国', '宽基', '南方中证500ETF', '510500.SS', 'eastmoney', ''],
+    ['中国', '宽基', '华夏科创50ETF', '588000.SS', 'eastmoney', ''],
+    ['中国', '债券', '华宝添益ETF', '511990.SS', 'eastmoney', '货币'],
+    ['中国', '债券', '银华日利ETF', '511880.SS', 'eastmoney', '货币'],
+    ['中国', '债券', '国泰上证5年期国债ETF', '511010.SS', 'eastmoney', '原写的 511010'],
+    ['中国', '债券', '海富通短融ETF', '511360.SS', 'eastmoney', ''],
     ['中国', '债券', '易方达裕丰回报债券A', '000171', 'eastmoney', '场外 · 含少量股票'],
     ['中国', '债券', '招商安泰债券A', '217003', 'eastmoney', '场外'],
-    ['中国', '红利', '华泰柏瑞红利ETF', '510880.SS', 'yahoo', ''],
-    ['中国', '红利', '景顺长城红利低波100ETF', '515100.SS', 'yahoo', ''],
-    ['中国', '红利', '招商中证红利ETF', '515080.SS', 'yahoo', ''],
-    ['中国', '红利', '易方达中证红利ETF', '515180.SS', 'yahoo', ''],
-    ['中国', '红利', '华宝标普A股红利ETF', '562060.SS', 'yahoo', ''],
+    ['中国', '红利', '华泰柏瑞红利ETF', '510880.SS', 'eastmoney', ''],
+    ['中国', '红利', '景顺长城红利低波100ETF', '515100.SS', 'eastmoney', ''],
+    ['中国', '红利', '招商中证红利ETF', '515080.SS', 'eastmoney', ''],
+    ['中国', '红利', '易方达中证红利ETF', '515180.SS', 'eastmoney', ''],
+    ['中国', '红利', '华宝标普A股红利ETF', '562060.SS', 'eastmoney', ''],
   ];
 
   it('正好 45 只；新加坡 14、美国 15、中国 16', () => {
@@ -98,16 +98,19 @@ describe('1. 清单 FUNDS：45 只，和参考脚本 fetch2.py 的 L 一字不�
     expect([n('新加坡'), n('美国'), n('中国')]).toEqual([14, 15, 16]);
   });
 
+  // 第三版（Amos 2026-11-11「都按建议」，安全经理条款核对：Yahoo 条款禁止自动抓取）：中国 14 只场内 ETF 改从东方财富取，source = eastmoney；
+  // 它们的 symbol 写 "510300.SS" 或去掉后缀的 "510300" 都认（规格没定），其余 31 只 symbol 照旧一字不差（测试用例修正 5）
   it('每一只的市场、类别、名字、code、symbol、source、tag 和顺序都和 L 一样（code = 去掉 .SI / .SS）', () => {
-    expect(FUNDS.map((f) => [f.market, f.category, f.name, f.code, f.symbol, f.source, f.tag])).toEqual(
+    expect(FUNDS.map((f) => [f.market, f.category, f.name, f.code, f.source === 'eastmoney' && f.symbol === f.code ? f.code + (L.find((x) => x[3] === f.code + '.SS') ? '.SS' : '') : f.symbol, f.source, f.tag])).toEqual(
       L.map(([m, c, n, sym, src, tag]) => [m, c, n, sym.replace(/\.(SI|SS)$/, ''), sym, src, tag]),
     );
   });
 
-  it('code 不重复；只有 000171、217003 是 eastmoney（511880 在清单里仍是 yahoo，取数时才回退）', () => {
+  it('code 不重复；中国 16 只都是 eastmoney（14 只场内 ETF + 000171、217003），新加坡 14 只 + 美国 15 只是 yahoo', () => {
     expect(new Set(FUNDS.map((f) => f.code)).size).toBe(45);
-    expect(FUNDS.filter((f) => f.source === 'eastmoney').map((f) => f.code)).toEqual(['000171', '217003']);
-    expect(FUNDS.find((f) => f.code === '511880')).toMatchObject({ source: 'yahoo', symbol: '511880.SS' });
+    expect(FUNDS.filter((f) => f.source === 'eastmoney').map((f) => f.code)).toEqual(FUNDS.filter((f) => f.market === '中国').map((f) => f.code));
+    expect(FUNDS.filter((f) => f.source === 'yahoo').map((f) => f.market).every((m) => m === '新加坡' || m === '美国')).toBe(true);
+    expect(FUNDS.filter((f) => f.source === 'yahoo')).toHaveLength(29);
   });
 });
 
