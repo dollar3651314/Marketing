@@ -89,7 +89,7 @@ export const FUNDS_CSS = `
 #v-funds .fu-tag{display:inline-block;font-size:12px;color:var(--amber);background:var(--amber-soft);border-radius:4px;padding:0 6px;margin-right:4px;line-height:18px}
 #v-funds .fu-stale{display:block;font-size:12px;color:var(--err);margin-top:2px}
 #v-funds .fu-old{display:inline-block;font-size:12px;color:var(--ink-2);background:var(--gray-soft);border-radius:4px;padding:0 6px;line-height:18px}
-#v-funds .fu-px{text-align:right;font-variant-numeric:tabular-nums}#v-funds .fu-px small{display:block;color:var(--muted);font-size:12px}
+#v-funds .fu-px{text-align:right;font-variant-numeric:tabular-nums}#v-funds .fu-px small{display:block;color:var(--muted);font-size:12px}#v-funds .fu-px small .nw{white-space:nowrap}
 #v-funds .fu-d1{text-align:right;font-variant-numeric:tabular-nums;font-size:var(--fs-aux)}
 #v-funds .fu-d1.hot{font-weight:700}#v-funds .fu-d1.hot::before{content:"⚑ ";font-size:12px}
 #v-funds .fu-d1 .k{display:none;color:var(--muted);font-weight:400;font-size:12px;margin-right:4px}
@@ -427,7 +427,7 @@ function detail(f){var box=el('div',{'class':'fu-detail','data-detail':f.code}),
   if(B)right.appendChild(el('div',{'class':'fu-dnote'},'未来 1 个月：大约 2/3 的可能在 '+pct(B[1],1)+' ～ '+pct(B[3],1)+'，大约 95% 在 '+pct(B[0],1)+' ～ '+pct(B[4],1)+'（按过去一年波动推算，不是预测）'));
   else if(has(f))right.appendChild(el('div',{'class':'fu-dnote'},'未来 1 个月：上市不满两个月，算不出'));
   if(f.yield&&typeof f.yield.value==='number')right.appendChild(el('div',{'class':'fu-dnote'},'预期年化 '+(f.yield.kind==='approx'||f.yield.approx?'≈':'')+f.yield.value.toFixed(2)+'%（'+f.yield.label+'，'+f.yield.asOf+(f.yield.stale?'，过期':'')+'）'));
-  right.appendChild(el('div',{'class':'fu-dnote'},'* 从 '+f.first+' 起（最多取一年）。'+(isIdx(f)?'收益指数 '+fmtPx(f.last)+'（'+f.first+' = 100，按每天的万份收益连乘），':'最新价 '+fmtPx(f.last)+' '+(f.currency||'')+'，')+f.date+'，来源：'+srcName(f)));
+  right.appendChild(el('div',{'class':'fu-dnote'},'* 从 '+f.first+' 起（最多取一年）。'+(isIdx(f)?'收益指数 '+fmtPx(f.last)+'（'+f.first+' = 100，按东方财富每天公布的收益连乘），':'最新价 '+fmtPx(f.last)+' '+(f.currency||'')+'，')+f.date+'，来源：'+srcName(f)));
   box.appendChild(right);return box;}
 
 function staleText(f){if(!f.error)return'';return'没取到，显示的是 '+f.date+' 的数据（'+f.error+'）'}
@@ -444,7 +444,7 @@ function list_(){var p=st.p,L=$('fu-list');L.replaceChildren();$('fu-colp').text
       else if(isOld(f)){var oa=oldAt(f);sub.appendChild(el('span',{'class':'fu-old',title:'这一只还是上次'+(oa?' '+tw(oa)+TZ:'')+'的数据，比标题的数据时间早'},'上次数据'+(oa?' '+tw(oa).slice(5):'')))}
       if(!ok)nm.appendChild(el('span',{'class':'fu-stale'},'没取到数据'+(f.error&&f.error!=='还没取过'?'：'+f.error:'，点「刷新数据」去取')));
       r.appendChild(nm);
-      var px=el('div',{'class':'fu-px'},fmtPx(ok?f.last:null));if(ok)px.appendChild(el('small',null,(isIdx(f)?'收益指数（起点 100）':(f.currency||''))+' · '+f.date.slice(5)));r.appendChild(px);
+      var px=el('div',{'class':'fu-px'},fmtPx(ok?f.last:null));if(ok){var sm=el('small');if(isIdx(f))sm.appendChild(el('span',{'class':'nw'},'收益指数（起点 100）'));else sm.appendChild(document.createTextNode(f.currency||''));sm.appendChild(document.createTextNode(' · '+f.date.slice(5)));px.appendChild(sm)}r.appendChild(px);
       var hot=ok&&f.d1!=null&&Math.abs(f.d1)>=TH;var d1=el('div',{'class':'fu-d1 '+cls(ret(f,'d1'))+(hot?' hot':'')});d1.appendChild(el('span',{'class':'k'},'1 日'));d1.appendChild(document.createTextNode(pct(ret(f,'d1'))));r.appendChild(d1);
       var bars=el('div',{'class':'fu-bars'}),rv=ret(f,p),dv=dd(f,p);
       function line(k,v,color,txtCls){var b=el('div',{'class':'fu-bl'});b.appendChild(el('span',{'class':'k'},k));var t=el('div',{'class':'fu-track'});
