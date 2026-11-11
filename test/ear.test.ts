@@ -71,7 +71,7 @@ const api = async (p: string, body?: unknown, now = T0) => {
   const r = await handle(req('/api/drill/ear/' + p, body === undefined ? { cookie: ck } : { method: 'POST', cookie: ck, body: JSON.stringify(body) }), env(), now);
   return { status: r.status, body: (await r.json()) as Record<string, any> };
 };
-/** 假的 Workers AI：melotts 回 {audio: base64} */
+/** 假的 Workers AI：回 {audio: base64}（toMp3 认这种，也认 aura 的流） */
 const MP3 = Uint8Array.from([0x49, 0x44, 0x33, 0x04, 0x00, 0x11, 0x22, 0x33]);
 const b64 = (a: Uint8Array) => btoa(String.fromCharCode(...a));
 function fakeAi() {
@@ -246,7 +246,7 @@ describe('5. 答完那一刻：对 / 错 + 点名放的是哪个词 + 两个词�
   });
 
   it('每个词给一个「听真人念」的链接，跳内容文件里那个词的出处（剑桥词条页有真人录音）', () => {
-    // 为什么有这一行：上面那两个🔊是 melotts 合成的，**合成音可能把元音念歪**——
+    // 为什么有这一行：上面那两个🔊是机器合成的，**合成音可能把元音念歪**——
     // 他听得很清楚却选错，那是机器的错不是他的耳朵，而「两个听着一样」那个按钮**分不出这一种**。
     // （2026-11-10 两轮 16 题，他一次都没点那个按钮，bad/bed 和 lock/luck 两轮全错。）
     expect(EAR_MOD).toContain('id="dr-ear-human"');
@@ -350,14 +350,15 @@ describe('7. 发音：复用带练那一套（不另开第二套）', () => {
     expect(audioTextOf('p8b')).toBe('car');
   });
 
-  it('16 段都能生成、都存进 drill_audio；再点一遍一次都不再调 melotts（不新增一分钱费用）', async () => {
+  it('16 段都能生成、都存进 drill_audio；再点一遍一次都不再调 AI（不新增一分钱费用）', async () => {
     const ai = fakeAi();
     for (const id of EAR_WORD_IDS) {
       const r = await handle(req('/api/drill/audio/' + id, { cookie: ck }), ai.env(), T0);
       expect([id, r.status, r.headers.get('content-type')]).toEqual([id, 200, 'audio/mpeg']);
     }
     expect(ai.calls).toHaveLength(16);
-    expect(ai.calls.map((c) => c.inp.prompt)).toEqual(EAR_WORD_IDS.map((id) => earWordOf(id)));
+    // 2026-11-10 换成 aura-2-en：念的还是那个词本身，但入参字段从 prompt 变成 text
+    expect(ai.calls.map((c) => c.inp.text)).toEqual(EAR_WORD_IDS.map((id) => earWordOf(id)));
     expect((await db.prepare('SELECT COUNT(*) AS n FROM drill_audio').first<{ n: number }>())?.n).toBe(16);
     for (const id of EAR_WORD_IDS) expect([id, (await handle(req('/api/drill/audio/' + id, { cookie: ck }), ai.env(), T0)).status]).toEqual([id, 200]);
     expect(ai.calls).toHaveLength(16);
