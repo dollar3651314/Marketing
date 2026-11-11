@@ -9,6 +9,9 @@
  *      最终拼出的序列和一次取完的标准答案一致（test/fixtures/funds/valuation/val-ref.json，误差 ≤ 0.05）。
  *   4. Shiller：下载成功后把 xls 链接存进 D1，下一次（下个月）直接请求这个链接、不请求首页；这个链接失败才回退首页（再用首页上的新链接）；
  *      首页等 ≥ 20 秒（虚拟时间）没回应才算失败。
+ *   4b.（主会话补充，研发交付 a1dfb5d 之后）用存的链接下载解析后，最新月份没比库里前进 → 同一轮再请求一次首页找新链接：有新链接就下载新的；
+ *      没有就保留旧数据，页面注明"Shiller 本月还没更新"。每次调用 ≤ 1 个对外请求、同源间隔 ≥ 5 秒。
+ *      （前进了的那种：存的链接给的是更新到下个月的表 → 不请求首页。合成表用 test/funds-val-xls.ts 现拼，最新月份比夹具晚。）
  *   5. 文案（只在 e2e 测）。
  *   6. 每天最多 2 轮不变；首次补齐后每天每个指数 ≤ 1 个 perf 请求（中证请求合计每个指数 ≤ 2：perf + 股息率表）。
  * 测试会话的理解（研发有异议走主会话，不私下改）：
@@ -28,6 +31,7 @@ import { handle } from '../src/index';
 import { shillerXlsUrl } from '../src/funds-val';
 import { fakeResponse, fxBytes, isCsindex, isShiller, urlOf, VAL_CN, VAL_CODES, VAL_REF } from './funds-v4-fake';
 import { ROOT } from './helpers';
+import { buildXls } from './funds-val-xls';
 
 const PASS = 'ci_only_copilot_password_01';
 const HOST = 'https://copilot.example.test';
@@ -47,6 +51,21 @@ const HOME_HTML = new TextDecoder().decode(fxBytes('shiller-home.html.gz'));
 const OLD_LINK = shillerXlsUrl(HOME_HTML)!; // 夹具首页上的下载链接（img1.wsimg.com/…/ie_data.xls?ver=…）
 const NEW_LINK = 'https://img1.wsimg.com/blobby/go/qa-new/downloads/qa-new-2/ie_data.xls?ver=2';
 const linkKey = (u: string) => new URL(u).pathname; // 存进 D1 时只认路径（查询串怎么存不管）
+const NEW_LINK2 = 'https://img1.wsimg.com/blobby/go/qa-new/downloads/qa-new-3/ie_data.xls?ver=3';
+const homeWith = (link: string) => HOME_HTML.split(OLD_LINK.replace(/^https:/, '')).join(link.replace(/^https:/, '')).split(OLD_LINK).join(link);
+/** 合成的 Shiller ie_data.xls：2012-01 起到 last（YYYY-MM）每月一行，CAPE = 30 + 月序号 / 100，最后一个月 CAPE = capeLast */
+function synthShiller(last: string, capeLast: number): Uint8Array {
+  const rows: [number, (string | number | undefined)[]][] = [[5, [undefined, 'S&P']], [7, ['Date', 'P', 'D', 'E', 'CPI', 'Fraction', 'Rate GS10', 'Real', 'Real', 'Return', 'Real', 'Scaled', 'CAPE']]];
+  const [ly, lm] = last.split('-').map(Number);
+  const n = (ly - 2012) * 12 + lm;
+  for (let i = 0; i < n; i++) {
+    const y = 2012 + Math.floor(i / 12), m = (i % 12) + 1;
+    rows.push([8 + i, [Number(`${y}.${String(m).padStart(2, '0')}`), 3000 + i, 60, 200, 300, 2000, 4, 1, 1, 1, 1, 1, i === n - 1 ? capeLast : 30 + i / 100]]);
+  }
+  return buildXls([{ name: 'Notes', rows: [[0, ['hello']]] }, { name: 'Data', rows: rows as never }]);
+}
+const xlsRes = (b: Uint8Array) => new Response(b as unknown as BodyInit, { status: 200, headers: { 'content-type': 'application/vnd.ms-excel' } });
+const htmlRes = (h: string) => new Response(h, { status: 200, headers: { 'content-type': 'text/html; charset=utf-8' } });
 
 // ---------------------------------------------------------------- 虚拟时钟
 const SRC = path.join(ROOT, 'src') + path.sep;
@@ -260,27 +279,34 @@ describe('V5-1 首次一轮、第二天、下个月 Shiller 用存的链接、�
     expect(shOf(rs).map((r) => short(r.url))).toEqual([]);
     expect(await compare(D2)).toEqual([]);
   }, 120_000);
-  it('下个月：Shiller 直接请求存着的 xls 链接，不请求首页；SPX 照样对得上', async () => {
-    const rs = await round(D4);
-    expect(bad5xx(rs)).toEqual([]);
-    const sh = shOf(rs);
-    expect(sh.filter((r) => isHome(r.url)).map((r) => r.url), '不该请求 Shiller 首页').toEqual([]);
-    expect(sh.length > 0 && sh[0].url.includes(linkKey(OLD_LINK)), `第一个 Shiller 请求应是存着的链接：${JSON.stringify(sh.map((r) => short(r.url)))}`).toBe(true);
-    expect(await compare(D4, ['SPX'])).toEqual([]);
+  it('下个月：Shiller 直接请求存着的 xls 链接（这次表更新到了 2026-11），不请求首页；SPX 前进到 2026-11', async () => {
+    // 4b 补充后：存的链接给的表要比库里新，才"不请求首页"（没前进的那种在 V5-5）
+    plan = (u) => (u.includes(linkKey(OLD_LINK)) ? xlsRes(synthShiller('2026-11', 41.11)) : null);
+    try {
+      const rs = await round(D4);
+      expect(bad5xx(rs)).toEqual([]);
+      const sh = shOf(rs);
+      expect(sh.filter((r) => isHome(r.url)).map((r) => r.url), '不该请求 Shiller 首页').toEqual([]);
+      expect(sh.length > 0 && sh[0].url.includes(linkKey(OLD_LINK)), `第一个 Shiller 请求应是存着的链接：${JSON.stringify(sh.map((r) => short(r.url)))}`).toBe(true);
+      const spx = (await getVal(D4)).items.find((x) => x.code === 'SPX');
+      expect([spx?.pe_now_date, spx?.pe_now]).toEqual(['2026-11', 41.11]);
+    } finally { plan = () => null; }
   }, 180_000);
-  it('再下个月：存着的链接回 404 → 才去首页 → 用首页上的新链接下载；D1 里换成新链接；SPX 对得上', async () => {
+  it('再下个月：存着的链接回 404 → 才去首页 → 用首页上的新链接下载（表更新到 2026-12）；D1 里换成新链接', async () => {
     plan = (u) => {
       if (u.includes(linkKey(OLD_LINK))) return new Response('Not Found', { status: 404 });
-      if (isHome(u)) return new Response(HOME_HTML.split(OLD_LINK.replace(/^https:/, '')).join(NEW_LINK.replace(/^https:/, '')).split(OLD_LINK).join(NEW_LINK), { status: 200, headers: { 'content-type': 'text/html; charset=utf-8' } });
+      if (isHome(u)) return htmlRes(homeWith(NEW_LINK));
+      if (u.includes(linkKey(NEW_LINK))) return xlsRes(synthShiller('2026-12', 42.22));
       return null;
     };
     try {
-      expect(shillerXlsUrl(HOME_HTML.split(OLD_LINK.replace(/^https:/, '')).join(NEW_LINK.replace(/^https:/, ''))), '前提：替身首页换成了新链接').toBe(NEW_LINK);
+      expect(shillerXlsUrl(homeWith(NEW_LINK)), '前提：替身首页换成了新链接').toBe(NEW_LINK);
       const rs = await round(D5);
       expect(bad5xx(rs)).toEqual([]);
       const seq = shOf(rs).map((r) => (r.url.includes(linkKey(OLD_LINK)) ? 'old' : isHome(r.url) ? 'home' : r.url.includes(linkKey(NEW_LINK)) ? 'new' : short(r.url)));
       expect(seq, '顺序：存着的链接 → 首页 → 首页上的新链接').toEqual(['old', 'home', 'new']);
-      expect(await compare(D5, ['SPX'])).toEqual([]);
+      const spx = (await getVal(D5)).items.find((x) => x.code === 'SPX');
+      expect([spx?.pe_now_date, spx?.pe_now]).toEqual(['2026-12', 42.22]);
       expect(await dbHas(linkKey(NEW_LINK)), 'D1 里应换成新链接').not.toEqual([]);
     } finally { plan = () => null; }
   }, 180_000);
@@ -396,4 +422,77 @@ describe('V5-4 Shiller 首页慢：≥ 20 秒没回应才算失败（规格 4）
       expect(gapViolations(log)).toEqual([]);
     } finally { plan = () => null; }
   }, 180_000);
+});
+
+// ================================================================
+/** 页面（jsdom 跑 FUNDS_JS，数据是真接口 GET /api/funds 的回包）估值板块的文字 */
+async function pageValText(now: number): Promise<string> {
+  const g = await handle(req('/api/funds', { cookie: ck }), env(), now, fake as never);
+  const snap = await g.json();
+  const jsdomName = 'jsdom';
+  const { JSDOM } = await import(jsdomName);
+  const { FUNDS_MOD, FUNDS_JS } = await import('../src/funds-page');
+  const dom = new JSDOM(`<!doctype html><body><main id="app">${FUNDS_MOD}</main></body>`, { runScripts: 'outside-only', pretendToBeVisual: true });
+  const w = dom.window as any;
+  w.fetch = async () => ({ status: 200, ok: true, json: async () => JSON.parse(JSON.stringify(snap)) });
+  w.matchMedia = () => ({ matches: false });
+  w.eval(FUNDS_JS);
+  w.document.getElementById('v-funds').hidden = false;
+  w.fundsOpen();
+  for (let k = 0; k < 200 && !w.document.querySelector('[data-val-code="SPX"]'); k++) await new Promise((r) => realST(r, 5));
+  const t = (w.document.getElementById('fu-va')?.textContent ?? '').replace(/\s+/g, ' ');
+  w.close();
+  return t;
+}
+const D6 = Date.UTC(2027, 1, 3, 3, 0, 0); // 2027-02
+describe('V5-5 Shiller 用存的链接下载后最新月份没前进：同一轮再看一次首页（规格 4b，主会话补充）', () => {
+  beforeAll(freshDb, 60_000);
+  const all: Call[] = [];
+  it('前提：首次一轮取齐（夹具表，最新 2026-10），存下链接', async () => {
+    const rs = await round(D1A);
+    all.push(...rs);
+    expect(bad5xx(rs)).toEqual([]);
+    expect(await compare(D1A, ['SPX'])).toEqual([]);
+    expect(await dbHas(linkKey(OLD_LINK))).not.toEqual([]);
+  }, 180_000);
+  it('下个月：存的链接给的还是 2026-10 → 同一轮再请求首页；首页上还是同一个链接 → 不再下载，保留旧数据（和标准答案一致），页面注明"Shiller 本月还没更新"', async () => {
+    const rs = await round(D4);
+    all.push(...rs);
+    expect(bad5xx(rs)).toEqual([]);
+    const seq = shOf(rs).map((r) => (r.url.includes(linkKey(OLD_LINK)) ? 'old' : isHome(r.url) ? 'home' : short(r.url)));
+    expect(seq, '存的链接 → 首页（首页上没有新链接，就到此为止）').toEqual(['old', 'home']);
+    expect(await compare(D4, ['SPX'])).toEqual([]);
+    const t = await pageValText(D4);
+    expect(t, '估值板块要注明').toContain('Shiller 本月还没更新');
+  }, 180_000);
+  it('再下个月：存的链接还是 2026-10 → 首页上有新链接 → 下载新的（最新 2026-12），D1 换成新链接；页面不再写"本月还没更新"', async () => {
+    plan = (u) => (isHome(u) ? htmlRes(homeWith(NEW_LINK2)) : u.includes(linkKey(NEW_LINK2)) ? xlsRes(synthShiller('2026-12', 43.33)) : null);
+    try {
+      const rs = await round(D5);
+      all.push(...rs);
+      expect(bad5xx(rs)).toEqual([]);
+      const seq = shOf(rs).map((r) => (r.url.includes(linkKey(OLD_LINK)) ? 'old' : isHome(r.url) ? 'home' : r.url.includes(linkKey(NEW_LINK2)) ? 'new' : short(r.url)));
+      expect(seq).toEqual(['old', 'home', 'new']);
+      const spx = (await getVal(D5)).items.find((x) => x.code === 'SPX');
+      expect([spx?.pe_now_date, spx?.pe_now]).toEqual(['2026-12', 43.33]);
+      expect(await dbHas(linkKey(NEW_LINK2)), 'D1 里应换成新链接').not.toEqual([]);
+      expect(await pageValText(D5)).not.toContain('本月还没更新');
+    } finally { plan = () => null; }
+  }, 180_000);
+  it('又下个月：存的（新）链接给的表前进到 2027-01 → 不请求首页', async () => {
+    plan = (u) => (u.includes(linkKey(NEW_LINK2)) ? xlsRes(synthShiller('2027-01', 44.44)) : null);
+    try {
+      const rs = await round(D6);
+      all.push(...rs);
+      expect(bad5xx(rs)).toEqual([]);
+      const sh = shOf(rs);
+      expect(sh.map((r) => (r.url.includes(linkKey(NEW_LINK2)) ? 'new' : isHome(r.url) ? 'home' : short(r.url)))).toEqual(['new']);
+      const spx = (await getVal(D6)).items.find((x) => x.code === 'SPX');
+      expect([spx?.pe_now_date, spx?.pe_now]).toEqual(['2027-01', 44.44]);
+    } finally { plan = () => null; }
+  }, 180_000);
+  it('这一组全部调用：每次调用 ≤ 1 个对外请求；同一来源相邻请求隔 ≥ 5 秒', () => {
+    expect(all.map((c, i) => [i, c.recs.map((r) => short(r.url))] as const).filter(([, u]) => u.length > 1)).toEqual([]);
+    expect(gapViolations(log)).toEqual([]);
+  });
 });
