@@ -47,6 +47,31 @@ export const PRON_CSS = `
 .pn .pn-sound ul{margin:0;padding-left:18px;display:grid;gap:var(--s2)}
 .pn .pn-sound li{font-size:var(--fs-body);color:var(--ink);overflow-wrap:anywhere}
 .pn .pn-mouthhint{font-size:var(--fs-aux);color:var(--muted);margin:0 0 var(--s4)}
+/* 口型示意图（2026-11-11）：两个音并排，**画面上每一处可见差别都指回课件 mouth 的某一条**（依据表 src/pron-mouth.ts）。
+   画不出差别的那几组（/f/ /v/、/n/ /l/、/ʒ/ /dʒ/）两张图逐像素一样，差别照实写在说明里，不画假的。 */
+.pn .pn-draw{display:grid;grid-template-columns:1fr 1fr;gap:var(--s2);margin:0 0 var(--s3)}
+.pn .pn-mo{border:1px solid var(--line);border-radius:12px;background:var(--surface-2);padding:var(--s3) var(--s2);min-width:0}
+.pn .pn-mo.lit{border-color:var(--teal);background:var(--teal-soft)}
+.pn .pn-mo .m-ipa{font-size:22px;font-weight:700;color:var(--teal-ink);margin:0 0 var(--s2);overflow-wrap:anywhere}
+.pn .pn-mo svg{display:block;width:100%;height:auto;color:var(--ink)}
+.pn .pn-mo .m-cap{font-size:12px;color:var(--muted);margin:var(--s1) 0 var(--s2);overflow-wrap:anywhere}
+.pn .pn-mo .m-why{font-size:12px;color:var(--ink-2);margin:0;overflow-wrap:anywhere}
+.pn .pn-mo .m-no{font-size:12px;color:var(--muted);margin:var(--s1) 0 0;overflow-wrap:anywhere}
+/* 镜子里那张目标图只留图：依据就在同一屏上面，不重复第二遍，宽度让给他自己的嘴 */
+.pn .pn-mo.mini .m-why,.pn .pn-mo.mini .m-no{display:none}
+/* 照镜子：左边目标口型图、右边他自己的嘴。**画面不上传、不保存、不录**（只有 srcObject，关掉时 track.stop()） */
+.pn .pn-mirror{border:1px solid var(--teal);border-radius:12px;background:var(--surface-2);padding:var(--s3);margin:0 0 var(--s3)}
+.pn .pn-mirrow{display:grid;grid-template-columns:1fr 1fr;gap:var(--s2);margin:0 0 var(--s3)}
+.pn .pn-mircell{min-width:0}
+.pn .pn-mircell .m-cap{font-size:12px;color:var(--muted);margin:0 0 var(--s1);overflow-wrap:anywhere}
+.pn .pn-mircell video{display:block;width:100%;height:200px;object-fit:cover;background:#000;border-radius:10px;transform:scaleX(-1)}
+.pn .pn-privacy{font-size:var(--fs-aux);font-weight:700;color:var(--teal-ink);margin:0 0 var(--s3);overflow-wrap:anywhere}
+/* 慢速对照 + 他自己的录音回放（**录过才出现**，没录过不画占位、不画灰按钮） */
+.pn .pn-my{border:1px solid var(--line);border-radius:12px;background:var(--surface);padding:var(--s3);margin:var(--s3) 0 0}
+.pn .pn-my .y-t{font-size:var(--fs-body);font-weight:700;color:var(--ink);margin:0 0 var(--s2)}
+#w-pron .pn-my .btn[aria-pressed="true"]{background:var(--teal-soft);border-color:var(--teal);font-weight:700}
+/* 这几个按钮的字比别处长（「🐢 慢速开着（0.7 倍）」）：允许换行、min-width:0，否则格子被撑开、整块横着溢出 */
+#w-pron .pn-my .btn{font-size:15px;white-space:normal;overflow-wrap:anywhere;min-width:0;line-height:1.3;padding:8px 10px}
 /* 一句话说明（这一组有几对最小对立对、够不够 10 题）：照实说，不硬凑 */
 .pn .pn-note{border:1px solid var(--line);border-left:4px solid var(--teal);border-radius:10px;background:var(--surface-2);padding:var(--s3);margin:0 0 var(--s4);font-size:var(--fs-body);color:var(--ink);overflow-wrap:anywhere}
 .pn .pn-h{font-size:var(--fs-body);font-weight:700;color:var(--ink);margin:0 0 var(--s3)}
@@ -101,7 +126,9 @@ export const PRON_CSS = `
 .pn .pn-au{margin:var(--s4) 0 0}
 .pn .pn-aumsg{border:1px solid var(--err);background:var(--err-soft);color:var(--err);border-radius:8px;padding:var(--s3);margin:var(--s3) 0 0;font-size:var(--fs-aux);white-space:pre-wrap;text-align:left}
 .pn .pn-err{border:1px solid var(--err);background:var(--err-soft);color:var(--err);border-radius:8px;padding:var(--s3);margin:var(--s3) 0 0;font-size:var(--fs-aux);white-space:pre-wrap}
-@media (max-width:420px){.pn .pn-sounds{grid-template-columns:1fr}.pn .pn-ver{font-size:18px}.pn .pn-sound .s-ipa{font-size:22px}}
+@media (max-width:420px){.pn .pn-sounds{grid-template-columns:1fr}.pn .pn-ver{font-size:18px}.pn .pn-sound .s-ipa{font-size:22px}
+  /* 390 宽：**口型图和镜子仍然并排**（并排才看得出差别、才对得上自己的嘴），只有下面两段文字改成单列 */
+  .pn .pn-draw,.pn .pn-mirrow{grid-template-columns:1fr 1fr}}
 `;
 
 /** 工作台第 7 个模块：发音训练（二级菜单第 7 项「发音训练」，公共工具那 8 项一个没动） */
@@ -119,9 +146,29 @@ export const PRON_MOD = `<section class="card mod pn" id="w-pron"><header class=
 
   <div class="pn-steps" id="pn-steps" aria-label="四步"><span class="pn-step" data-st="1">1 看口型</span><span class="pn-step" data-st="2">2 对照听</span><span class="pn-step" data-st="3">3 考 10 题</span><span class="pn-step" data-st="4">4 过关</span></div>
 
-  <!-- 第 1 步：看口型（不考） -->
+  <!-- 第 1 步：看口型（不考）：口型示意图 + 来回切换 + 照镜子 -->
   <div id="pn-s1">
     <p class="pn-h" id="pn-s1-t">照着做：这两个音是用嘴型分开的，不是用耳朵猜的</p>
+    <!-- 口型示意图：画什么全部由 src/pron-mouth.ts 从课件 mouth 原文翻译出来，页面只负责照着画（底线 3） -->
+    <div class="pn-draw" id="pn-draw"></div>
+    <p class="pn-note" id="pn-drawnote"></p>
+    <div class="pn-two">
+      <button class="btn" type="button" id="pn-anim" aria-pressed="false">▶ 来回切换</button>
+      <button class="btn" type="button" id="pn-mir" aria-pressed="false">🪞 照镜子</button>
+    </div>
+    <!-- 照镜子：左边目标口型图、右边前置摄像头。**画面只在这台手机上，不上传、不保存、不录** -->
+    <div class="pn-mirror" id="pn-mirwrap" hidden>
+      <div class="pn-mirrow">
+        <div class="pn-mircell"><p class="m-cap" id="pn-mircap">要做的口型</p><div id="pn-mirtarget"></div></div>
+        <div class="pn-mircell"><p class="m-cap">你自己的嘴（像照镜子一样左右反过来）</p><video id="pn-cam" autoplay playsinline muted></video></div>
+      </div>
+      <p class="pn-privacy">这个画面不会离开你的手机 —— 不上传、不保存、不录像。关掉镜子，摄像头指示灯就灭。</p>
+      <div class="pn-two">
+        <button class="btn" type="button" id="pn-mirswap">换另一个音的图</button>
+        <button class="btn" type="button" id="pn-miroff">关掉镜子</button>
+      </div>
+    </div>
+    <div class="pn-aumsg" id="pn-mirmsg" hidden></div>
     <div class="pn-sounds" id="pn-sounds"></div>
     <p class="pn-mouthhint">课件原文的口型定位。"上下齿距离 1cm 左右（可容纳一根食指）"就是拿手指量 —— 对着镜子做一遍再往下走。</p>
     <p class="pn-note" id="pn-note1"></p>
@@ -143,6 +190,20 @@ export const PRON_MOD = `<section class="card mod pn" id="w-pron"><header class=
       <p class="pn-sayver" id="pn-sayver" hidden></p>
       <p class="pn-saynote" id="pn-saynote" hidden></p>
       <div class="pn-aumsg" id="pn-saymsg" hidden></div>
+
+      <!-- 慢速对照 + 他自己的录音回放：**录过才出现**（没录过这一块整个不画，不留灰按钮） -->
+      <div class="pn-my" id="pn-my" hidden>
+        <p class="y-t" id="pn-my-t">挨着听：标准音和你刚才念的</p>
+        <div class="pn-two">
+          <button class="btn" type="button" id="pn-std">🔊 标准音</button>
+          <button class="btn" type="button" id="pn-mine">🎧 我刚才念的</button>
+        </div>
+        <div class="pn-two" style="margin-top:12px">
+          <button class="btn" type="button" id="pn-slow" aria-pressed="false">🐢 慢速 0.7 倍</button>
+          <button class="btn" type="button" id="pn-chain">▶ 连着放</button>
+        </div>
+        <p class="pn-saynote">「连着放」= 标准音 → 停 0.3 秒 → 你的录音，对比最清楚。这段录音<b>留在这个页面里，不另外上传</b>（纠说那一次本来就要把录音送去给机器听，那是原来就有的），<b>刷新页面就没了</b>。</p>
+      </div>
     </div>
   </div>
 
@@ -211,6 +272,8 @@ export const PRON_MOD = `<section class="card mod pn" id="w-pron"><header class=
   <p><b>第 7 组（/ʒ/ 和 /dʒ/）一对最小对立对都没有</b>，所以它只能跟读和纠说，没有听辨题 —— 不会给你硬凑的题。第 4 组只有 1 对，10 题会一直考那一对，页面上也写明了。</p>
   <p><b>纠说</b>用的是 Workers AI 的语音识别：你念一个词，它告诉你<b>它听成了哪个词</b>。有几个词（ketch、reen、roose、rove）不是现代常用词，识别基本不会输出它们，拿它们判对错是冤枉人，所以这几个词<b>不给纠说</b>。</p>
   <p><b>发音</b>用 Workers AI 的 aura-2-en 念，一个词念一次就<b>存在服务器上永久复用</b>（56 个词全生成一遍约 820 neurons，免费额度每天 10,000），<b>不新增任何费用</b>。念不出来的时候会当面说，不会假装有声音，也不会自动重试。</p>
+  <p><b>口型图</b>是照着课件那几句口型定位画的 —— <b>画面上每一处不一样的地方，都指得回课件原文的某一条</b>；课件没说的（舌位、气流、唇形变化）一笔都不画。有三组（/f/ 和 /v/、/n/ 和 /l/、/ʒ/ 和 /dʒ/）<b>嘴外面根本看不出差别</b>，那两张图就画成一模一样，并写明差别在喉咙还是气流 —— 不给你编一个假的嘴型差别。</p>
+  <p><b>照镜子</b>用的是手机的前置摄像头：画面<b>只在这台手机上显示，不上传、不保存、不录像</b>，关掉镜子摄像头就停（指示灯灭）。<b>「我刚才念的」</b>是纠说那一次录的那段，留在浏览器里<b>不另外上传</b>，<b>刷新就没了</b>；慢速 0.7 倍对标准音和你的录音都管用，「连着放」是标准音 → 停 0.3 秒 → 你的录音。</p>
   <p>每一轮的成绩（考了几题、对几题、点过几次"两个听着一样"、过没过）<b>存在服务器上</b>，换一台设备接着练就行。</p></div></details></section>`;
 
 /** 发音训练那一块的脚本（整段 try/catch，出错只影响这一块）。宿主页面先设 window.__pronBase，例如 '/api/pron/' */
@@ -219,7 +282,15 @@ export const PRON_JS = `
 (function(){
 try{
 var PN={base:(window.__pronBase||'/api/pron/'),zu:[],cur:null,ji:null,step:1,loaded:false,busy:false,
-  q:[],i:0,ok:0,same:0,bad:[],au:{},auBusy:{},player:null,rec:null,recId:'',recT0:0,recBtn:null};
+  q:[],i:0,ok:0,same:0,bad:[],au:{},auBusy:{},player:null,rec:null,recId:'',recT0:0,recBtn:null,
+  /* 口型图的来回切换动画：on 开着没、t 第几拍、timer 计时器、side 镜子里看哪个音 */
+  mo:{on:false,t:0,timer:null,side:'a'},
+  /* 镜子拿到的摄像头流：**只赋给 video.srcObject**，关掉时 getTracks().stop()。不录、不传、不存 */
+  cam:null,
+  /* 播放：rate 这一次的倍速（放完回 1）、onEnd 这一次放完做什么（「连着放」用）、slow 慢速按钮按下没 */
+  rate:1,onEnd:null,slow:false,
+  /* 他刚才那段录音：只在这个页面里（URL.createObjectURL），刷新就没了 */
+  myUrl:'',myWord:'',mySay:''};
 var pq=function(i){return document.getElementById(i)};
 function pText(id,s){var e=pq(id);if(e)e.textContent=s}
 function pShow(id,on){var e=pq(id);if(e)e.hidden=!on}
@@ -248,7 +319,12 @@ function pAuErr(j,msgId){
 function pPlay(url,msgId){
   try{
     if(!PN.player)PN.player=new Audio();
-    var a=PN.player;a.pause();a.src=url;a.playbackRate=1;
+    var a=PN.player;a.pause();a.src=url;
+    /* 慢速 0.7 倍和「连着放」都**用同一个播放器**（不另写一个）：倍速和"放完做什么"都只管这一次，用完就还原 */
+    a.playbackRate=PN.rate||1;PN.rate=1;
+    var on=PN.onEnd;PN.onEnd=null;
+    a.onended=null;
+    if(on)a.onended=function(){a.onended=null;on();};
     var pr=a.play();
     // **AbortError 不是错**（2026-11-11 修）：第 2 步就是让他来回点两个词对比，
     // 后一次 play() 必然打断前一次，前一次的 promise 就以 AbortError 被拒
@@ -299,7 +375,18 @@ function pUse(id){
   PN.zu.forEach(function(x){if(x['组']===id)z=x;});
   if(!z)return;
   PN.cur=z;PN.q=[];PN.i=0;PN.ok=0;PN.same=0;PN.bad=[];
+  /* 换一组：上一组录的那段是**另一个词**，留着会误导 —— 当场丢掉（底线 3） */
+  pMyDrop();
+  PN.mo.side='a';
   pPick();pSound();pCmp();pSayWords();pLead();pStep(1);
+  pAnimStop();
+}
+/* 丢掉上一段录音（换组、刷新都会丢；它本来就只活在这个页面里） */
+function pMyDrop(){
+  if(PN.myUrl)try{URL.revokeObjectURL(PN.myUrl);}catch(e){}
+  PN.myUrl='';PN.myWord='';PN.mySay='';PN.slow=false;
+  var b=pq('pn-slow');if(b){b.setAttribute('aria-pressed','false');b.textContent='🐢 慢速 0.7 倍';}
+  pShow('pn-my',false);
 }
 
 /* ---- 第 1 步：看口型 ---- */
@@ -317,6 +404,198 @@ function pSound(){
   });
   pText('pn-note1',PN.cur['听辨说明']||'');
   pText('pn-s1-t','照着做：'+PN.cur['名字']+' 是用嘴型分开的，不是用耳朵猜的');
+}
+
+/* ====================================================================
+   第 1 步的口型示意图（2026-11-11）
+   **画面上每一处可见差别，都能指回课件 mouth 数组里的某一条**（底线 3）：
+   画什么不是这里决定的，是 src/pron-mouth.ts 从 mouth 原文逐条翻译出来的（接口字段「口型图」）。
+   这里只做两件事：照着翻译结果画线，并把那一条**原文**写进元素的 data-y（测试逐个核对，见 test/pron.test.ts 第 10、11 组）。
+   图框（嘴的轮廓、剖面的上下颚）带 data-frame="1"：两个音**完全一样**，不表示任何差别。
+   逐组实况（哪几组画得出、哪几组画不出）写在 src/pron-mouth.ts 的文件头。
+   ==================================================================== */
+var PNS='http://www.w3.org/2000/svg';
+function pEl(tag,at,y,frame){
+  var e=document.createElementNS(PNS,tag);
+  for(var k in at)if(at[k]!=='')e.setAttribute(k,String(at[k]));
+  if(y)e.setAttribute('data-y',y);          /* 依据：课件 mouth 里的那一条原文 */
+  if(frame)e.setAttribute('data-frame','1');/* 图框，不是特征 */
+  return e;
+}
+/* 这个音的某个可见特征是依据哪一条原文画的；没有这个特征就回空字符串 */
+function pWhy(sp,k){var y='';((sp&&sp['画了'])||[]).forEach(function(f){if(f['特征']===k&&!y)y=f['依据'];});return y;}
+
+/* 正面：嘴唇 + 上下齿的开口 +（课件给了尺寸才有的）食指参照。ph = 第几帧（课件写「由…到…」的音才有第 2 帧） */
+function pFront(sp,ph){
+  var f=sp['正面'];if(!f)return null;
+  var yL=pWhy(sp,'唇'),yO=pWhy(sp,'开口'),yF=pWhy(sp,'手指');
+  var s=pEl('svg',{viewBox:'0 0 140 100','aria-hidden':'true'});
+  var cx=56,cy=50;
+  if(f['唇']==='上齿轻咬下唇'){
+    /* /f/ /v/：课件只说了「上齿轻咬下唇」—— 画上齿搭在下唇上，**两个音逐笔一样**（差别在喉咙，看不出来） */
+    s.appendChild(pEl('path',{d:'M 12 62 Q 56 42 100 62 Q 56 82 12 62 Z',fill:'none',stroke:'currentColor','stroke-width':3},yL));
+    for(var i=0;i<4;i++)s.appendChild(pEl('rect',{x:26+i*15,y:50,width:12,height:12,rx:2,fill:'none',stroke:'currentColor','stroke-width':2},yL));
+    return s;
+  }
+  /* 嘴角拉开多少：课件的三种说法（「扁平咧嘴」比「咧嘴」更扁更宽；「先张嘴后咧嘴」第 1 帧是张嘴、第 2 帧才咧开） */
+  var hw=f['唇']==='扁平咧嘴'?46:(f['唇']==='先张嘴后咧嘴'?(ph?44:30):44);
+  var bulge=f['唇']==='扁平咧嘴'?2:6;
+  var mm=f['开口毫米'];
+  if(f['到毫米']!==null&&f['到毫米']!==undefined&&ph)mm=f['到毫米'];
+  var gap=(mm||0)*2.2;              /* 1mm = 2.2px：1cm → 22px、2cm → 44px，两张图同一把尺 */
+  var oh=gap+18;
+  /* 嘴唇这一笔的依据有两条：横着拉多开看「咧嘴」那一条，竖着张多大跟着上下齿的开口走
+     （嘴总得张到容得下那个齿缝）—— 所以 data-y 里**两条原文都写上**，测试按"至少有一条两边不一样"来核对 */
+  s.appendChild(pEl('path',{d:'M '+(cx-hw)+' '+cy+' Q '+cx+' '+(cy-oh/2-bulge)+' '+(cx+hw)+' '+cy+' Q '+cx+' '+(cy+oh/2+bulge)+' '+(cx-hw)+' '+cy+' Z',
+    fill:'none',stroke:'currentColor','stroke-width':3},yO?(yL+' | '+yO):yL));
+  if(yO){
+    /* 课件没给尺寸的（「微张」「张开」）画虚线：示意"开着一点"，**不代表任何厘米数**，说明里也写着 */
+    var dash=f['有尺寸']?'':'5 4';
+    s.appendChild(pEl('rect',{x:cx-hw*0.55,y:cy-gap/2-9,width:hw*1.1,height:9,rx:2,fill:'none',stroke:'currentColor','stroke-width':2,'stroke-dasharray':dash},yO));
+    s.appendChild(pEl('rect',{x:cx-hw*0.55,y:cy+gap/2,width:hw*1.1,height:9,rx:2,fill:'none',stroke:'currentColor','stroke-width':2,'stroke-dasharray':dash},yO));
+    if(f['有尺寸']){
+      s.appendChild(pEl('line',{x1:108,y1:cy-gap/2,x2:108,y2:cy+gap/2,stroke:'currentColor','stroke-width':2},yO));
+      s.appendChild(pEl('line',{x1:103,y1:cy-gap/2,x2:113,y2:cy-gap/2,stroke:'currentColor','stroke-width':2},yO));
+      s.appendChild(pEl('line',{x1:103,y1:cy+gap/2,x2:113,y2:cy+gap/2,stroke:'currentColor','stroke-width':2},yO));
+    }
+  }
+  /* 食指参照：课件原文说「可容纳一根食指 / 两根食指」，所以 n 根手指正好填满这个开口 */
+  var n=f['手指']||0;
+  for(var k=0;k<n;k++)s.appendChild(pEl('rect',{x:120,y:cy-gap/2+k*(gap/n),width:16,height:gap/n,rx:5,fill:'none',stroke:'currentColor','stroke-width':2},yF));
+  return s;
+}
+/* 剖面：只画舌头那一笔（课件给了舌位才画）。上下颚和牙是图框，两个音一样 */
+function pSide(sp){
+  var t=sp['剖面'];if(!t)return null;
+  var y=pWhy(sp,'舌');
+  var s=pEl('svg',{viewBox:'0 0 140 100','aria-hidden':'true'});
+  s.appendChild(pEl('path',{d:'M 18 38 L 32 36 Q 70 24 126 30',fill:'none',stroke:'currentColor','stroke-width':2,opacity:'.45'},'',1));
+  s.appendChild(pEl('rect',{x:16,y:38,width:11,height:13,rx:2,fill:'none',stroke:'currentColor','stroke-width':2,opacity:'.45'},'',1));
+  s.appendChild(pEl('rect',{x:16,y:59,width:11,height:13,rx:2,fill:'none',stroke:'currentColor','stroke-width':2,opacity:'.45'},'',1));
+  s.appendChild(pEl('path',{d:'M 18 72 Q 70 84 126 78',fill:'none',stroke:'currentColor','stroke-width':2,opacity:'.45'},'',1));
+  var d=t['舌']==='平躺抵下齿'?'M 28 70 Q 30 62 44 61 L 104 62 Q 122 66 104 74 L 32 75 Z'
+    :(t['舌']==='舌尖抵上齿龈'?'M 30 55 Q 29 40 40 37 Q 52 39 52 53 L 104 62 Q 122 66 104 74 L 32 75 Z'
+    :'M 46 62 Q 38 44 56 38 Q 68 41 60 50 Q 53 56 58 64 L 104 62 Q 122 66 104 74 L 44 75 Z');
+  s.appendChild(pEl('path',{d:d,fill:'none',stroke:'currentColor','stroke-width':3},y));
+  return s;
+}
+/* 一个音一块：音标 + （画得出来的）图 + 「图上画的是哪几条原文」+「没画的是哪几条、为什么」 */
+function pMo(sp,ph,box){
+  pClear(box);
+  var ipa=document.createElement('p');ipa.className='m-ipa';ipa.textContent=sp['音标']+'　'+sp['外号'];box.appendChild(ipa);
+  var fr=pFront(sp,ph),sd=pSide(sp);
+  if(fr){box.appendChild(fr);var c1=document.createElement('p');c1.className='m-cap';c1.textContent='正面（嘴唇和上下齿）';box.appendChild(c1);}
+  if(sd){box.appendChild(sd);var c2=document.createElement('p');c2.className='m-cap';c2.textContent='剖面（舌头在嘴里面，镜子里看不到）';box.appendChild(c2);}
+  var why=document.createElement('p');why.className='m-why';
+  var 条=[];(sp['画了']||[]).forEach(function(f){if(条.indexOf(f['依据'])<0)条.push(f['依据']);});
+  why.textContent=条.length?('图上画的：'+条.join(' · ')+'（都是课件原文）'):'课件没给这个音的口型，所以这里一张图都不画。';
+  box.appendChild(why);
+  if((sp['没画']||[]).length){
+    var no=document.createElement('p');no.className='m-no';
+    no.textContent='没画：'+(sp['没画']||[]).map(function(x){return x['原文']+'（'+x['为什么']+'）';}).join(' ');
+    box.appendChild(no);
+  }
+}
+/* 两个音并排重画一次（ph = 第几帧；lit = 高亮哪一个，来回切换动画用，-1 = 都不高亮） */
+function pDrawAll(ph,lit){
+  var box=pq('pn-draw');if(!box||!PN.cur)return;
+  var tu=PN.cur['口型图'];
+  pClear(box);
+  if(!tu){pText('pn-drawnote','');return;}
+  ['a','b'].forEach(function(k,i){
+    var d=document.createElement('div');d.className='pn-mo'+(lit===i?' lit':'');
+    d.setAttribute('data-s',k);
+    pMo(tu[k],ph,d);
+    box.appendChild(d);
+  });
+  pText('pn-drawnote',tu['说明']||'');
+  pMirTarget();
+}
+/* 来回切换：每 450ms 一拍，同一个音看两帧（课件写「由…到…」的音才会动），两拍换一个音 */
+function pAnimStop(){
+  if(PN.mo.timer){clearInterval(PN.mo.timer);PN.mo.timer=null;}
+  PN.mo.on=false;PN.mo.t=0;
+  var b=pq('pn-anim');if(b){b.textContent='▶ 来回切换';b.setAttribute('aria-pressed','false');}
+  pDrawAll(0,-1);
+}
+function pAnim(){
+  if(PN.mo.on){pAnimStop();return;}
+  PN.mo.on=true;PN.mo.t=0;
+  var b=pq('pn-anim');if(b){b.textContent='⏸ 停下';b.setAttribute('aria-pressed','true');}
+  pDrawAll(0,0);
+  PN.mo.timer=setInterval(function(){
+    PN.mo.t++;
+    pDrawAll(PN.mo.t%2,Math.floor(PN.mo.t/2)%2);
+  },450);
+}
+
+/* ====================================================================
+   照镜子：前置摄像头当镜子（Amos 2026-11-11 最想要的那一样）
+   **画面绝对不上传、不保存、不录**：拿到的流只做两件事 —— 赋给 video.srcObject、关掉时 track.stop()。
+   这一整段里**没有录像机、没有画布、没有任何一种截帧的做法**，一次网络请求都不发
+   （那些 API 的名字连写都不许写进这个文件 —— test/pron.test.ts 第 12 组逐个名字守着）。
+   ==================================================================== */
+function pMirMsg(s){var m=pq('pn-mirmsg');if(!m)return;m.textContent=s;m.hidden=false;}
+/* 镜子左边那张目标口型图：跟着当前这一组走，按钮可以换看另一个音 */
+function pMirTarget(){
+  var box=pq('pn-mirtarget');if(!box||!PN.cur)return;
+  var tu=PN.cur['口型图'];if(!tu)return;
+  var sp=tu[PN.mo.side]||tu.a;
+  var d=document.createElement('div');d.className='pn-mo mini';
+  pMo(sp,0,d);
+  pClear(box);box.appendChild(d);
+  pText('pn-mircap','要做的口型：'+sp['音标']);
+}
+function pMirOff(){
+  try{
+    /* 关掉时**必须 stop()**，不然摄像头指示灯一直亮着 */
+    if(PN.cam&&PN.cam.getTracks)PN.cam.getTracks().forEach(function(t){t.stop();});
+  }catch(e){}
+  PN.cam=null;
+  var v=pq('pn-cam');if(v)try{v.srcObject=null;}catch(e){}
+  pShow('pn-mirwrap',false);
+  var b=pq('pn-mir');if(b){b.textContent='🪞 照镜子';b.setAttribute('aria-pressed','false');}
+}
+function pMirOn(){
+  if(PN.cam){pMirOff();return;}
+  var md=navigator.mediaDevices;
+  if(!md||!md.getUserMedia){
+    pMirMsg('这个浏览器用不了摄像头，镜子打不开。\\n怎么办：换 Chrome / Safari 的新版本再试；上面的口型图、对照听和考题照常能用。');
+    return;
+  }
+  var m=pq('pn-mirmsg');if(m)m.hidden=true;
+  md.getUserMedia({video:{facingMode:'user'},audio:false}).then(function(stream){
+    PN.cam=stream;
+    var v=pq('pn-cam');
+    if(v)try{v.srcObject=stream;}catch(e){}
+    pShow('pn-mirwrap',true);
+    pMirTarget();
+    var b=pq('pn-mir');if(b){b.textContent='🪞 镜子开着';b.setAttribute('aria-pressed','true');}
+  },function(e){
+    /* 没给权限 / 没有摄像头：当面说清楚，**整屏其余部分照常能用** */
+    pMirMsg('没拿到摄像头权限（'+(e&&e.name||e)+'），镜子用不了。\\n怎么办：在浏览器地址栏左边的图标里允许摄像头，再按一次「🪞 照镜子」。不给也没关系 —— 口型图、对照听和考题照常能用。');
+  });
+}
+
+/* ---- 第 2 步：慢速对照 + 他自己的录音回放（录过才出现）---- */
+/* 这一次用什么倍速：慢速按钮按下去就是 0.7 倍（标准音和他的录音都慢） */
+function pRate(){return PN.slow?0.7:1;}
+function pSetNext(rate,onEnd){PN.rate=rate||1;PN.onEnd=onEnd||null;}
+function pMyShow(){
+  pShow('pn-my',!!PN.myUrl);
+  if(PN.myUrl)pText('pn-my-t','挨着听：标准音和你刚才念的「'+PN.mySay+'」');
+}
+function pMyStd(){if(!PN.myWord)return;pSetNext(pRate(),null);pAudio(PN.myWord,'pn-msg');}
+function pMyMine(){if(!PN.myUrl)return;pSetNext(pRate(),null);pPlay(PN.myUrl,'pn-msg');}
+function pMySlow(){
+  PN.slow=!PN.slow;
+  var b=pq('pn-slow');if(b){b.setAttribute('aria-pressed',PN.slow?'true':'false');b.textContent=PN.slow?'🐢 慢速开着（0.7 倍）':'🐢 慢速 0.7 倍';}
+}
+/* 连着放：标准音 → 停 0.3 秒 → 他的录音。对比效果最好的那一个形式 */
+function pMyChain(){
+  if(!PN.myWord||!PN.myUrl)return;
+  pSetNext(pRate(),function(){setTimeout(function(){pSetNext(pRate(),null);pPlay(PN.myUrl,'pn-msg');},300);});
+  pAudio(PN.myWord,'pn-msg');
 }
 
 /* ---- 第 2 步：对照听（最小对立对，两个词各一个大按钮）---- */
@@ -407,6 +686,9 @@ function pRec(b){
       PN.rec=null;pRecLabel(b,false);PN.recBtn=null;
       var blob=new Blob(chunks,{type:(r.mimeType||'audio/webm')});
       if(!blob.size){pSayMsg('没录到声音（0 字节）。\\n怎么办：确认麦克风没被静音，再按一次「🎤 念」。');return;}
+      /* **把这段录音留在浏览器里**给他回放用（不另外上传；纠说那一次本来就要传，照旧）。刷新就没了，页面上写着 */
+      pMyDrop();
+      try{PN.myUrl=URL.createObjectURL(blob);PN.myWord=b.dataset.word;PN.mySay=b.dataset.say;pMyShow();}catch(e){}
       var fr=new FileReader();
       fr.onerror=function(){pSayMsg('这段录音读不出来。\\n怎么办：再按一次「🎤 念」重录一次（不会自动重试）。');};
       fr.onload=function(){
@@ -550,6 +832,8 @@ function pDone(){
 /* ---- 四步之间切换 ---- */
 function pStep(n){
   PN.step=n;
+  /* 离开第 1 步：**镜子一定关掉**（track.stop()，指示灯灭），切换动画也停掉，不在后台空转 */
+  if(n!==1){pMirOff();if(PN.mo.on)pAnimStop();}
   pShow('pn-s1',n===1);pShow('pn-s2',n===2);pShow('pn-s3',n===3);pShow('pn-s4',n===4);
   [].forEach.call(document.querySelectorAll('#pn-steps .pn-step'),function(e){
     var k=Number(e.dataset.st);
@@ -591,6 +875,14 @@ var wb=pq('pn-wb');if(wb)wb.addEventListener('click',function(){var x=PN.q[PN.i]
 var nx=pq('pn-next');if(nx)nx.addEventListener('click',pNext);
 var ag=pq('pn-again2');if(ag)ag.addEventListener('click',pRound);
 var b1=pq('pn-toS1');if(b1)b1.addEventListener('click',function(){pStep(1)});
+var an=pq('pn-anim');if(an)an.addEventListener('click',pAnim);
+var mi=pq('pn-mir');if(mi)mi.addEventListener('click',pMirOn);
+var mf=pq('pn-miroff');if(mf)mf.addEventListener('click',pMirOff);
+var ms=pq('pn-mirswap');if(ms)ms.addEventListener('click',function(){PN.mo.side=PN.mo.side==='a'?'b':'a';pMirTarget();});
+var ys=pq('pn-std');if(ys)ys.addEventListener('click',pMyStd);
+var ym=pq('pn-mine');if(ym)ym.addEventListener('click',pMyMine);
+var yw=pq('pn-slow');if(yw)yw.addEventListener('click',pMySlow);
+var yc=pq('pn-chain');if(yc)yc.addEventListener('click',pMyChain);
 window.pronOpen=function(){if(PN.loaded)return;PN.loaded=true;pLoad();};
 }catch(e){}
 })();
