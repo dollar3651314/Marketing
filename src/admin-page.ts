@@ -789,6 +789,9 @@ function route(){if(!authed)return;let h=hashOf();
   // 批 A：工作台第一次读到数据之前显示占位骨架 #boot（在 #app 外面，#app 还是读到数据再显示，免得看到空模块）；项目页照旧
   $('app').hidden=(page==='work'||page==='project')&&!ready;$('boot').hidden=!(page==='work'&&!ready);
   ['work','project','tools','company','funds'].forEach(x=>{$('v-'+x).hidden=x!==page;const sb=$('sub-'+x);if(sb)sb.hidden=x!==page;});
+  // 离开工作台：通知「发音训练」把摄像头和动画关掉（2026-11-11 审查 🔴1）。
+  // 只把 #v-work 藏起来是不够的——藏起来的 DOM 里摄像头照亮，手机指示灯不灭。
+  if(page!=='work'&&typeof window.pronStop==='function')window.pronStop();
   document.querySelectorAll('#nav1 a[data-p]').forEach(a=>{const on=a.dataset.p===page&&(!a.dataset.proj||a.dataset.proj===proj);if(on)a.setAttribute('aria-current','page');else a.removeAttribute('aria-current');});
   // 基金观察：一级菜单上那一项用 data-f（不是 data-p：一级菜单的 data-p 只放 工作台 · 项目 · 公共工具 这三类页，e2e-platform 按 data-p 数）
   if(page==='funds')$('nav1-funds').setAttribute('aria-current','page');else $('nav1-funds').removeAttribute('aria-current');
