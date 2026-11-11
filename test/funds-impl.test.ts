@@ -9,7 +9,7 @@ import { getPlatformProxy } from 'wrangler';
 import type { Env } from '../src/env';
 import { handle } from '../src/index';
 import { cleanPoints, eastmoneyMoneyIndex, FUNDS, maxDrawdown, parseEastmoney, parseYahoo, periodReturn, summarize, type Point } from '../src/funds';
-import { Http, MAX_REQUESTS, mergePoints, prevPoints, refreshBatch, TimeUp, type FetchLike } from '../src/funds-api';
+import { fetchFund, Http, MAX_REQUESTS, mergePoints, prevPoints, refreshBatch, TimeUp, type FetchLike } from '../src/funds-api';
 import { ROOT } from './helpers';
 
 const PASS = 'ci_only_copilot_password_01';
@@ -355,5 +355,23 @@ describe('第三版：东方财富货币基金页和增量拼接', () => {
     expect(prevPoints(null)).toEqual([]);
     const m = mergePoints(prevPoints(snap), [['2026-11-09', 0.51, 1.21], ['2026-11-10', 0.52, 1.22]]);
     expect(m).toEqual([['2026-11-06', 1.1, 1.1], ['2026-11-09', 0.51, 1.21], ['2026-11-10', 0.52, 1.22]]);
+  });
+});
+
+describe('第三版复核 R1：price_kind', () => {
+  const page = (money: boolean) => async (u: string) => {
+    const pg = Number(new URL(u).searchParams.get('pageIndex'));
+    const rows = pg > 1 ? [] : Array.from({ length: 20 }, (_, i) => ({ FSRQ: new Date(Date.parse('2026-11-10') - i * DAY).toISOString().slice(0, 10), DWJZ: money ? '0.27' : '1.5', LJJZ: money ? '1.00' : '2.5' }));
+    return ok({ Data: { SYType: money ? '每百份收益' : null, LSJZList: rows } });
+  };
+  it('货币基金页 → index，序列第一点 = 100；普通净值页 → nav', async () => {
+    const def = FUNDS.find((f) => f.code === '511990')!;
+    const a = await fetchFund(def, new Http(page(true), 45, noSleep), NOW);
+    expect(a.price_kind).toBe('index');
+    expect(a.series[0][1]).toBe(100);
+    expect(a.last).toBeGreaterThan(100);
+    const b = await fetchFund(FUNDS.find((f) => f.code === '510300')!, new Http(page(false), 45, noSleep), NOW);
+    expect(b.price_kind).toBe('nav');
+    expect(b.last).toBe(1.5);
   });
 });

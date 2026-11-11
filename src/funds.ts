@@ -13,6 +13,7 @@
 export type Market = '新加坡' | '美国' | '中国';
 export type Category = '宽基' | '债券' | '红利';
 export type Source = 'yahoo' | 'eastmoney';
+export type PriceKind = 'price' | 'nav' | 'index';
 
 export interface FundDef {
   market: Market;
@@ -67,6 +68,8 @@ export interface FundSnapshot {
   first: string;
   /** [日期, 复权价]，给页面画走势和水下曲线 */
   series: [string, number][];
+  /** 第三版复核 R1：last / series 是什么——'price' 场内价格（Yahoo 复权价）、'nav' 基金净值（东方财富）、'index' 收益指数（货币基金按每天收益连乘，起点 100，不是价格）。旧快照没有这个字段，GET 时按 source 补 */
+  price_kind?: PriceKind;
 }
 
 type Row = [Market, Category, string, string, 'y' | 'em', string];
