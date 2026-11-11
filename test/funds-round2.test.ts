@@ -62,7 +62,8 @@ function fakeEnv() {
   const log: { sql: string; args: unknown[] }[] = [];
   const env = {
     DB: {
-      prepare: (sql: string) => ({ sql, bind: (...args: unknown[]) => ({ sql, args }) }),
+      // 读（第三版东方财富增量取要先读库里已有的序列）一律当空库：all → 没有行，first → null
+      prepare: (sql: string) => ({ sql, all: async () => ({ results: [] }), first: async () => null, bind: (...args: unknown[]) => ({ sql, args, all: async () => ({ results: [] }), first: async () => null }) }),
       batch: async (s: { sql: string; args: unknown[] }[]) => { log.push(...s); return s.map(() => ({ success: true })); },
     } as unknown as D1Database,
     ENVIRONMENT: 'test',

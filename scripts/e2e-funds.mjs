@@ -43,6 +43,8 @@
  *      ≤ 10 行没有按钮（替身数据：新加坡只留 10 只）；按钮高 ≥ 44px；1200 浅色和 400 深色都折叠；子菜单点"可能区间"仍定位到板块。
  *   X. 刷新后债券提示按每只 yield.stale / yield.approx 分"过期 / 近似 / 没有收益率数据"、和行里的标签一致（服务端给了近似值的那只不说"过期""上次的值"）；
  *      refreshYields 整体失败（yields.failed 里 code 为 '*'）时不写"（*）"。
+ *   第三版取数来源（Amos 2026-11-11「都按建议」，安全经理条款核对）：AGG、TLT、LQD、O9P 改近似（V1 的 auto / approx 名单和夹具同步改成 4 / 12）；
+ *   Y. 中国场内 ETF（510300）展开详情，"来源"写东方财富净值（"东方财富净值"或"东方财富累计净值"都认），不写 Yahoo。接口一侧（不请求 Yahoo / iShares / BlackRock、增量取）在 test/funds-v3-sources.test.ts。
  *   测试用例修正 4（第三版）：V1 / V2 原来断言可能区间"全部时 45 行"，第三版默认折叠到 10 行，改成先点"展开其余 N 只"再数（不改判定口径）。
  *   全程没有页面脚本报错（pageerror）。
  *
@@ -506,8 +508,10 @@ if (!PROTO) {
   const SNAP2 = JSON.parse(readFileSync(path.join(ROOT, 'test/fixtures/funds/snapshot-v2.json'), 'utf8'));
   const BY2 = Object.fromEntries(SNAP2.items.map((x) => [x.code, x]));
   const BONDS = SNAP2.items.filter((x) => x.category === '债券').map((x) => x.code);
-  const AUTO8 = ['AGG', 'TLT', 'LQD', 'BND', 'BSV', 'O9P', '511990', '511880'];
-  const APPROX8 = ['A35', 'MBH', '0P00006FY6', 'SBO', '511010', '511360', '000171', '217003'];
+  // 第三版规格变化（Amos 2026-11-11「都按建议」，安全经理条款核对：iShares / BlackRock 条款禁止自动抓取）：AGG、TLT、LQD、O9P 改成美国国债 + 利差近似，
+  // auto 只剩 4 只、approx 12 只（夹具 snapshot-v2.json 同步改了；原来是 8 + 8，规格变化不是放宽）
+  const AUTO8 = ['BND', 'BSV', '511990', '511880'];
+  const APPROX8 = ['A35', 'MBH', '0P00006FY6', 'SBO', '511010', '511360', '000171', '217003', 'AGG', 'TLT', 'LQD', 'O9P'];
   const SUBS = [['总结', /总结/], ['市场', /市场/], ['散点', /散点|赚了多少/], ['可能区间', /区间/], ['债券预期', /债券/], ['逐只对比', /逐只/], ['说明', /说明/]];
   const pct1 = (v) => { const a = Math.abs(v).toFixed(1).replace('.', '\\.'); return new RegExp(`(^|[^\\d.])${v > 0 ? '\\+?' : v < 0 ? '[−-]' : '[+−-]?'}${a}%`); };
   const bandRows = (page) => page.locator(`${R} [data-band-code]`).filter({ visible: true });
@@ -615,8 +619,8 @@ if (!PROTO) {
     const badA = [], badB = [];
     for (const c of APPROX8) { const t = await rt(`[data-yield-code="${c}"]`); const v = BY2[c].yield.value; if (!(/近似/.test(t) && /≈/.test(t) && (t.includes(v.toFixed(2)) || t.includes(v.toFixed(1))))) badA.push([c, t.slice(0, 120)]); }
     for (const c of AUTO8) { const t = await rt(`[data-yield-code="${c}"]`); const v = BY2[c].yield.value; if (/≈/.test(t) || !(t.includes(v.toFixed(2)) || t.includes(v.toFixed(1)))) badB.push([c, t.slice(0, 120)]); }
-    check('V1 债券：近似的 8 只带"近似"标签和"≈"，并写出数值', badA.length === 0, badA);
-    check('V1 债券：自动取的 8 只写出数值、不带"≈"', badB.length === 0, badB);
+    check('V1 债券：近似的 12 只带"近似"标签和"≈"，并写出数值', badA.length === 0, badA);
+    check('V1 债券：自动取的 4 只写出数值、不带"≈"', badB.length === 0, badB);
     // 不是投资建议
     const all = await page.locator(R).innerText().catch(() => '');
     check('V1 页面写"不是投资建议"（看得见的文字）', /不是投资建议/.test(all), null);
@@ -830,35 +834,47 @@ if (!PROTO) {
   const yRow = async (page, c) => (await page.locator(`${R} [data-yield-code="${c}"]`).first().innerText({ timeout: 1500 }).catch(() => '')).replace(/\s+/g, ' ');
 
   await section('X 收益率提示分三种', async () => {
-    // AGG：有过值、这次没取到 → stale=true（页面标"过期"）
-    // TLT：第一次刷新时 iShares 页网络失败、服务端用美国国债给了近似值 → approx=true、stale=false（页面标"近似"，没有"过期"）——它照样在 yields.failed 里
+    // AGG：有过值、这次美国国债曲线没取到 → stale=true（页面标"过期"）
+    // BSV：第一次刷新时 Vanguard 页网络失败、服务端用美国国债给了近似值 → approx=true、stale=false（页面标"近似"，没有"过期"）——它照样在 yields.failed 里
+    //   （原来用 TLT / iShares；第三版 TLT 本来就是近似、不再抓 iShares，换成仍是 auto 的 BSV，守的事不变）
     // BND：从没取到过 → value=null（页面写"还没有收益率数据"）
     const nul = (c) => ({ ...BY2[c].yield, value: null, asOf: null, source: '', stale: false });
-    const before = { ...SNAP2, items: SNAP2.items.map((x) => (x.code === 'TLT' || x.code === 'BND' ? { ...x, yield: nul(x.code) } : x)) };
+    const before = { ...SNAP2, items: SNAP2.items.map((x) => (x.code === 'BSV' || x.code === 'BND' ? { ...x, yield: nul(x.code) } : x)) };
     const after = { ...SNAP2, fetched_at: '2026-11-10T10:30:00Z', items: SNAP2.items.map((x) =>
-      x.code === 'AGG' ? { ...x, yield: { ...x.yield, stale: true, error: 'iShares 8 秒没回应（试了 2 次）' } }
-      : x.code === 'TLT' ? { ...x, yield: { ...x.yield, value: 4.41, kind: 'auto', approx: true, label: '近似：美国国债 + 利差', asOf: '2026-11-10', source: '美国财政部', stale: false } }
+      x.code === 'AGG' ? { ...x, yield: { ...x.yield, stale: true, error: '美国国债也没取到：Treasury 回 503' } }
+      : x.code === 'BSV' ? { ...x, yield: { ...x.yield, value: 4.41, kind: 'auto', approx: true, label: '近似：美国国债 + 利差', asOf: '2026-11-10', source: '美国财政部', stale: false } }
       : x.code === 'BND' ? { ...x, yield: { ...nul('BND'), stale: true, error: 'Vanguard 回 503；美国国债也没取到：Treasury 回 503' } }
       : x) };
     const CODES = SNAP2.items.map((x) => x.code);
     const { page, api, ctx } = await open({
       snap: before,
       onRefresh: () => { api.snap = after; return { next: null, done: 45, total: 45, updated: CODES, failed: [], requests: 45,
-        yields: { updated: BONDS.filter((c) => !['AGG', 'TLT', 'BND'].includes(c)), failed: [{ code: 'AGG', reason: 'iShares 8 秒没回应（试了 2 次）' }, { code: 'TLT', reason: 'iShares 8 秒没回应（试了 2 次）' }, { code: 'BND', reason: 'Vanguard 回 503；美国国债也没取到：Treasury 回 503' }], requests: 12, curves: { ust: 'ok', sgs: 'ok', cgb: 'ok' } } }; },
+        yields: { updated: BONDS.filter((c) => !['AGG', 'BSV', 'BND'].includes(c)), failed: [{ code: 'AGG', reason: '美国国债也没取到：Treasury 回 503' }, { code: 'BSV', reason: 'Vanguard 8 秒没回应（试了 2 次）' }, { code: 'BND', reason: 'Vanguard 回 503；美国国债也没取到：Treasury 回 503' }], requests: 12, curves: { ust: 'ok', sgs: 'ok', cgb: 'ok' } } }; },
     });
     await enter(page);
     await refreshOnce(page, api);
     // 先确认到了要检查的状态（C29）：刷新发了、行里的标签已经是新的
-    const rAGG = await yRow(page, 'AGG'), rTLT = await yRow(page, 'TLT'), rBND = await yRow(page, 'BND');
-    check('X 前提：刷了一次；AGG 行标"过期"、TLT 行标"近似"不标"过期"、BND 行写"还没有收益率数据"',
-      api.posts.length === 1 && /过期/.test(rAGG) && /近似/.test(rTLT) && !/过期/.test(rTLT) && /没有收益率数据/.test(rBND), { posts: api.posts.length, rAGG, rTLT, rBND });
-    const t = (await yNote(page, ['AGG', 'TLT', 'BND'])) ?? '';
+    const rAGG = await yRow(page, 'AGG'), rBSV = await yRow(page, 'BSV'), rBND = await yRow(page, 'BND');
+    check('X 前提：刷了一次；AGG 行标"过期"、BSV 行标"近似"不标"过期"、BND 行写"还没有收益率数据"',
+      api.posts.length === 1 && /过期/.test(rAGG) && /近似/.test(rBSV) && !/过期/.test(rBSV) && /没有收益率数据/.test(rBND), { posts: api.posts.length, rAGG, rBSV, rBND });
+    const t = (await yNote(page, ['AGG', 'BSV', 'BND'])) ?? '';
     const cl = (c) => t.split(/[；;。\n]/).filter((x) => x.includes(c) || x.includes(BY2[c].name));
-    const [cA, cT, cB] = [cl('AGG'), cl('TLT'), cl('BND')];
-    check('X 刷新后有一句提示同时说到 AGG、TLT、BND', !!t, t);
+    const [cA, cT, cB] = [cl('AGG'), cl('BSV'), cl('BND')];
+    check('X 刷新后有一句提示同时说到 AGG、BSV、BND', !!t, t);
     check('X AGG（stale=true）：提示里说它"过期"', cA.length > 0 && cA.every((x) => /过期/.test(x)), cA);
-    check('X TLT（approx=true、stale=false）：提示里说它退回"近似"，不说"过期"、不说"显示的是上次的值"', cT.length > 0 && cT.every((x) => /近似/.test(x) && !/过期/.test(x) && !/上次/.test(x)), cT);
+    check('X BSV（approx=true、stale=false）：提示里说它退回"近似"，不说"过期"、不说"显示的是上次的值"', cT.length > 0 && cT.every((x) => /近似/.test(x) && !/过期/.test(x) && !/上次/.test(x)), cT);
     check('X BND（value=null）：提示里说它"没有收益率数据"，不说"过期" / "上次的值"', cB.length > 0 && cB.every((x) => /没有收益率数据/.test(x) && !/过期/.test(x) && !/上次/.test(x)), cB);
+    await ctx.close();
+  });
+
+  await section('Y 中国场内 ETF 来源', async () => {
+    const { page, ctx } = await open({ snap: SNAP2 });
+    await enter(page);
+    const row = page.locator(`${R} [data-code="510300"][aria-expanded]`).first();
+    await row.scrollIntoViewIfNeeded().catch(() => {});
+    await row.click();
+    const dt = (await page.locator(`${R} [data-detail="510300"]`).first().innerText({ timeout: 2000 }).catch(() => '')).replace(/\s+/g, ' ');
+    check('Y 510300 详情的"来源"写东方财富净值、不写 Yahoo', /来源[：:]?\s*东方财富(累计)?净值/.test(dt) && !/Yahoo/i.test(dt), dt.slice(-160));
     await ctx.close();
   });
 

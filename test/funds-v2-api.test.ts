@@ -29,10 +29,12 @@ const stmtsOf = (files: string[]) =>
     .join(';\n').split(';').map((s) => s.trim()).filter(Boolean);
 
 const BONDS = ['A35', 'MBH', 'SBO', 'O9P', '0P00006FY6', 'AGG', 'BND', 'TLT', 'BSV', 'LQD', '511990', '511880', '511010', '511360', '000171', '217003'];
-const AUTO8 = ['AGG', 'TLT', 'LQD', 'BND', 'BSV', 'O9P', '511990', '511880'];
-const APPROX8 = ['A35', 'MBH', '0P00006FY6', 'SBO', '511010', '511360', '000171', '217003'];
-/** 替身里来源一定取得到的：iShares（AGG、TLT、LQD）、Vanguard（BND、BSV）、近似的 8 只（MAS / 中债 / 美国国债曲线都有夹具） */
-const MUST = ['AGG', 'TLT', 'LQD', 'BND', 'BSV', ...APPROX8];
+// 第三版规格变化（Amos 2026-11-11「都按建议」，安全经理条款核对：iShares / BlackRock 条款禁止自动抓取）：
+//   AGG、TLT、LQD、O9P 改成"美国同期限国债 + 利差"近似，auto 只剩 BND、BSV、511990、511880（原来是 8 只 auto；规格变化，不是放宽）
+const AUTO4 = ['BND', 'BSV', '511990', '511880'];
+const APPROX12 = ['A35', 'MBH', '0P00006FY6', 'SBO', '511010', '511360', '000171', '217003', 'AGG', 'TLT', 'LQD', 'O9P'];
+/** 替身里来源一定取得到的：Vanguard（BND、BSV）、近似的 12 只（MAS / 中债 / 美国国债曲线都有夹具） */
+const MUST = ['BND', 'BSV', ...APPROX12];
 
 const REF: Record<string, { series: [string, number][] }> = JSON.parse(readFileSync(path.join(ROOT, 'test/fixtures/funds/reference.json'), 'utf8')).funds;
 function synth(code: string): [string, number][] {
@@ -192,8 +194,8 @@ describe('基金观察第二版接口', () => {
       const y = before[code]?.yield;
       if (!y || typeof y !== 'object') { bad.push(`${code} 没有 yield`); continue; }
       for (const k of ['value', 'kind', 'label', 'duration', 'asOf', 'stale']) if (!(k in y)) bad.push(`${code}.yield 缺 ${k}`);
-      if (AUTO8.includes(code) && y.kind !== 'auto') bad.push(`${code} kind 应为 auto：${y.kind}`);
-      if (APPROX8.includes(code) && y.kind !== 'approx') bad.push(`${code} kind 应为 approx：${y.kind}`);
+      if (AUTO4.includes(code) && y.kind !== 'auto') bad.push(`${code} kind 应为 auto：${y.kind}`);
+      if (APPROX12.includes(code) && y.kind !== 'approx') bad.push(`${code} kind 应为 approx：${y.kind}`);
       if (y.value !== null && !(typeof y.value === 'number' && y.value > 0)) bad.push(`${code} value 应为正数或 null：${y.value}`);
       if (typeof y.stale !== 'boolean') bad.push(`${code} stale 应为布尔：${y.stale}`);
     }
@@ -201,33 +203,33 @@ describe('基金观察第二版接口', () => {
     expect(bad).toEqual([]);
   });
 
-  it('4. 来源取得到的（iShares、Vanguard、近似的 8 只）：value > 0、label 有字、asOf 有值、stale = false；AGG 5.20 / 久期 5.73、BND 5.2 / 5.7（实抓夹具）', async () => {
+  it('4. 来源取得到的（Vanguard、近似的 12 只）：value > 0、label 有字、asOf 有值、stale = false；BND 5.2 / 5.7（实抓夹具）；AGG 是近似（第三版）', async () => {
     const bad: string[] = [];
     for (const code of MUST) {
       const y = before[code]?.yield;
       if (!(y && typeof y.value === 'number' && y.value > 0 && typeof y.label === 'string' && y.label.trim() && y.asOf && y.stale === false)) bad.push(`${code}：${JSON.stringify(y)}`);
     }
     expect(bad).toEqual([]);
-    expect(before.AGG.yield.value).toBeCloseTo(5.2, 2);
-    expect(before.AGG.yield.duration).toBeCloseTo(5.73, 2);
+    expect(before.AGG.yield.kind).toBe('approx');
     expect(before.BND.yield.value).toBeCloseTo(5.2, 2);
     expect(before.BND.yield.duration).toBeCloseTo(5.7, 2);
     expect(zeros(before)).toEqual([]);
   });
 
-  it('5. iShares、Vanguard 回 500：AGG / TLT / LQD / BND / BSV 保留上次的 value、asOf，stale = true，不出现 0；近似的那几只不受影响（stale = false）', async () => {
-    down.add('ishares.com'); down.add('vanguard.com');
+  it('5. Vanguard 回 500：BND / BSV 保留上次的 value、asOf，stale = true，不出现 0；近似的 12 只不受影响（stale = false）；整个过程不请求 ishares.com / blackrock.com（第三版）', async () => {
+    down.add('vanguard.com');
     const rounds = await refreshAll();
     down.clear();
+    expect(rounds.flatMap((r) => r.urls).filter((u) => ['ishares.com', 'blackrock.com'].includes(yieldHost(u) ?? ''))).toEqual([]);
     expect(rounds.map((r) => r.sent).filter((n) => n > LIMIT)).toEqual([]);
     expect(rounds.at(-1)!.body.next).toBeNull();
     const after = await getItems();
     const bad: string[] = [];
-    for (const code of ['AGG', 'TLT', 'LQD', 'BND', 'BSV']) {
+    for (const code of ['BND', 'BSV']) {
       const a = after[code]?.yield, b = before[code]?.yield;
       if (!(a && a.value === b.value && a.asOf === b.asOf && a.stale === true)) bad.push(`${code}：之前 ${JSON.stringify(b)}，之后 ${JSON.stringify(a)}`);
     }
-    for (const code of APPROX8) if (after[code]?.yield?.stale !== false) bad.push(`${code} 不该变 stale：${JSON.stringify(after[code]?.yield)}`);
+    for (const code of APPROX12) if (after[code]?.yield?.stale !== false) bad.push(`${code} 不该变 stale：${JSON.stringify(after[code]?.yield)}`);
     expect(bad).toEqual([]);
     expect(zeros(after)).toEqual([]);
   });

@@ -1,8 +1,9 @@
 /**
  * 基金观察第三版小改（Amos 2026-11-11 已定）：接口这一侧守住"刷新后收益率提示按每只 yield.stale / yield.approx 分三种说"所依据的数据口径。
  * **测试会话先写（agents C154）**，研发不改断言（底线 6）。页面那一侧的检查在 scripts/e2e-funds.mjs 的 X 段。
- * 场景：第一次刷新时 iShares 页面网络失败（回 500），美国国债曲线取得到 → 服务端给 AGG / TLT / LQD 写近似值：
- *   GET /api/funds 里这三只 approx = true、stale = false、value > 0；但最后一批回包的 yields.failed 里照样有它们。
+ * 场景：第一次刷新时 Vanguard 页面网络失败（回 500），美国国债曲线取得到 → 服务端给 BND / BSV 写近似值：
+ *   GET /api/funds 里这两只 approx = true、stale = false、value > 0；但最后一批回包的 yields.failed 里照样有它们。
+ *   （原来用 iShares 的 AGG / TLT / LQD；第三版规格变化后它们本来就是近似、不再抓 iShares，改用仍是 auto 的 Vanguard 两只，守的事不变。）
  *   所以页面不能把 yields.failed 里"有值的"一律说成"过期 / 显示的是上次的值"，要看每只的 yield.stale / yield.approx。
  * 做法同 test/funds-v2-api.test.ts：本地 D1 + 替身 fetch（test/funds-yield-fake.ts），不连网。
  */
@@ -19,7 +20,7 @@ const PASS = 'ci_only_copilot_password_01';
 const HOST = 'https://copilot.example.test';
 const MIG = path.join(ROOT, 'migrations');
 const NOW = Date.UTC(2026, 10, 11, 10, 0, 0);
-const ISHARES = ['AGG', 'TLT', 'LQD'];
+const PAGE_DOWN = ['BND', 'BSV'];
 
 const stmtsOf = (files: string[]) =>
   files.map((f) => readFileSync(path.join(MIG, f), 'utf8').split('\n').map((l) => l.replace(/--.*$/, '')).join('\n'))
@@ -39,7 +40,7 @@ function synth(code: string): [string, number][] {
   }
   return out;
 }
-const down = new Set<string>(['ishares.com']);
+const down = new Set<string>(['vanguard.com']);
 const realFetch = globalThis.fetch;
 const urlOf = (input: unknown) => (typeof input === 'string' ? input : input instanceof URL ? input.href : (input as Request).url);
 const jsonRes = (b: unknown, status = 200) => new Response(JSON.stringify(b), { status, headers: { 'content-type': 'application/json' } });
@@ -82,8 +83,8 @@ beforeAll(async () => {
 });
 afterAll(async () => { vi.unstubAllGlobals(); await dispose(); });
 
-describe('第三版：第一次刷新时 iShares 页面没取到、服务端给了近似值', () => {
-  it('GET 里 AGG / TLT / LQD 是 approx = true、stale = false、value > 0；最后一批的 yields.failed 里照样有它们（页面要按每只的状态说，不能说成"过期"）', async () => {
+describe('第三版：第一次刷新时 Vanguard 页面没取到、服务端给了近似值', () => {
+  it('GET 里 BND / BSV 是 approx = true、stale = false、value > 0；最后一批的 yields.failed 里照样有它们（页面要按每只的状态说，不能说成"过期"）', async () => {
     let cursor: number | undefined;
     let last: any = null;
     for (let i = 0; i < 30; i++) {
@@ -97,11 +98,11 @@ describe('第三版：第一次刷新时 iShares 页面没取到、服务端给�
     const failed: string[] = (last?.yields?.failed ?? []).map((x: { code: string }) => x.code);
     const g = await handle(req('/api/funds', { cookie: ck }), env(), NOW, fake as never);
     const items = Object.fromEntries(((await g.json()) as { items: any[] }).items.map((x) => [x.code, x]));
-    const bad = ISHARES.filter((c) => {
+    const bad = PAGE_DOWN.filter((c) => {
       const y = items[c]?.yield;
       return !(y && typeof y.value === 'number' && y.value > 0 && y.approx === true && y.stale === false);
     }).map((c) => `${c}：${JSON.stringify(items[c]?.yield)}`);
     expect(bad).toEqual([]);
-    expect(ISHARES.filter((c) => !failed.includes(c)), `yields.failed = ${JSON.stringify(last?.yields?.failed)}`).toEqual([]);
+    expect(PAGE_DOWN.filter((c) => !failed.includes(c)), `yields.failed = ${JSON.stringify(last?.yields?.failed)}`).toEqual([]);
   });
 });
