@@ -40,6 +40,7 @@
  */
 import type { Env } from './env';
 import { asrWordsOf, GROUPS, minimalPairsOf, type PronGroup, type PronPair, type PronWord } from './pron-content';
+import { mouthPair } from './pron-mouth';
 import { accountLimitedMessage, isAccountLimited, noteAccountLimit, utcDay } from './usage';
 import { chargeNeurons, dailyCap, usedToday, type AiLike } from './workers-ai';
 
@@ -116,6 +117,9 @@ export function groupCard(g: PronGroup): Record<string, unknown> {
     名字: `${g.a.ipa} vs ${g.b.ipa}`,
     a: { 音标: g.a.ipa, 外号: g.a.nick, 口型: g.a.mouth },
     b: { 音标: g.b.ipa, 外号: g.b.nick, 口型: g.b.mouth },
+    // 口型示意图怎么画：**逐条从上面那个 `口型` 原文翻译出来的**（src/pron-mouth.ts），页面只负责照着画。
+    // 画不出差别的组（/f/ /v/、/n/ /l/、/ʒ/ /dʒ/）这里的 `画得出差别` 就是 false，页面照实说，不画假的（底线 3）
+    口型图: mouthPair(g),
     对: g.pairs.map((p, i) => ({ 第几对: i + 1, 最小对立对: p.minimal, a: w(i, 'a'), b: w(i, 'b') })),
     能听辨: canEar(g),
     听辨对数: minimalPairsOf(g).length,

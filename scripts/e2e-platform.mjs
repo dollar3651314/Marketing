@@ -1375,6 +1375,67 @@ try {
     check(`${tg}：看口型这一屏没有横向滚动`, await noHScroll(p), await p.evaluate(() => [document.documentElement.scrollWidth, innerWidth]));
     if (SHOTS) { mkdirSync(SHOTS, { recursive: true }); await p.locator('#w-pron').screenshot({ path: path.join(SHOTS, '发音训练-看口型-390.png') }); }
 
+    // ---- 第 1 步的口型示意图（2026-11-11）：**画面上每一笔都指得回课件 mouth 的某一条**（底线 3）----
+    const DR = await p.evaluate(() => {
+      const 块 = [...document.querySelectorAll('#pn-draw .pn-mo')];
+      const box = (e) => { const r = e.getBoundingClientRect(); return { x: Math.round(r.left), y: Math.round(r.top), w: Math.round(r.width) }; };
+      return {
+        n: 块.length,
+        pos: 块.map(box),
+        笔: 块.map((d) => [...d.querySelectorAll('svg *')].map((e) => ({ y: e.getAttribute('data-y'), frame: e.getAttribute('data-frame'),
+          f: e.getAttribute('data-f'), g: e.getAttribute('data-g'),
+          k: e.tagName + ' ' + [...e.attributes].filter((a) => a.name !== 'data-y').map((a) => a.name + '=' + a.value).sort().join(' ') }))),
+        svg: 块.map((d) => d.querySelectorAll('svg').length),
+        note: (document.getElementById('pn-drawnote') || {}).textContent || '',
+      };
+    });
+    const 原文 = { 0: G1.a['口型'], 1: G1.b['口型'] };
+    const 坏笔 = [];
+    DR.笔.forEach((笔, i) => 笔.forEach((e) => {
+      if (e.frame) return;                              // 图框（嘴的轮廓）：两个音完全一样，不表示任何差别
+      if (!e.y) { 坏笔.push(['没有依据', i, e.k]); return; }
+      for (const one of e.y.split(' | ')) if (!原文[i].includes(one)) 坏笔.push(['依据不是课件原文', i, one]);
+    }));
+    check(`${tg}：口型图两个音**并排**（390 宽也并排，不然比不了），各自有图`,
+      DR.n === 2 && DR.svg[0] > 0 && DR.svg[1] > 0 && DR.pos[0].y === DR.pos[1].y && DR.pos[1].x > DR.pos[0].x + DR.pos[0].w - 4, DR.pos);
+    check(`${tg}：图上**每一笔都指得回 /api/pron/state 给的那条口型原文**（课件没说的一笔都不许画，底线 3）`, 坏笔.length === 0, 坏笔.slice(0, 5));
+    // 第 1 组课件原文唯一的差别就是上下齿的开口 → 两张图里不一样的那几笔，必须都是那条原文画的
+    const 只在 = (A, B) => A.filter((x) => !B.some((y) => y.k === x.k && y.y === x.y));
+    const 不同笔 = [...只在(DR.笔[0], DR.笔[1]), ...只在(DR.笔[1], DR.笔[0])];
+    check(`${tg}：第 1 组两张图**只有上下齿那几笔不一样**（嘴型、舌位课件写的一样 → 画成一样）`,
+      不同笔.length > 0 && 不同笔.every((e) => /1cm|2cm/.test(e.y || '')), 不同笔.map((e) => e.y).slice(0, 6));
+    // **光比依据原文是不够的**（2026-11-11 审查 🟡5）：嘴唇那一笔的 data-y 里本来就带着开口那条原文，
+    // 所以在嘴唇上凭空画一个课件没说的差别，上面那条照样过（反例实测：把 /æ/ 的嘴角从 44 画到 64 → 全绿）。
+    // 按特征核：接口的「差别特征」说哪几个该不一样，**不在那张表里的特征，两张图的 data-g 必须一样**。
+    const 该不一样 = new Set(G1['口型图']['差别特征'] || []);
+    const 按特征 = (i) => {
+      const m = {};
+      for (const e of DR.笔[i]) { if (!e.f) continue; (m[e.f] = m[e.f] || []).push(e.g || ''); }
+      for (const k of Object.keys(m)) m[k] = [...new Set(m[k])].sort();
+      return m;
+    };
+    const FA = 按特征(0), FB = 按特征(1);
+    const 不该不一样的却不一样 = [...new Set([...Object.keys(FA), ...Object.keys(FB)])]
+      .filter((f) => !该不一样.has(f) && !(f === '手指' && 该不一样.has('开口')))
+      .filter((f) => JSON.stringify(FA[f] || null) !== JSON.stringify(FB[f] || null))
+      .map((f) => [f, FA[f] || null, FB[f] || null]);
+    check(`${tg}：**不该不一样的特征，两张图画出来的数必须一样**（光比依据原文堵不住凭空画的差别）`,
+      不该不一样的却不一样.length === 0, 不该不一样的却不一样);
+    check(`${tg}：图下面照实写明依据和食指参照（"可容纳一根食指 / 两根食指"是能拿手指量的）`,
+      DR.note.includes('可容纳一根食指') && DR.note.includes('可容纳两根食指') && DR.note.includes('画成一模一样'), DR.note.slice(0, 80));
+
+    // 来回切换：点一下两个音轮流高亮（页面时钟是固定的，用 clock.runFor 推一拍，结果可复现）
+    const 亮 = () => p.evaluate(() => [...document.querySelectorAll('#pn-draw .pn-mo')].map((d) => d.className.includes('lit')));
+    await p.click('#pn-anim');
+    const 亮0 = await 亮();
+    await p.clock.runFor(900);
+    const 亮1 = await 亮();
+    check(`${tg}：「来回切换」真的在两个音之间来回（一眼看出差在哪）`,
+      JSON.stringify(亮0) === JSON.stringify([true, false]) && JSON.stringify(亮1) === JSON.stringify([false, true]), { 亮0, 亮1 });
+    if (SHOTS) await p.locator('#w-pron').screenshot({ path: path.join(SHOTS, '发音训练-口型图切换另一帧-390.png') });
+    await p.click('#pn-anim');
+    check(`${tg}：再点一下停下来（不在后台一直空转）`, JSON.stringify(await 亮()) === JSON.stringify([false, false]), await 亮());
+
     // ---- 第 2 步：对照听（+ 纠说）----
     await p.click('#pn-go2');
     await p.waitForFunction(() => !document.getElementById('pn-s2').hidden, null, { timeout: WAIT });
@@ -1506,6 +1567,23 @@ try {
       rows: document.querySelectorAll('#pn-cmp .pn-pair').length, say: [...document.querySelectorAll('#pn-saywords button')].map((b) => b.textContent) }));
     check(`${tg}：第 7 组**不给「开始考」这个按钮**（不硬凑题），但跟读和纠说照常有`,
       g7b.go3 === false && g7b.rows === 4 && g7b.say.length > 0, g7b);
+    // 第 7 组口型图：课件一句口型都没给 → **一张图都不画**，照实说（不编一个假的嘴型差别）
+    const g7d = await p.evaluate(() => ({ svg: document.querySelectorAll('#pn-draw svg').length, note: document.getElementById('pn-drawnote').textContent,
+      why: [...document.querySelectorAll('#pn-draw .m-why')].map((e) => e.textContent) }));
+    check(`${tg}：第 7 组（/ʒ/ vs /dʒ/）**一张口型图都不画**，当面说"课件没给口型"`,
+      g7d.svg === 0 && g7d.note.includes('一句口型都没有') && g7d.why.every((t) => t.includes('课件没给这个音的口型')), g7d);
+
+    // ⑨ 画不出差别的那一组（第 4 组 /f/ vs /v/）：两张图**逐字一样**，界面照实说"差别在喉咙，用手摸喉咙"
+    await p.click('#pn-pick .btn:nth-child(4)');
+    await p.waitForFunction(() => /一模一样/.test(document.getElementById('pn-drawnote').textContent), null, { timeout: WAIT });
+    const g4 = await p.evaluate(() => {
+      const two = [...document.querySelectorAll('#pn-draw .pn-mo')].map((d) => [...d.querySelectorAll('svg *')].map((e) => e.outerHTML).join(''));
+      return { 一样: two[0] === two[1], 有图: two[0].length > 0, note: document.getElementById('pn-drawnote').textContent };
+    });
+    check(`${tg}：/f/ vs /v/ 两张口型图**逐笔一模一样**（不编一个假的嘴型差别），并写明用手摸喉咙`,
+      g4.一样 && g4.有图 && g4.note.includes('画出来只能是同一张图') && g4.note.includes('用手摸喉咙：振动的是 /v/'), g4);
+    check(`${tg}：/f/ vs /v/ 这一屏没有横向滚动`, await noHScroll(p), await p.evaluate(() => [document.documentElement.scrollWidth, innerWidth]));
+    if (SHOTS) await p.locator('#w-pron').screenshot({ path: path.join(SHOTS, '发音训练-画不出差别的那一组-390.png') });
 
     // ⑦ 浏览器不支持录音时也当面说（另开一个把 mediaDevices 拿掉的页面来量）
     const p2 = await open({ width: 390, height: 844 });
@@ -1523,6 +1601,97 @@ try {
       !noMic.hidden && noMic.t.includes('不支持录音') && noMic.t.includes('怎么办：') && noMic.cmp === 8 && noMic.go3, noMic);
     await p2.context().close();
     await p.context().close();
+  });
+
+  // ---------- 16. 照镜子 + 慢速对照和录音回放（2026-11-11）----------
+  // Amos 原话：「有些发音我很难理解　你要给我做成教学视频」。真人视频拍不了、AI 生成的"会动的嘴"是编的不能做，
+  // 改提三样，他回「都要，按这个顺序做」：①口型示意图 + 动画（第 15 段量）②**前置摄像头当镜子**③慢速对照 + 他自己的录音回放。
+  // ⚠️ 摄像头和麦克风在无头环境里只能用**假的媒体流**（Chromium 的 --use-fake-device-for-media-stream）：
+  //    这一段量的是**界面、流程、画面有没有被送出去、关掉时摄像头有没有真的灭**；
+  //    "他自己的脸在屏幕上好不好对着做"只有他本人第一次用才算验过（报告里照实写，底线 9）。
+  await section('发音训练·照镜子和录音回放', async () => {
+    const cam = await chromium.launch({ args: ['--use-fake-device-for-media-stream', '--use-fake-ui-for-media-stream', '--autoplay-policy=no-user-gesture-required'] });
+    try {
+      const ctx = await cam.newContext({ viewport: { width: 390, height: 844 } });
+      await ctx.grantPermissions(['camera', 'microphone'], { origin: BASE });
+      const q = await ctx.newPage();
+      q.on('pageerror', (e) => errors.push(e.message));
+      const net = [];
+      q.on('request', (r) => net.push(r.method() + ' ' + new URL(r.url()).pathname));
+      // 把摄像头拿到的轨道记下来：关掉镜子之后它们必须是 ended（= 指示灯灭）
+      await q.addInitScript(() => {
+        window.__tracks = [];
+        const md = navigator.mediaDevices;
+        const o = md.getUserMedia.bind(md);
+        md.getUserMedia = (c) => o(c).then((s) => { s.getTracks().forEach((t) => window.__tracks.push(t)); return s; });
+      });
+      await login(q, '/#/work/pron');
+      await waitFor(q, '#w-pron');
+      await q.waitForFunction(() => document.querySelectorAll('#pn-draw .pn-mo').length === 2, null, { timeout: WAIT });
+      const tg = '390 宽·假媒体流';
+
+      // ---- ② 照镜子 ----
+      const n0 = net.length;
+      await q.click('#pn-mir');
+      await q.waitForFunction(() => !document.getElementById('pn-mirwrap').hidden, null, { timeout: 8000 });
+      await q.waitForFunction(() => { const v = document.getElementById('pn-cam'); return !!v && v.videoWidth > 0; }, null, { timeout: 8000 });
+      const m = await q.evaluate(() => {
+        const v = document.getElementById('pn-cam'), t = document.getElementById('pn-mirtarget');
+        // 并排看的是**两个格子**（图和视频下面的说明行数不一样，所以不比图和视频自己的顶端）
+        const a = t.closest('.pn-mircell').getBoundingClientRect(), b = v.closest('.pn-mircell').getBoundingClientRect();
+        return { 有流: !!v.srcObject, w: v.videoWidth, 轨道: (window.__tracks || []).map((x) => x.readyState),
+          目标图: t.querySelectorAll('svg').length, cap: document.getElementById('pn-mircap').textContent,
+          左: Math.round(a.left), 右: Math.round(b.left), 同一行: Math.abs(Math.round(a.top) - Math.round(b.top)) <= 2,
+          隐私: document.querySelector('#pn-mirwrap .pn-privacy').textContent };
+      });
+      check(`${tg}：照镜子 —— 摄像头画面真的出来了，**左边是目标口型图、右边是他自己的嘴**（并排）`,
+        m.有流 && m.w > 0 && m.目标图 > 0 && m.右 > m.左 && m.同一行 && m.轨道.every((x) => x === 'live'), m);
+      check(`${tg}：**镜子开着这段时间一个请求都没往外发**（画面不上传、不保存、不录）`, net.slice(n0).length === 0, net.slice(n0));
+      check(`${tg}：界面上当面写明"这个画面不会离开你的手机"`,
+        m.隐私.includes('不会离开你的手机') && m.隐私.includes('不上传') && m.隐私.includes('不保存'), m.隐私);
+      check(`${tg}：镜子左边那张图标着要做的是哪个音`, m.cap.includes('要做的口型'), m.cap);
+      if (SHOTS) { mkdirSync(SHOTS, { recursive: true }); await q.locator('#w-pron').screenshot({ path: path.join(SHOTS, '发音训练-镜子开着-390.png') }); }
+      const n1 = net.length;
+      await q.click('#pn-miroff');
+      const off = await q.evaluate(() => ({ 没流: document.getElementById('pn-cam').srcObject === null,
+        轨道: (window.__tracks || []).map((x) => x.readyState), hidden: document.getElementById('pn-mirwrap').hidden }));
+      check(`${tg}：「关掉镜子」真的把摄像头关了（轨道 ended，手机上的指示灯才会灭）`,
+        off.没流 && off.轨道.length > 0 && off.轨道.every((x) => x === 'ended') && off.hidden, off);
+      check(`${tg}：关镜子也没往外发任何东西`, net.slice(n1).length === 0, net.slice(n1));
+
+      // ---- ③ 慢速对照 + 他自己的录音回放 ----
+      await q.click('#pn-go2');
+      await q.waitForFunction(() => !document.getElementById('pn-s2').hidden, null, { timeout: WAIT });
+      check(`${tg}：**没录过就不显示**那几个按钮（不画占位、不画灰按钮）`, await q.evaluate(() => document.getElementById('pn-my').hidden), null);
+      const mic = q.locator('#pn-saywords button').first();
+      await mic.click();
+      await q.waitForFunction(() => /停止/.test(document.querySelector('#pn-saywords button').textContent), null, { timeout: 8000 });
+      await q.waitForTimeout(900); // 真的录一段（假麦克风）
+      await mic.click();
+      await q.waitForFunction(() => !document.getElementById('pn-my').hidden, null, { timeout: 8000 });
+      const my = await q.evaluate(() => ({ std: document.getElementById('pn-std').textContent, mine: document.getElementById('pn-mine').textContent,
+        slow: document.getElementById('pn-slow').textContent, chain: document.getElementById('pn-chain').textContent,
+        t: document.getElementById('pn-my-t').textContent, note: document.querySelector('#pn-my .pn-saynote').textContent,
+        h: Math.round(document.getElementById('pn-chain').getBoundingClientRect().height),
+        say: document.getElementById('pn-saymsg').innerText }));
+      check(`${tg}：录完之后才出现四个大按钮：标准音 / 我刚才念的 / 慢速 0.7 倍 / 连着放（${my.h}px ≥ 52）`,
+        my.std === '🔊 标准音' && my.mine === '🎧 我刚才念的' && my.slow.includes('慢速 0.7 倍') && my.chain === '▶ 连着放' && my.h >= 52, my);
+      check(`${tg}：**纠说这一次失败了（本地没绑 Workers AI），录音照样留着能回放**`, my.say.includes('没有绑 Workers AI') && my.t.includes('你刚才念的'), { say: my.say.slice(0, 40), t: my.t });
+      check(`${tg}：页面上照实说这段录音不另外上传、刷新就没了`, my.note.includes('不另外上传') && my.note.includes('刷新页面就没了'), my.note.slice(0, 60));
+      await q.click('#pn-slow');
+      await q.click('#pn-chain');
+      await q.waitForTimeout(900);
+      const 放 = await q.evaluate(() => ({ 慢: document.getElementById('pn-slow').getAttribute('aria-pressed'),
+        字: document.getElementById('pn-slow').textContent, 错: document.getElementById('pn-msg').hidden, t: document.getElementById('pn-msg').innerText }));
+      check(`${tg}：慢速按下去是按着的状态，「连着放」点下去不报错（标准音 → 停 0.3 秒 → 他的录音）`,
+        放.慢 === 'true' && 放.字.includes('慢速开着') && 放.错, 放);
+      check(`${tg}：这一屏没有横向滚动`, await noHScroll(q), await q.evaluate(() => [document.documentElement.scrollWidth, innerWidth]));
+      // 整块自己也不许横着溢出（按钮上的字长了会把 1fr 1fr 的格子撑开，页面级的横滚未必量得到）
+      const 溢 = await q.evaluate(() => ['w-pron', 'pn-my', 'pn-mirwrap', 'pn-draw'].map((id) => { const e = document.getElementById(id); return [id, e.scrollWidth - e.clientWidth]; }));
+      check(`${tg}：发音训练这一块里没有任何一行横着溢出（口型图、镜子、回放都量过）`, 溢.every(([, d]) => d <= 1), 溢);
+      if (SHOTS) await q.locator('#pn-say').screenshot({ path: path.join(SHOTS, '发音训练-对照听连着放-390.png') });
+      await ctx.close();
+    } finally { await cam.close(); }
   });
 
   check('全程没有脚本错误', errors.length === 0, errors.slice(0, 5));
