@@ -62,6 +62,8 @@ export interface ValStored {
   xls_url?: string;
   /** 只有标普500：哪个月（UTC+8 的 YYYY-MM）重新看过、Shiller 还没更新（页面那个月注明"Shiller 本月还没更新"） */
   stale_month?: string;
+  /** 第六版：stale_month 那个月为什么没确认到新数据（'首页连不上'：存的链接数据没前进、再看首页时首页连不上） */
+  stale_why?: string;
 }
 
 /** GET /api/funds 里 valuation.items 的一张卡（字段名照调研的 val.json，测试会话 test/funds-v4-valuation.test.ts 按这些名字比） */

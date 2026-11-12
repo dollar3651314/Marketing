@@ -607,6 +607,8 @@ export async function refreshYields(env: Env, now: number, f: FetchLike = (u, i)
  *         41 个月一段最慢 7.6ms，再短就要 4 段——实测数见《项目地图》），每次调用取一段、解析一段；之后每天只取最近一段（从库里最后一个月的 1 号起）；
  *       中证 indicator.xls：约 8KB，一步；还没有市盈率序列的指数不取（不算一轮、不占请求）；
  *       Shiller：上次成功下载过的 ie_data.xls 链接存在 fund_valuation（SPX 那行 data.xls_url），先直接下载它（失败、不是 403 / 429 就回退首页找）；
+ *         第六版（11/12 正式版首页连接被重置）：库里还没存过链接时，第一次直接下载代码里的已知链接 SHILLER_KNOWN_XLS（不先请求首页），失败、不是 403 / 429 才回退首页；
+ *         存的链接数据没前进、再看首页时首页连不上 → 保留旧数据，页面注明"Shiller 本月还没更新（首页连不上）"（不记 ok_day，下次刷新再试）；
  *       首页单独一步（超时放宽到 20 秒，仍受 25 秒截止）；下载一步只把复合文档里的工作簿流拆成 ≤ 128KB 的块存进 D1（fund_val_blob）；
  *       下一步读第一块里的目录和共享字符串表；之后每次只解析一块里的记录（xlsWalk + shillerCell，状态存 fund_val_work）；
  *       读到表尾才算出 CAPE、存 fund_valuation、删掉块。
@@ -630,6 +632,13 @@ const CS_HEADERS = { 'user-agent': BROWSER_UA, accept: 'application/json, text/p
 const csPerfUrl = (code: string, start: string, end: string) => `https://www.csindex.com.cn/csindex-home/perf/index-perf?indexCode=${encodeURIComponent(code)}&startDate=${start}&endDate=${end}`;
 const csXlsUrl = (code: string) => `https://oss-ch.csindex.com.cn/static/html/csindex/public/uploads/file/autofile/indicator/${encodeURIComponent(code)}indicator.xls`;
 const SHILLER_HOME = 'https://shillerdata.com/';
+/**
+ * 已知的 Shiller ie_data.xls 下载链接（第六版）。来源：主会话 2026-11-12 实测——shillerdata.com 首页连接被重置，
+ * 但首页给的这个文件托管链接本身能下载（HEAD 200，application/vnd.ms-excel）。
+ * 库里没有存过链接时第一次直接下载它、不先请求首页；成功后照旧存进 fund_valuation（SPX 那行 data.xls_url），以后用存的。
+ * 它也失败（不是 403 / 429）才回退首页找。Shiller 换了文件，这个链接可能失效或停在旧数据，不影响：存的链接和首页逻辑照旧。
+ */
+export const SHILLER_KNOWN_XLS = 'https://img1.wsimg.com/blobby/go/e5e77e0b-59d1-44d9-ab25-4763ac982e53/downloads/1449043e-a1ed-4e2e-8e9c-7b9a2a064493/ie_data.xls?ver=1791297298731';
 /** 来源键（fund_val_fetch.src），也是一轮刷新里的先后顺序 */
 export const valKeys = (def: ValIndexDef): string[] => (def.src === 'shiller' ? ['shiller'] : [`cs-perf:${def.code}`, `cs-xls:${def.code}`]);
 const ALL_KEYS = VAL_INDEXES.flatMap(valKeys);
@@ -704,6 +713,8 @@ export interface ValStepResult {
 interface PerfWork { day: string; segs: [string, string][]; i: number; months: Record<string, [string, number]>; last: [string, number] | null; incr: boolean; open?: boolean }
 /** Shiller 的进度：home 找下载链接 → dl 下载并拆块 → globals 读目录 → rows 逐块解析。cached = 这次用的是上次存的链接（失败就回退首页） */
 interface ShWork { day: string; stage: 'home' | 'dl' | 'globals' | 'rows'; url?: string; cached?: boolean;
+  /** 第六版：这次下载的是代码里的已知链接（库里还没存过链接）；dlWhy = 存的 / 已知链接没取到的原因（回退首页也失败时一起写进原因） */
+  known?: boolean; dlWhy?: string;
   /** 用存的链接解析完、最新月份没比库里前进：再看一次首页，recheck = 存的那个链接（首页上还是它就不再下载） */
   recheck?: string; n: number; len: number; pos?: number; sst?: string[]; st?: ShillerState; pend?: [number, number] | null }
 /** 这次刷新的状态：failed 这次刷新里不再碰的来源键；blocked 回过 403 / 429、这次刷新里不再碰的来源；last 每个来源最后一个请求结束的时间 */
@@ -770,7 +781,7 @@ function stepsLeft(key: string, work: Map<string, any>, stored: Map<string, bool
     return stored.get(key.slice(8)) ? 1 : spanSegments(monthStart(now, VAL_FULL_MONTHS), day8(now).replace(/-/g, '')).length;
   }
   const est = Math.ceil(1.7e6 / VAL_BLOB);
-  if (!w) return 3 + est;
+  if (!w) return 2 + est; // 第六版：一开始就直接下载（存的链接或已知链接），不先请求首页
   const s = w as ShWork;
   if (s.stage === 'home') return s.recheck ? 1 : 3 + est;
   if (s.stage === 'dl') return 2 + est;
@@ -822,6 +833,8 @@ export async function refreshValuation(env: Env, cursor: number, now: number, f:
   let http = mkHttp();
   let status: ValStepResult['status'] = 'working', part = '', reason = '';
   let skipped: ValStepResult['skipped'];
+  /** 第六版：正在请求 Shiller 首页（这一步失败 = 首页连不上 / 没回应 / 被拦） */
+  let homeReq = false;
   try {
     if (key.startsWith('cs-perf:')) {
       let w = active(key, work, now) ? (work.get(key) as PerfWork) : null;
@@ -866,23 +879,27 @@ export async function refreshValuation(env: Env, cursor: number, now: number, f:
     } else {
       let w = active(key, work, now) ? (work.get(key) as ShWork) : null;
       if (!w) {
-        // 开一轮：上次成功下载过的链接先直接用；没有就先去首页找
+        // 开一轮：上次成功下载过的链接先直接用；库里没有（或存的不像样）就直接下载代码里的已知链接（第六版，不先请求首页）。
+        // 两种都是 cached：下载失败、不是 403 / 429 就回退首页找
         await markTry(env, key, now);
         const url = (await storedOf(env, 'SPX'))?.xls_url;
-        w = url && shillerXlsUrl(`<a href="${url.replace(/"/g, '')}">`) === url ? { day: day8(now), stage: 'dl', url, cached: true, n: 0, len: 0 } : { day: day8(now), stage: 'home', n: 0, len: 0 };
+        const okUrl = (u: string | undefined): u is string => !!u && shillerXlsUrl(`<a href="${u.replace(/"/g, '')}">`) === u;
+        w = okUrl(url) ? { day: day8(now), stage: 'dl', url, cached: true, n: 0, len: 0 } : { day: day8(now), stage: 'dl', url: SHILLER_KNOWN_XLS, cached: true, known: true, n: 0, len: 0 };
       }
       if (w.stage === 'home') {
         // 首页单独一步，超时放宽到 20 秒（仍受 25 秒截止）
         part = '首页';
         http = mkHttp(SHILLER_HOME_TIMEOUT_MS);
+        homeReq = true;
         const home = await http.text(SHILLER_HOME, { headers: HTML_HEADERS }, 'Shiller 首页');
+        homeReq = false;
         const url = shillerXlsUrl(home.text);
         if (!url) throw new FetchFail('Shiller 首页上没找到 ie_data.xls 的下载链接（或链接不在 shillerdata.com / wsimg.com 上）');
         const old = w.recheck ? await storedOf(env, 'SPX') : null;
         if (w.recheck && url === w.recheck && old) {
           // 首页上还是存的那个链接：Shiller 本月还没更新，保留旧数据，记一笔（页面注明），这个月这一轮算完
           part = '首页（没有新链接，Shiller 本月还没更新）';
-          await env.DB.batch([saveVal(env, { ...old, stale_month: day8(now).slice(0, 7) }, now), markOk(env, key, now), delWork(env, key), delBlobs(env)]);
+          await env.DB.batch([saveVal(env, { ...old, stale_month: day8(now).slice(0, 7), stale_why: undefined }, now), markOk(env, key, now), delWork(env, key), delBlobs(env)]);
           work.delete(key);
           status = 'ok';
         } else {
@@ -892,19 +909,21 @@ export async function refreshValuation(env: Env, cursor: number, now: number, f:
         }
       } else if (w.stage === 'dl') {
         // 下载：只把工作簿流拆块存起来，不解析
-        part = '下载';
-        let wb: Uint8Array | null = null;
+        part = w.known ? '下载（已知链接）' : '下载';
+        let wb: Uint8Array | null = null, dlWhy = '';
         try {
           wb = cfbStream(await http.bin(w.url!, { headers: { 'user-agent': BROWSER_UA, referer: SHILLER_HOME } }, 'Shiller 数据'), 'Workbook');
           if (!wb) throw new FetchFail('Shiller 的 ie_data.xls 认不出来（不是 xls）');
         } catch (e) {
           if (!w.cached || blockedBy(e)) throw e;
-          // 存的链接不能用了（不是被拦）：这一轮回退首页找新链接（下一步）
-          part = `下载（存的链接没取到：${why(e)}；改去首页找）`;
+          // 存的 / 已知链接不能用了（不是被拦）：这一轮回退首页找新链接（下一步）
+          const which = w.known ? '已知链接' : '存的链接';
+          part = `下载（${which}没取到：${why(e)}；改去首页找）`;
+          dlWhy = `${which}没取到：${why(e)}`;
           wb = null;
         }
         if (!wb) {
-          w = { day: day8(now), stage: 'home', n: 0, len: 0 };
+          w = { day: day8(now), stage: 'home', n: 0, len: 0, ...(dlWhy ? { dlWhy } : {}) };
           work.set(key, w);
           await putWork(env, key, w, now).run();
         } else {
@@ -955,13 +974,20 @@ export async function refreshValuation(env: Env, cursor: number, now: number, f:
     // 第五版：中证 perf 的进度留着（open = false），下一轮从断点接着取；Shiller 的进行中状态和块照旧丢掉（失败都在解析或下载，下一轮重下）
     status = 'failed';
     const stop = blockedBy(e) && !blocked.includes(fam);
-    reason = `${part ? part + '：' : ''}${why(e)}${stop ? `，这一轮不再请求${FAMILY_NAME[fam]}` : ''}`;
-    run.failed.push(key);
     const w = work.get(key);
+    // 第六版：回退首页之前存的 / 已知链接也没取到 → 两个原因一起写
+    const pre = key === 'shiller' && (w as ShWork | undefined)?.dlWhy ? `${(w as ShWork).dlWhy}；` : '';
+    reason = `${pre}${part ? part + '：' : ''}${why(e)}${stop ? `，这一轮不再请求${FAMILY_NAME[fam]}` : ''}`;
+    run.failed.push(key);
+    // 第六版：存的链接数据没前进、再看首页时首页连不上 → 保留旧数据，页面注明"Shiller 本月还没更新（首页连不上）"，不记错误。
+    // 不记 ok_day：下次点「刷新数据」（每天最多 2 轮）再试，首页恢复了就能找到新链接
+    const staleOld = key === 'shiller' && homeReq && (w as ShWork | undefined)?.recheck ? await storedOf(env, 'SPX') : null;
+    if (staleOld) reason += '；保留现有数据（Shiller 本月还没更新，首页连不上）';
     const keep = key.startsWith('cs-perf:') && w && Array.isArray(w.segs);
     if (keep) work.set(key, { ...w, open: false });
     else work.delete(key);
-    const stmts = [keep ? putWork(env, key, { ...w, open: false }, now) : delWork(env, key), ...(key === 'shiller' ? [delBlobs(env)] : []), saveErr(env, def.code, reason, now)];
+    const stmts = [keep ? putWork(env, key, { ...w, open: false }, now) : delWork(env, key), ...(key === 'shiller' ? [delBlobs(env)] : []),
+      staleOld ? saveVal(env, { ...staleOld, stale_month: day8(now).slice(0, 7), stale_why: '首页连不上' }, now) : saveErr(env, def.code, reason, now)];
     if (stop) {
       // 回 403 / 429：这次刷新里同一来源剩下的都不再请求；列出来（各自记一条原因，卡片上看得到）。
       // 没开始的也算用掉今天的一轮（宁可少取不多取：被拦了两轮，当天就不再碰这个来源）
@@ -1005,7 +1031,9 @@ export async function valuationList(env: Env, now: number): Promise<ValuationLis
       const card = st ? valCard(def, st) : null;
       if (!card) { missing.push({ code: def.code, name: def.name, market: def.market, ...(r?.err ? { error: r.err } : {}) }); continue; }
       // 第五版：Shiller 这个月重新看过、还没更新 → 注明
-      const note = st!.stale_month && st!.stale_month === day8(now).slice(0, 7) ? `Shiller 本月还没更新（最新是 ${st!.pe_now_date} 的数据）` : '';
+      // 第六版：再看首页时首页连不上（stale_why）→ "Shiller 本月还没更新（首页连不上），最新是 … 的数据"
+      const note = st!.stale_month && st!.stale_month === day8(now).slice(0, 7)
+        ? (st!.stale_why ? `Shiller 本月还没更新（${st!.stale_why}），最新是 ${st!.pe_now_date} 的数据` : `Shiller 本月还没更新（最新是 ${st!.pe_now_date} 的数据）`) : '';
       items.push({ ...card, ok_at: r?.ok_at ? new Date(r.ok_at).toISOString() : null, ...(note ? { note } : {}), ...(r?.err ? { error: r.err, ...(r.err_at ? { error_at: new Date(r.err_at).toISOString() } : {}) } : {}) });
     }
     // 股息率要等有了市盈率序列才取（keyReady）：没有市盈率的指数不因为股息率一直显示"要取"
