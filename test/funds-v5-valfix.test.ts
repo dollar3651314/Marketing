@@ -112,7 +112,7 @@ function uninstallClock() {
 
 // ---------------------------------------------------------------- 替身 fetch（按计划回 403 / 429 / 404 / 慢 / 不回）
 type Rec = { url: string; t: number; end: number; status: number };
-type Plan = (url: string, n: { cs: number; perf: number; sh: number }) => Response | { delay: number } | 'hang' | null;
+type Plan = (url: string, n: { cs: number; perf: number; sh: number }) => Response | { delay: number; res?: Response } | 'hang' | null;
 let log: Rec[] = [];
 let plan: Plan = () => null;
 const cnt = { cs: 0, perf: 0, sh: 0 };
@@ -138,7 +138,7 @@ const fake = vi.fn(async (input: unknown, init?: RequestInit): Promise<Response>
         sig?.addEventListener('abort', fail);
       });
     }
-    const res = p instanceof Response ? p : await fakeResponse(input, init, { end: END, token: 'unused' });
+    const res = p instanceof Response ? p : p && p !== 'hang' && p.res ? p.res : await fakeResponse(input, init, { end: END, token: 'unused' });
     rec.status = res.status;
     return res;
   } catch (e) { rec.status = -1; throw e; } finally { rec.end = vnow(); }
@@ -397,8 +397,9 @@ for (const [label, again] of [['同一天第二轮', D1A + HOUR], ['第二天', 
 // ================================================================
 describe('V5-4 Shiller 首页慢：≥ 20 秒没回应才算失败（规格 4）', () => {
   beforeAll(freshDb, 60_000);
+  // 第六版（标普500 修复规格 ①②）：没存过链接时先直接请求已知链接，它失败才去首页 → 这里让首页给的那个链接（就是已知链接）回 404，才会请求首页
   it('首页一直不回：从发出首页请求到那次调用返回 ≥ 20 秒（虚拟）才算失败；中证 5 个照常取完', async () => {
-    plan = (u) => (isHome(u) ? 'hang' : null);
+    plan = (u) => (isHome(u) ? 'hang' : u.includes(linkKey(OLD_LINK)) ? new Response('Not Found', { status: 404 }) : null);
     try {
       const rs = await round(D1A);
       expect(bad5xx(rs)).toEqual([]);
@@ -412,7 +413,8 @@ describe('V5-4 Shiller 首页慢：≥ 20 秒没回应才算失败（规格 4）
     } finally { plan = () => null; }
   }, 180_000);
   it('同一天第 2 轮：首页 12 秒（虚拟）才回 → 等到、下载、SPX 和标准答案差 ≤ 0.05', async () => {
-    plan = (u) => (isHome(u) ? { delay: 12_000 } : null);
+    // 第六版：已知链接 404 → 首页（12 秒才回，给一个新链接）→ 新链接走夹具（真 ie_data.xls）
+    plan = (u) => (isHome(u) ? { delay: 12_000, res: htmlRes(homeWith(NEW_LINK)) } : u.includes(linkKey(OLD_LINK)) ? new Response('Not Found', { status: 404 }) : null);
     try {
       const rs = await round(D1A + HOUR);
       expect(bad5xx(rs)).toEqual([]);
