@@ -1580,8 +1580,8 @@ try {
       rows: document.querySelectorAll('#pn-cmp .pn-pair').length, say: [...document.querySelectorAll('#pn-saywords button')].map((b) => b.textContent) }));
     check(`${tg}：第 7 组**不给「开始考」这个按钮**（不硬凑题），但跟读和纠说照常有`,
       g7b.go3 === false && g7b.rows === 4 && g7b.say.length > 0, g7b);
-    check(`${tg}：第 7 组（/ʒ/ vs /dʒ/）照实说"一对最小对立对都没有、只能看口型跟读和纠说"`,
-      g7b.note.includes('一对最小对立对都没有') && g7b.note.includes('只能看口型、跟读和纠说'), g7b.note);
+    check(`${tg}：第 7 组（/ʒ/ vs /dʒ/）照实说"一对最小对立对都没有、只能走「跟我做」跟读和纠说"`,
+      g7b.note.includes('一对最小对立对都没有') && g7b.note.includes('只能走「跟我做」、跟读和纠说'), g7b.note);
 
     // ⑦ 浏览器不支持录音时也当面说（另开一个把 mediaDevices 拿掉的页面来量）
     const p2 = await open({ width: 390, height: 844 });

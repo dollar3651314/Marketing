@@ -104,7 +104,7 @@ export const canEar = (g: PronGroup): boolean => minimalPairsOf(g).length > 0;
 /** 这一组的听辨说明：**有几对说几对**，不够 10 题就说题会重复（底线 3） */
 export function earNote(g: PronGroup): string {
   const n = minimalPairsOf(g).length;
-  if (n === 0) return `这一组（${g.a.ipa} / ${g.b.ipa}）一对最小对立对都没有，所以没有听辨题 —— 只能看口型、跟读和纠说。`;
+  if (n === 0) return `这一组（${g.a.ipa} / ${g.b.ipa}）一对最小对立对都没有，所以没有听辨题 —— 只能走「跟我做」、跟读和纠说。`;
   if (n === 1) return `这一组只有 1 对最小对立对（${minimalPairsOf(g)[0].a.word} / ${minimalPairsOf(g)[0].b.word}），${ROUND_N} 题会一直考这一对。`;
   return `这一组有 ${n} 对最小对立对，${ROUND_N} 题从这 ${n} 对里随机抽，同一对会考到好几次。`;
 }
@@ -261,7 +261,7 @@ function answer(body: Record<string, unknown>): Response {
 async function round(env: Env, now: number, body: Record<string, unknown>): Promise<Response> {
   const g = groupOf(typeof body.组 === 'string' ? body.组.trim() : '');
   if (!g) return bad(`这一组不在发音训练里：${String(body.组 ?? '').slice(0, 40) || '（空）'}`, '刷新一下页面，它会重新给你这七组。', 400);
-  if (!canEar(g)) return bad(`${g.a.ipa} / ${g.b.ipa} 这一组没有听辨题，不会有一轮成绩。`, '这一组只能看口型、跟读和纠说；换一组再考。', 409);
+  if (!canEar(g)) return bad(`${g.a.ipa} / ${g.b.ipa} 这一组没有听辨题，不会有一轮成绩。`, '这一组只能走「跟我做」、跟读和纠说；换一组再考。', 409);
   const int = (v: unknown) => (typeof v === 'number' && Number.isInteger(v) && v >= 0 ? v : null);
   const asked = int(body.考了);
   const ok = int(body.对);
@@ -284,7 +284,7 @@ async function round(env: Env, now: number, body: Record<string, unknown>): Prom
     及格线: `${asked} 题要对 ${Math.ceil(asked * PASS_RATE)} 题`,
     一句话: 过
       ? `过关了：${asked} 题对 ${ok} 题。`
-      : `这一轮没过：${asked} 题只对 ${ok} 题，差 ${Math.ceil(asked * PASS_RATE) - ok} 题。回第 1 步再看一遍口型，这一组的两个音是靠嘴型分的，不是靠猜。`,
+      : `这一轮没过：${asked} 题只对 ${ok} 题，差 ${Math.ceil(asked * PASS_RATE) - ok} 题。回第 1 步再跟着做一遍，这一组的两个音不是靠猜的。`,
     绕口令: 过 ? g.twister : null,
     怎么读: 过 ? '用三最法读 —— 最大声、最清晰、最慢速，直到没有任何发音错误。' : null,
     记录: groupStats(await readRounds(env)),
@@ -305,11 +305,11 @@ async function say(env: Env, now: number, body: Record<string, unknown>): Promis
     );
   const other = k === 'a' ? pair.b.word : pair.a.word;
 
-  if (!env.AI) return bad('这个环境没有绑 Workers AI，听不了你念的。', '正式版和测试版都绑了；本地跑的时候没有。纠说用不了，上面的看口型、对照听和考题照常能用。', 503);
+  if (!env.AI) return bad('这个环境没有绑 Workers AI，听不了你念的。', '正式版和测试版都绑了；本地跑的时候没有。纠说用不了，上面的「跟我做」、对照听和考题照常能用。', 503);
 
   const 今天 = await saysToday(env, now);
   if (今天 >= MAX_SAY_PER_DAY)
-    return bad(`纠说今天已经用了 ${今天} 次，一天最多 ${MAX_SAY_PER_DAY} 次。`, '明天台湾时间早上 8 点以后再来；上面的看口型、对照听和考题照常能用。', 429);
+    return bad(`纠说今天已经用了 ${今天} 次，一天最多 ${MAX_SAY_PER_DAY} 次。`, '明天台湾时间早上 8 点以后再来；上面的「跟我做」、对照听和考题照常能用。', 429);
 
   const audioB64 = typeof body.audio === 'string' ? body.audio : '';
   if (!audioB64) return bad('没收到录音。', '按一下「开始录」，念出那个词，再按一次「停止」。', 400);
@@ -329,7 +329,7 @@ async function say(env: Env, now: number, body: Record<string, unknown>): Promis
   if (used + est > cap)
     return bad(
       `今天的 Workers AI 额度不够了：听一次大概要 ${Math.max(1, Math.round(est))} neurons，今天已经用了 ${Math.round(used)} / ${cap}。`,
-      '明天台湾时间早上 8 点清零，或者到"用量和限额"里把上限改大（上限只有你能改）。上面的看口型、对照听和考题不花钱，照常能用。',
+      '明天台湾时间早上 8 点清零，或者到"用量和限额"里把上限改大（上限只有你能改）。上面的「跟我做」、对照听和考题不花钱，照常能用。',
       429,
     );
 
@@ -350,7 +350,7 @@ async function say(env: Env, now: number, body: Record<string, unknown>): Promis
       await noteAccountLimit(env, now, detail);
       return bad(accountLimitedMessage(detail, now), '今天先练听的那三步，明天再纠说。不会自动重试，不点就不花钱。', 429);
     }
-    return bad(`没听成：${detail}`, '等一下再按一次「开始录」（不会自动重试）；上面的看口型、对照听和考题照常能用。', 502);
+    return bad(`没听成：${detail}`, '等一下再按一次「开始录」（不会自动重试）；上面的「跟我做」、对照听和考题照常能用。', 502);
   }
   const 秒 = got.真实秒数 ?? 秒数;
   await chargeNeurons(env, now, asrNeurons(秒), PRON_PROJECT, 200, PRON_ASR_PURPOSE);

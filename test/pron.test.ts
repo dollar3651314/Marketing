@@ -166,6 +166,23 @@ describe('2. 四步循环：跟我做 → 对照听 → 同一组连考 10 题 �
     expect(PRON_MOD).toContain('4 过关');
   });
 
+  // 2026-11-12 主会话复核时发现的一类洞：口型图整套撤掉了，可是**出错时弹给他看的那些话**
+  // 还在把他指回那块屏幕（"上面的 X、对照听和考题照常能用""今天先 X 和音标""回第 1 步再 X 一遍"，X 就是那四个字）。
+  // 一共 11 处，分散在 pron.ts / pron-page.ts / pron-audio.ts 的错误分支里 ——
+  // 全都只在录音失败、额度用完、没给权限、考砸了的时候才出现，**正是他最需要一句能照做的话的时候**，
+  // 结果指着一块已经不存在的屏幕。钉一条结构性的：源码里（注释除外）不许再出现这四个字。
+  it('撤掉的功能不许在任何一句出错提示里复活：源码里不留"看口型"（注释除外）', () => {
+    const 去注释 = (t: string) =>
+      t.replace(/\/\*[\s\S]*?\*\//g, '').split('\n').filter((l) => !/^\s*(\/\/|\*)/.test(l)).join('\n');
+    for (const f of ['pron.ts', 'pron-page.ts', 'pron-audio.ts', 'pron-content.ts', 'pron-lesson.ts']) {
+      const p = path.join(__dirname, '..', 'src', f);
+      if (!existsSync(p)) continue;
+      const 命中 = 去注释(readFileSync(p, 'utf8')).split('\n')
+        .map((l, i) => [i + 1, l] as const).filter(([, l]) => l.includes('看口型'));
+      expect([f, 命中]).toEqual([f, []]);
+    }
+  });
+
   it('第 1 步不考：接口照样把课件原文的外号和口型定位给页面（内容没被砍掉，只是不再一屏摊开）', () => {
     const c = groupCard(G1) as Record<string, any>;
     expect(c.a).toEqual({ 音标: '/e/', 外号: '中咧嘴', 口型: ['咧嘴', '上下齿距离为 1cm 左右（可容纳一根食指）', '舌头平躺抵下齿'] });
@@ -239,7 +256,7 @@ describe('3. 照实说，不硬凑题（底线 3）', () => {
     expect(canEar(g7)).toBe(false);
     expect(groupsForEar().map((g) => g.id)).toEqual(['g1', 'g2', 'g3', 'g4', 'g5', 'g6']);
     expect(earNote(g7)).toContain('一对最小对立对都没有');
-    expect(earNote(g7)).toContain('只能看口型、跟读和纠说');
+    expect(earNote(g7)).toContain('只能走「跟我做」、跟读和纠说');
     // 页面：这一组**不给「开始考」这个按钮**
     expect(PRON_JS).toContain("pShow('pn-go3wrap',!!PN.cur['能听辨']);");
     // 服务端也拦：这一组报不上来一轮成绩
@@ -524,7 +541,7 @@ describe('5. 纠说：只说「机器听成了什么」，不说"你念对了"�
   it('页面：没有麦克风权限 / 浏览器不支持 / 读不出录音，都**当面说**，而且说明其余部分照常能用', () => {
     expect(PRON_JS).toContain('这个浏览器不支持录音，纠说用不了');
     expect(PRON_JS).toContain('没拿到麦克风权限');
-    expect(PRON_JS).toContain('上面的看口型、对照听和考题照常能用');
+    expect(PRON_JS).toContain('上面的「跟我做」、对照听和考题照常能用');
     // 纠说那一块出错只写进它自己那条消息（#pn-saymsg），不影响第 1～3 步
     expect(PRON_MOD).toContain('id="pn-saymsg"');
     expect(PRON_JS).toContain("function pSayMsg(s){var m=pq('pn-saymsg');");
@@ -1029,8 +1046,15 @@ describe('11. 念给我听：浏览器自带的朗读，不调 AI、不花钱；
       expect(p.said.length).toBe(0);              // 刚进来不念，不吓人
       p.next();
       expect(p.said.length).toBe(1);
-      expect(p.said[0].text).toBe(LESSON[0].步[1].说.split('**').join(''));
+      const s1 = LESSON[0].步[1];
+      // **自动念和手点「🔈」念的必须是同一段字**：只念前半句，提示里"塞一根手指""捏住鼻子"
+      // 这种真能照着做的话他就听不到，等于还是要低头看屏幕
+      expect(p.said[0].text).toContain(s1.说.split('**').join(''));
+      if (s1.提示) expect(p.said[0].text).toContain(s1.提示.split('**').join(''));
       expect(p.said[0].lang).toBe('zh-CN');
+      const auto = p.said[0].text;
+      p.cbtn('🔈')!.click();
+      expect(p.said[1].text).toBe(auto);
     } finally { await p.close(); }
   });
 

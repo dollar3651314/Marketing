@@ -495,6 +495,8 @@ function pCBtn(label,cls,fn){
   b.addEventListener('click',fn);
   return b;
 }
+/* 念出来的是哪些字：这一步那句话 + 提示（**自动念和手点那个按钮走同一个函数，不许有两套**） */
+function pSayText(s){return s['说']+(s['提示']?('　'+s['提示']):'');}
 /* 画这一步。move = 这次是不是"翻到了新的一句"（翻页才自动念，重画不念） */
 function pCoach(move){
   var box=pq('pn-cbtns');
@@ -540,14 +542,16 @@ function pCoach(move){
   }
   box.appendChild(pCBtn(PN.si+1<PN.bu.length?'做好了，下一步':'做好了，这一组走完','go primary',pCNext));
   box.appendChild(pCBtn(PN.noSpeak?'这台设备读不了中文，照着屏幕做就行':'🔈 念给我听','',function(){
-    pSpeak(s['说']+(s['提示']?('　'+s['提示']):''));
+    pSpeak(pSayText(s));
   }));
   if(PN.si>0)box.appendChild(pCBtn('上一步','',pCPrev));
   pText('pn-cnum','第 '+(PN.si+1)+' / 共 '+PN.bu.length+' 步');
   var bar=pq('pn-cbar');if(bar)bar.style.width=Math.round((PN.si+1)*100/PN.bu.length)+'%';
   pMirTarget();
-  /* 翻到新的一句就自动念（这样他可以对着镜子做，不用盯着屏幕）；开关关掉就不念 */
-  if(move&&PN.speak)pSpeak(s['说']);
+  /* 翻到新的一句就自动念（这样他可以对着镜子做，不用盯着屏幕）；开关关掉就不念。
+     **念的内容和手点「🔈 念给我听」完全一样**（那一句 + 提示）：
+     提示里才有"塞一根手指""捏住鼻子"这种能照着做的话，只念前半句等于还是要他低头看屏幕 */
+  if(move&&PN.speak)pSpeak(pSayText(s));
 }
 function pCNext(){
   if(PN.si+1<PN.bu.length){PN.si++;pCoach(true);return;}
@@ -786,7 +790,7 @@ function pRec(b){
   if(PN.rec){pRecStop();return;}
   var md=navigator.mediaDevices;
   if(!md||!md.getUserMedia||typeof MediaRecorder==='undefined'){
-    say('这个浏览器不支持录音，纠说用不了。\\n怎么办：换 Chrome / Safari 的新版本再试；上面的看口型、对照听和考题照常能用。');
+    say('这个浏览器不支持录音，纠说用不了。\\n怎么办：换 Chrome / Safari 的新版本再试；上面的「跟我做」、对照听和考题照常能用。');
     return;
   }
   var m=pq(pSayId(b,'saymsg'));if(m)m.hidden=true;
@@ -823,7 +827,7 @@ function pRec(b){
     r.start();
   },function(e){
     /* 没给麦克风权限：当面说清楚，**其余部分照常能用** */
-    say('没拿到麦克风权限（'+(e&&e.name||e)+'），纠说用不了。\\n怎么办：在浏览器地址栏左边的图标里允许麦克风，再按一次「🎤 念」。不给也没关系 —— 上面的看口型、对照听和考题照常能用。');
+    say('没拿到麦克风权限（'+(e&&e.name||e)+'），纠说用不了。\\n怎么办：在浏览器地址栏左边的图标里允许麦克风，再按一次「🎤 念」。不给也没关系 —— 上面的「跟我做」、对照听和考题照常能用。');
   });
 }
 function pSayGo(b,audio,secs){
