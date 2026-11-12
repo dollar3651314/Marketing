@@ -115,7 +115,7 @@ export async function pronAudioApi(env: Env, req: Request, now: number, item: st
     console.log(JSON.stringify({ event: 'pron.tts_error', item, detail }));
     if (isAccountLimited(detail)) {
       await noteAccountLimit(env, now, detail);
-      return bad(accountLimitedMessage(detail, now), '今天先看口型和音标，明天再点🔊。不会自动重试，不点就不花钱。', 429);
+      return bad(accountLimitedMessage(detail, now), '今天先跟着「跟我做」一步步做，明天再点🔊。不会自动重试，不点就不花钱。', 429);
     }
     return bad(`发音没生成出来：${detail}`, '上面的口型和音标照常看；等一下再点一次🔊（不会自动重试）。', 502);
   }
@@ -123,7 +123,7 @@ export async function pronAudioApi(env: Env, req: Request, now: number, item: st
   const bytes = new Uint8Array(mp3);
   if (!bytes.byteLength) {
     await chargeNeurons(env, now, est, PRON_PROJECT, 0, PRON_TTS_PURPOSE);
-    return bad('发音生成出来是空的。', '等一下再点一次🔊（不会自动重试）；一直这样就先看口型和音标。', 502);
+    return bad('发音生成出来是空的。', '等一下再点一次🔊（不会自动重试）；一直这样就先跟着「跟我做」走。', 502);
   }
   // 存一次，之后永久复用（同一段并发点两下时后到的那次覆盖，内容一样）
   await env.DB.prepare('INSERT INTO pron_audio (item, mp3, at) VALUES (?1, ?2, ?3) ON CONFLICT (item) DO UPDATE SET mp3 = ?2, at = ?3').bind(audioKey(item), mp3, now).run();
