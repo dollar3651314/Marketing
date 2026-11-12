@@ -609,6 +609,7 @@ export async function refreshYields(env: Env, now: number, f: FetchLike = (u, i)
  *       Shiller：上次成功下载过的 ie_data.xls 链接存在 fund_valuation（SPX 那行 data.xls_url），先直接下载它（失败、不是 403 / 429 就回退首页找）；
  *         第六版（11/12 正式版首页连接被重置）：库里还没存过链接时，第一次直接下载代码里的已知链接 SHILLER_KNOWN_XLS（不先请求首页），失败、不是 403 / 429 才回退首页；
  *         存的链接数据没前进、再看首页时首页连不上 → 保留旧数据，页面注明"Shiller 本月还没更新（首页连不上）"（不记 ok_day，下次刷新再试）；
+ *         这个月之后的轮次不再重新下载存的链接，只请求首页（1 个请求）：首页给新链接才下载，还是同一个链接就算本月完成（主会话 11/12 补充）；
  *       首页单独一步（超时放宽到 20 秒，仍受 25 秒截止）；下载一步只把复合文档里的工作簿流拆成 ≤ 128KB 的块存进 D1（fund_val_blob）；
  *       下一步读第一块里的目录和共享字符串表；之后每次只解析一块里的记录（xlsWalk + shillerCell，状态存 fund_val_work）；
  *       读到表尾才算出 CAPE、存 fund_valuation、删掉块。
@@ -882,9 +883,14 @@ export async function refreshValuation(env: Env, cursor: number, now: number, f:
         // 开一轮：上次成功下载过的链接先直接用；库里没有（或存的不像样）就直接下载代码里的已知链接（第六版，不先请求首页）。
         // 两种都是 cached：下载失败、不是 403 / 429 就回退首页找
         await markTry(env, key, now);
-        const url = (await storedOf(env, 'SPX'))?.xls_url;
+        const sOld = await storedOf(env, 'SPX');
+        const url = sOld?.xls_url;
         const okUrl = (u: string | undefined): u is string => !!u && shillerXlsUrl(`<a href="${u.replace(/"/g, '')}">`) === u;
-        w = okUrl(url) ? { day: day8(now), stage: 'dl', url, cached: true, n: 0, len: 0 } : { day: day8(now), stage: 'dl', url: SHILLER_KNOWN_XLS, cached: true, known: true, n: 0, len: 0 };
+        // 第六版（主会话补充）：本月已经用存的链接下载过、数据没前进、首页连不上（stale_month 是本月 + stale_why）→ "本月已下载、待找新链接"：
+        // 之后的轮次不再重新下载存的链接，只请求首页（1 个请求）；首页给新链接才下载，还是同一个链接就算本月完成
+        const pendingHome = okUrl(url) && sOld?.stale_month === day8(now).slice(0, 7) && !!sOld?.stale_why;
+        w = pendingHome ? { day: day8(now), stage: 'home', recheck: url, n: 0, len: 0 } : okUrl(url) ? { day: day8(now), stage: 'dl', url, cached: true, n: 0, len: 0 } : { day: day8(now), stage: 'dl', url: SHILLER_KNOWN_XLS, cached: true, known: true, n: 0, len: 0 };
+        work.set(key, w); // 出错处理按 work 里的这一轮判断（只请求首页的那种要认得出 recheck）
       }
       if (w.stage === 'home') {
         // 首页单独一步，超时放宽到 20 秒（仍受 25 秒截止）
@@ -980,7 +986,7 @@ export async function refreshValuation(env: Env, cursor: number, now: number, f:
     reason = `${pre}${part ? part + '：' : ''}${why(e)}${stop ? `，这一轮不再请求${FAMILY_NAME[fam]}` : ''}`;
     run.failed.push(key);
     // 第六版：存的链接数据没前进、再看首页时首页连不上 → 保留旧数据，页面注明"Shiller 本月还没更新（首页连不上）"，不记错误。
-    // 不记 ok_day：下次点「刷新数据」（每天最多 2 轮）再试，首页恢复了就能找到新链接
+    // 不记 ok_day：下次点「刷新数据」（每天最多 2 轮）只再请求首页（不重下存的链接），首页恢复了就能找到新链接
     const staleOld = key === 'shiller' && homeReq && (w as ShWork | undefined)?.recheck ? await storedOf(env, 'SPX') : null;
     if (staleOld) reason += '；保留现有数据（Shiller 本月还没更新，首页连不上）';
     const keep = key.startsWith('cs-perf:') && w && Array.isArray(w.segs);

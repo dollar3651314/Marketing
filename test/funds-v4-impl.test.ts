@@ -438,11 +438,14 @@ describe('D3. 取数：每天最多一轮、分段 / 分步、同一来源间隔
     const spx0 = (await valuationList(env(), NOW))!.items.find((x) => x.code === 'SPX')!;
     const DEC = Date.UTC(2026, 11, 2, 2);
     await db.batch(ALL_CS.map((k) => db.prepare("UPDATE fund_val_fetch SET day = '2026-12-02', ok_day = '2026-12-02' WHERE src = ?1").bind(k)));
+    // 主会话补充：第 1 次（网络错误）先用存的链接下载、没前进、再看首页；之后的轮次（503）不再重下存的链接，只请求首页
+    let k = 0;
     for (const bad of [() => { throw new TypeError('connection reset'); }, () => new Response('x', { status: 503 })]) {
       await db.prepare("UPDATE fund_val_fetch SET day = '2026-12-01', tries = 0 WHERE src = 'shiller'").run();
       const b = valFake((u) => (u === 'https://shillerdata.com/' ? bad() : null));
       const rb = await round(DEC, b);
-      expect(b.log.map((x) => x.u)).toEqual([SHILLER_KNOWN_XLS, 'https://shillerdata.com/']);
+      expect(b.log.map((x) => x.u)).toEqual(k++ === 0 ? [SHILLER_KNOWN_XLS, 'https://shillerdata.com/'] : ['https://shillerdata.com/']);
+      expect(rb.every((r) => r.requests <= 1)).toBe(true);
       expect(rb.at(-1)).toMatchObject({ code: 'SPX', status: 'failed', reason: expect.stringContaining('Shiller 本月还没更新，首页连不上') });
       const v = (await valuationList(env(), DEC))!;
       const spx1 = v.items.find((x) => x.code === 'SPX')!;
@@ -452,13 +455,42 @@ describe('D3. 取数：每天最多一轮、分段 / 分步、同一来源间隔
       expect(v.due).toBe(true);
       expect((await db.prepare('SELECT COUNT(*) AS n FROM fund_val_blob').first<{ n: number }>())!.n).toBe(0);
     }
-    // 首页恢复、还是那个链接：注明变回普通的"本月还没更新"，这个月算完
+    // 同一天第 2 轮（首页还是连不上）：也只请求首页；第 3 轮不再请求
+    const same = valFake((u) => (u === 'https://shillerdata.com/' ? new Response('x', { status: 502 }) : null));
+    await round(DEC + 60_000, same);
+    expect(same.log.map((x) => x.u)).toEqual(['https://shillerdata.com/']);
+    await round(DEC + 120_000, same);
+    expect(same.log.length).toBe(1);
+    // 首页恢复、还是那个链接：只请求首页、不重下；注明变回普通的"本月还没更新"，这个月算完
     await db.prepare("UPDATE fund_val_fetch SET day = '2026-12-01', tries = 0 WHERE src = 'shiller'").run();
     const ok = valFake((u) => (u === 'https://shillerdata.com/' ? new Response(`<a href="${SHILLER_KNOWN_XLS}">ie_data.xls</a>`) : null));
     await round(DEC, ok);
+    expect(ok.log.map((x) => x.u)).toEqual(['https://shillerdata.com/']);
     const v2 = (await valuationList(env(), DEC))!;
     expect(v2.items.find((x) => x.code === 'SPX')!.note).toMatch(/^Shiller 本月还没更新（最新是/);
     expect(v2.due).toBe(false);
+  });
+  it('（第六版补充）本月已下载、待找新链接：首页恢复并给出新链接 → 只下载新文件（不重下存的链接），数据前进、不再注明、链接换新', async () => {
+    await db.batch(ALL_CS.map((k) => db.prepare("INSERT INTO fund_val_fetch (src, day, tries, at, ok_day) VALUES (?1, '2026-11-11', 1, 0, '2026-11-11')").bind(k)));
+    await round(NOW, valFake());
+    const spx0 = (await valuationList(env(), NOW))!.items.find((x) => x.code === 'SPX')!;
+    const DEC = Date.UTC(2026, 11, 2, 2);
+    await db.batch(ALL_CS.map((k) => db.prepare("UPDATE fund_val_fetch SET day = '2026-12-02', ok_day = '2026-12-02' WHERE src = ?1").bind(k)));
+    const down = valFake((u) => (u === 'https://shillerdata.com/' ? new Response('x', { status: 503 }) : null));
+    await round(DEC, down);
+    expect(down.log.map((x) => x.u)).toEqual([SHILLER_KNOWN_XLS, 'https://shillerdata.com/']);
+    const NEW = 'https://img1.wsimg.com/blobby/go/a/downloads/c/ie_data.xls?ver=11';
+    const up = valFake((u) => (u === 'https://shillerdata.com/' ? new Response(`<a href="${NEW}">ie_data.xls</a>`) : u === NEW ? new Response(shillerXls(201, (i) => 20 + i / 10) as unknown as BodyInit) : null));
+    const rs = await round(DEC + 60_000, up);
+    expect(up.log.map((x) => x.u)).toEqual(['https://shillerdata.com/', NEW]);
+    expect(up.log[1].slept - up.log[0].slept + (up.log[1].t - up.log[0].t)).toBeGreaterThanOrEqual(VAL_GAP_MS - 5);
+    expect(rs.every((r) => r.requests <= 1)).toBe(true);
+    const v = (await valuationList(env(), DEC + 60_000))!;
+    const spx1 = v.items.find((x) => x.code === 'SPX')!;
+    expect(spx1.pe_now_date > spx0.pe_now_date).toBe(true);
+    expect(spx1.note).toBeUndefined();
+    expect(v.due).toBe(false);
+    expect(JSON.parse((await db.prepare("SELECT data FROM fund_valuation WHERE code = 'SPX'").first<{ data: string }>())!.data).xls_url).toBe(NEW);
   });
   it('接口：POST /api/funds/valuation/refresh 要登录、cursor 越界 400；GET /api/funds 带 valuation', async () => {
     expect((await handle(new Request(HOST + '/api/funds/valuation/refresh', { method: 'POST', body: '{}' }), env(), NOW)).status).toBe(401);
