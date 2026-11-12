@@ -8,7 +8,7 @@
  */
 import { FAVICON_SVG, PWA_PNG } from './pwa-icons';
 
-export const SW_VERSION = 'v1';
+export const SW_VERSION = 'v2';
 export const APP_NAME = '工作平台';
 export const SHORT_NAME = '工作台';
 const NAVY = '#0F1B33';
@@ -37,11 +37,11 @@ export const SW_CACHED = ['/icon-192.png', '/icon-512.png', '/icon-maskable-512.
 /** 离线提示页：不引任何外部资源，图标内联 */
 export const OFFLINE_HTML = `<!doctype html><html lang="zh-Hans"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="theme-color" content="${NAVY}"><title>${SHORT_NAME}</title><style>
-:root{--bg:#F3F5F8;--ink:#13203A;--muted:#616D80;--btn:#0B7A6E;color-scheme:light}
-@media (prefers-color-scheme: dark){:root{--bg:#0B1220;--ink:#E7ECF4;--muted:#8D99AE;--btn:#14B8A6;color-scheme:dark}}
+:root{--bg:#F3F5F8;--ink:#13203A;--muted:#616D80;--btn:#14B8A6;color-scheme:light}
+@media (prefers-color-scheme: dark){:root{--bg:#0B1220;--ink:#E7ECF4;--muted:#8D99AE;--btn:#2DD4BF;color-scheme:dark}}
 body{margin:0;min-height:100vh;display:grid;place-items:center;background:var(--bg);color:var(--ink);font:15px/1.6 "Noto Sans TC","PingFang TC","Microsoft JhengHei",sans-serif;padding:16px;box-sizing:border-box}
 main{text-align:center;max-width:320px}svg{width:72px;height:72px}h1{font-size:18px;margin:16px 0 4px}p{margin:0 0 20px;color:var(--muted)}
-button{font:inherit;font-weight:700;min-height:44px;padding:0 28px;border:0;border-radius:10px;background:var(--btn);color:#fff;cursor:pointer}
+button{font:inherit;font-weight:700;min-height:44px;padding:0 28px;border:0;border-radius:10px;background:var(--btn);color:#0F1B33;cursor:pointer}
 button:focus-visible{outline:2px solid #B45309;outline-offset:2px}
 </style></head><body><main id="offline">${FAVICON_SVG.replace('<svg ', '<svg aria-hidden="true" ')}
 <h1>连不上工作台，联网后点刷新</h1><p>现在没有网络，或者服务器没回应。页面上的数据都要联网读，这里不显示旧数据。</p>
@@ -87,19 +87,25 @@ export const PWA_HEAD = `<link rel="manifest" href="/manifest.webmanifest">
 <link rel="icon" href="/favicon.svg" type="image/svg+xml"><link rel="icon" href="/favicon-32.png" sizes="32x32" type="image/png">
 <link rel="apple-touch-icon" href="/apple-touch-icon.png">
 <meta name="theme-color" media="(prefers-color-scheme: light)" content="${NAVY}"><meta name="theme-color" media="(prefers-color-scheme: dark)" content="${NAVY_DARK}">
-<meta name="apple-mobile-web-app-capable" content="yes"><meta name="mobile-web-app-capable" content="yes"><meta name="apple-mobile-web-app-title" content="${SHORT_NAME}">`;
+<meta name="apple-mobile-web-app-capable" content="yes"><meta name="mobile-web-app-capable" content="yes"><meta name="apple-mobile-web-app-title" content="${SHORT_NAME}">
+<meta name="apple-mobile-web-app-status-bar-style" content="black">
+<style>/* 「刷新」（PWA，产品复核 Y1）：电脑宽度在顶栏；手机（≤640px）收进"···"第一项，不挤一级菜单 */
+#tacts #pwa-refresh-m{display:none}@media (max-width:640px){.top #pwa-refresh{display:none}#tacts #pwa-refresh-m{display:block}}
+/* 窄屏（≤420px，如 393 宽）一级菜单每项左右各收 2px，让"基金观察"不横划就看得见（产品复核 Y1；只在这个宽度生效） */
+@media (max-width:420px){.top .nav1 a{padding-left:8px;padding-right:8px}}</style>`;
 
 /**
- * 插在后台页面最后：① 只在装到主屏幕后打开（standalone）时显示顶栏「刷新」（#pwa-refresh），点了整页重新加载（地址的 #/… 保留，停在原处）；
+ * 插在后台页面最后：① 只在装到主屏幕后打开（standalone）时显示「刷新」：电脑宽度在顶栏（#pwa-refresh），手机 ≤640px 在"···"第一项（#pwa-refresh-m，产品复核 Y1），点了整页重新加载（地址的 #/… 保留，停在原处）；
  * ② 支持才注册 /sw.js。整段 try/catch，出错不影响页面其他部分。注意：这段会被插进 ADMIN_PAGE 的模板字符串，里面不能有反引号和 \${。
  */
 export const PWA_JS = `<script>(function(){try{
-var b=document.getElementById('pwa-refresh');
+var bs=[document.getElementById('pwa-refresh'),document.getElementById('pwa-refresh-m')].filter(Boolean);
+var sum=document.querySelector('#more-menu>summary');
 var mq=window.matchMedia?window.matchMedia('(display-mode: standalone)'):null;
 function sa(){return !!(mq&&mq.matches)||window.navigator.standalone===true;}
-function upd(){if(b)b.hidden=!sa();}
+function upd(){var on=sa();bs.forEach(function(b){b.hidden=!on;});if(sum)sum.setAttribute('aria-label',on?'更多：刷新、公司总览、登出':'更多：公司总览、登出');}
 upd();if(mq&&mq.addEventListener)mq.addEventListener('change',upd);
-if(b)b.addEventListener('click',function(){b.disabled=true;b.textContent='刷新中…';location.reload();});
+bs.forEach(function(b){b.addEventListener('click',function(){bs.forEach(function(x){x.disabled=true;x.textContent='刷新中…';});location.reload();});});
 if('serviceWorker' in navigator&&window.isSecureContext){navigator.serviceWorker.register('/sw.js',{scope:'/'}).catch(function(e){console.log('sw register failed',e&&e.message);});}
 }catch(e){}})();</script>`;
 
