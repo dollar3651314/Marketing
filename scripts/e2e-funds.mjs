@@ -52,6 +52,10 @@
  *   估值取数修复（2026-11-11，规格 5 文案；接口一侧在 test/funds-v5-valfix.test.ts）：VD1～VD3 从没取到过的写"还没有数据"、不出现"显示的是上次的数据"；有旧数据的才出现。
  *   VA. 1200 浅色："估值：现在贵不贵"6 张卡（data-val-code）、数值和判词（< 30 / 30～70 / > 70）、"不是预测、不是投资建议"、来源"中证指数有限公司、Robert Shiller"、
  *       子菜单"估值"点了定位 / 滚动高亮、切"美国"只剩标普500、"中国"5 张、"新加坡"只剩标普500（含 XUS；主会话规格更正，依据原型 v3）、对比度；VB. 判词分界；VC. 400 深色不横向溢出、对比度。
+ *   估值"导入的历史"（2026-11-12，Amos 11/12 都按建议；I2 未定，默认导入数据不进顶部总结句；接口一侧在 test/funds-v7-import.test.ts；页面约定见 IM 段开头）：
+ *   IM1. 1200 浅色：估值板块里有"参考：导入的历史"和按钮"导入估值历史"；选文件上传 → POST /api/funds/valuation/import（JSON 原样）→ "已导入 X 只…"；
+ *        卡片判词"比过去 10 年 / 上市以来 X% 的时间都贵"、三档（< 30 / 30～70 / > 70）、只有一个点写"攒够历史前不比贵贱"、"代理"标签；
+ *        市场切换过滤；顶部总结句导入前后文字相同；原来 6 张估值卡不变；免责在；对比度。IM2. 400 深色：不横向溢出、对比度、市场切换。
  *   全程没有页面脚本报错（pageerror）。
  *
  * 页面约定（研发照加；要改名就在同一个提交里改这里并写明）：
@@ -1165,6 +1169,172 @@ if (!PROTO) {
     const c = await o.card('000016');
     check('VD3 上证50 卡上写"还没有数据"（或"还没有估值数据"），不写"上次"', /还没有(估值)?数据/.test(c) && !/上次/.test(c), c.slice(0, 200));
     await o.ctx.close();
+  });
+
+  // ================================================================ 估值"导入的历史"（2026-11-12，Amos 11/12 都按建议；测试先写，C154）
+  // 规格（主会话派工单）：估值板块里有"参考：导入的历史"网格和"导入估值历史"按钮；上传后显示"已导入 X 只…"；
+  //   卡片判词"比过去 10 年 / 上市以来 X% 的时间都贵"，< 30 / 30～70 / > 70 三档；只有一个点的写"攒够历史前不比贵贱"；"代理"标签；市场切换过滤；
+  //   顶部总结句不受导入数据影响（I2 未定，默认不进：导入前后总结句文字相同）；400 宽不横向溢出；深浅色对比度 ≥ 4.5；免责在。
+  // 数据：自造夹具 test/fixtures/funds/val-import-qa.json（5 只、公式生成，不是真实数据）；接口在浏览器这一侧用替身，val_import 的字段见 test/funds-v7-import.test.ts 文件头。
+  // 页面约定（研发照加；要改名就在同一个提交里改这里并写明）：
+  //   - "参考：导入的历史"在估值板块（标题"估值：现在贵不贵"那个 section）里；每只导入的一张卡带 data-imp-code="<基金代码>"，**不用 data-val-code**（那是 6 个指数的卡，VA 段数它）。
+  //   - 按钮可见文字含"导入估值历史"，点了弹出选文件（input[type=file]，可以藏起来）；选好后页面把文件内容原样作 JSON 请求体 POST /api/funds/valuation/import，
+  //     成功后重新 GET /api/funds，页面写"已导入 X 只"（X = 回包 imported）。
+  //   - 判词所在元素（或它到卡片之间的祖先）带 data-tier="lo|mid|hi"，或 class 里有 lo / mid / hi（现有估值卡 .fu-verdict 的做法）：dear < 30 → lo，30～70（含两端）→ mid，> 70 → hi。
+  //     判词文字：short=false 写"比过去 10 年 X% 的时间都贵"，short=true 写"比上市以来 X% 的时间都贵"（X = dear 四舍五入到整数）；metric 为 null 写"攒够历史前不比贵贱"、不写"% 的时间都贵"。
+  //   - basis 里有"代理"的卡写"代理"（标签），没有的不写。
+  //   - 市场切换：按 val_import 每只的 market（全部 5；美国 QQQ、SCHD；新加坡 ES3、UPD；中国 588000）。
+  const IMPFX = JSON.parse(readFileSync(path.join(ROOT, 'test/fixtures/funds/val-import-qa.json'), 'utf8'));
+  const MK2 = Object.fromEntries(SNAP2.items.map((x) => [x.code, x.market]));
+  /** 参考算法（和 test/funds-v7-import.test.ts 同一份规格）：fixture → GET /api/funds 的 val_import.items */
+  const impItems = (() => {
+    const ymN = 2026 * 12 + 10; // 2026-11
+    const ymOf = (s) => Number(s.slice(0, 4)) * 12 + Number(s.slice(5, 7)) - 1;
+    return IMPFX.indexes.map((x) => {
+      const pe = x.series.pe, dy = x.series.dy;
+      const metric = pe.length >= 36 && ymN - ymOf(pe[pe.length - 1][0]) <= 12 ? 'pe' : dy.length >= 24 ? 'dy' : null;
+      const s = metric === 'pe' ? pe : metric === 'dy' ? dy : pe.length ? pe : dy;
+      const last = s[s.length - 1];
+      const base = { code: x.code, name: x.name, funds: x.funds, market: MK2[x.code], source: x.source, basis: x.basis, metric, now: last[1], now_date: last[0] };
+      if (!metric) return { ...base, pct: null, dear: null, n: 1, short: true };
+      const w = s.slice(-120).map((p) => p[1]);
+      const pct = Math.round((w.filter((v) => v <= last[1]).length / w.length) * 1000) / 10;
+      return { ...base, pct, dear: metric === 'pe' ? pct : Math.round((100 - pct) * 10) / 10, n: w.length, short: w.length < 120 };
+    });
+  })();
+  const IMP = Object.fromEntries(impItems.map((x) => [x.code, x]));
+  const tierOf = (d) => (d == null ? null : d < 30 ? 'lo' : d > 70 ? 'hi' : 'mid');
+  const snapI = (withImp) => ({ ...snapV(VREF.items), ...(withImp ? { val_import: { items: impItems } } : {}) });
+  /** 打开页面：GET /api/funds 先不带（或带）val_import；POST /api/funds/valuation/import 记下请求体、回 {imported, replaced, skipped}，之后 GET 带上 val_import */
+  async function openI(opts, withImp = false) {
+    const o = await openV(opts);
+    o.api.snap = snapI(withImp);
+    o.imports = [];
+    await o.ctx.route(/\/api\/funds\/valuation\/import(\?.*)?$/, async (r) => {
+      let body = null;
+      try { body = JSON.parse(r.request().postData() || ''); } catch { body = { bad: (r.request().postData() || '').slice(0, 80) }; }
+      o.imports.push(body);
+      o.api.snap = snapI(true);
+      await r.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ imported: impItems.length, replaced: 0, skipped: [] }) });
+    });
+    return o;
+  }
+  const impCards = (page) => page.locator(`${R} [data-imp-code]`).filter({ visible: true });
+  const impCodes = async (page) => (await impCards(page).evaluateAll((es) => es.map((e) => e.getAttribute('data-imp-code')))).sort();
+  const impText = async (page, c) => (await page.locator(`${R} [data-imp-code="${c}"]`).first().innerText({ timeout: 1500 }).catch(() => '')).replace(/\s+/g, ' ');
+  /** 卡里判词那一档：含"的时间都贵"的最小元素往上到卡片，第一个 data-tier 或 class lo / mid / hi */
+  const impTier = (page, c) => page.evaluate(({ R, c }) => {
+    const card = document.querySelector(`${R} [data-imp-code="${c}"]`);
+    if (!card) return 'no-card';
+    const els = [...card.querySelectorAll('*')].filter((e) => /的时间都贵/.test(e.textContent || '') && ![...e.children].some((k) => /的时间都贵/.test(k.textContent || '')));
+    for (let e = els[0]; e; e = e === card ? null : e.parentElement) {
+      if (e.dataset?.tier) return e.dataset.tier;
+      const t = [...e.classList].find((k) => ['lo', 'mid', 'hi'].includes(k));
+      if (t) return t;
+    }
+    return els.length ? 'no-tier' : 'no-verdict';
+  }, { R, c });
+  const ledeText = async (page) => (await page.locator(`${R} [aria-label="总结"], ${R} #fu-lede`).first().innerText({ timeout: 1500 }).catch(() => '')).replace(/\s+/g, ' ').trim();
+  /** 卡上判词应该是什么 */
+  const verdictRe = (x) => new RegExp(`比(过去\\s*)?${x.short ? '上市以来' : '10\\s*年'}\\s*${Math.round(x.dear)}\\s*%\\s*的时间都贵`);
+  async function impCheck(page, tag) {
+    const bad = [];
+    for (const x of impItems) {
+      const t = await impText(page, x.code), miss = [];
+      if (!t) { bad.push([x.code, '没有卡']); continue; }
+      if (!t.includes(x.name)) miss.push('名字');
+      if (x.metric) {
+        if (!verdictRe(x).test(t)) miss.push(`判词 ${verdictRe(x).source}`);
+        if (x.short ? !/上市以来/.test(t) : /上市以来/.test(t)) miss.push(x.short ? '不足 120 点要写"上市以来"' : '够 120 点不该写"上市以来"');
+        const tr = await impTier(page, x.code);
+        if (tr !== tierOf(x.dear)) miss.push(`档位 ${tr}，应为 ${tierOf(x.dear)}（贵的程度 ${x.dear}）`);
+      } else {
+        if (!/攒够历史前不比贵贱/.test(t)) miss.push('只有一个点要写"攒够历史前不比贵贱"');
+        if (/%\s*的时间都贵/.test(t)) miss.push('只有一个点不该写"% 的时间都贵"');
+      }
+      if (/代理/.test(x.basis) !== /代理/.test(t)) miss.push(/代理/.test(x.basis) ? '缺"代理"标签' : '不该有"代理"');
+      if (miss.length) bad.push([x.code, miss, t.slice(0, 200)]);
+    }
+    check(`${tag} 每张导入卡：名字、判词"比过去 10 年 / 上市以来 X% 的时间都贵"、三档（< 30 / 30～70 / > 70）、单点写"攒够历史前不比贵贱"、"代理"标签`, bad.length === 0, bad);
+  }
+
+  await section('IM1 导入的历史 1200 浅色', async () => {
+    check('IM 前提：夹具 5 只的预期覆盖三档 + 单点 + short / 不 short + pe / dy',
+      JSON.stringify(impItems.map((x) => [x.code, x.metric, tierOf(x.dear), x.short])) === JSON.stringify([['QQQ', 'pe', 'hi', false], ['ES3', 'dy', 'lo', true], ['588000', 'pe', 'mid', true], ['SCHD', 'dy', 'mid', true], ['UPD', null, null, true]]),
+      impItems.map((x) => [x.code, x.metric, x.dear, x.n]));
+    const o = await openI({ width: 1200, height: 900 });
+    const { page } = o;
+    await enter(page);
+    await page.locator(`${R} [data-val-code]`).first().waitFor({ state: 'attached', timeout: WAIT }).catch(() => {});
+    const mv = await markVal(page);
+    const st0 = (await page.locator('[data-qa-val]').innerText().catch(() => '')).replace(/\s+/g, ' ');
+    check('IM1 估值板块里有"参考：导入的历史"', !!mv && /参考[：:]\s*导入的历史/.test(st0), st0.slice(0, 200));
+    const btn = page.locator('[data-qa-val]').getByRole('button', { name: /导入估值历史/ }).first();
+    check('IM1 估值板块里有按钮"导入估值历史"（看得见）', await btn.isVisible().catch(() => false));
+    const lede0 = await ledeText(page);
+    check('IM1 前提：读到顶部总结句', lede0.length > 0, lede0);
+    let chosen = false;
+    try {
+      const [fc] = await Promise.all([page.waitForEvent('filechooser', { timeout: 3000 }), btn.click({ timeout: 2000 })]);
+      await fc.setFiles({ name: 'val-import-qa.json', mimeType: 'application/json', buffer: Buffer.from(JSON.stringify(IMPFX)) });
+      chosen = true;
+    } catch { /* 下面报红 */ }
+    check('IM1 点"导入估值历史"弹出选文件', chosen);
+    await page.waitForFunction((R) => /已导入\s*\d+\s*只/.test(document.querySelector(R)?.innerText || ''), R, { timeout: WAIT }).catch(() => {});
+    await page.waitForTimeout(300);
+    check('IM1 上传后 POST /api/funds/valuation/import 一次，请求体就是文件里的 JSON（asOf + 5 只）', o.imports.length === 1 && o.imports[0]?.asOf === IMPFX.asOf && o.imports[0]?.indexes?.length === 5 && o.imports[0].indexes[0]?.code === 'QQQ', o.imports.map((b) => ({ asOf: b?.asOf, n: b?.indexes?.length, bad: b?.bad })));
+    const t1 = (await page.locator(R).innerText().catch(() => '')).replace(/\s+/g, ' ');
+    check('IM1 上传后页面写"已导入 5 只"', /已导入\s*5\s*只/.test(t1), t1.match(/[^。]{0,20}导入[^。]{0,40}/g));
+    const codes = await impCodes(page);
+    check('IM1 导入后：5 张导入卡（[data-imp-code]）', JSON.stringify(codes) === JSON.stringify(['588000', 'ES3', 'QQQ', 'SCHD', 'UPD']), codes);
+    await impCheck(page, 'IM1');
+    check('IM1 原来 6 张估值卡（[data-val-code]）不变', (await valCards(page).count()) === 6, await valCodes(page));
+    const lede1 = await ledeText(page);
+    check('IM1 顶部总结句导入前后文字相同（I2 未定，导入的数据不进总结句）', lede1 === lede0, { before: lede0.slice(0, 200), after: lede1.slice(0, 200) });
+    await markVal(page);
+    const st1 = (await page.locator('[data-qa-val]').innerText().catch(() => '')).replace(/\s+/g, ' ');
+    check('IM1 导入后估值板块仍写"不是预测"和"不是投资建议"', /不是预测/.test(st1) && /不是投资建议/.test(st1), st1.slice(-200));
+    const imGrid = await page.evaluate(() => { const v = document.querySelector('[data-qa-val]'); const c = document.querySelector('[data-imp-code]'); return !!v && !!c && v.contains(c); });
+    check('IM1 导入卡在估值板块里', imGrid);
+    const lc = await lowContrast(page, ['[data-qa-val]']);
+    check('IM1 浅色：估值板块（含导入卡）文字对比度 ≥ 4.5', lc.bad.length === 0, lc.bad);
+    for (const [m, want] of [['美国', ['QQQ', 'SCHD']], ['新加坡', ['ES3', 'UPD']], ['中国', ['588000']], ['', ['588000', 'ES3', 'QQQ', 'SCHD', 'UPD']]]) {
+      await pickMarket(page, m);
+      const got = await impCodes(page);
+      check(`IM1 切到"${m || '全部'}"：导入卡只剩 ${want.join('、')}`, JSON.stringify(got) === JSON.stringify(want), got);
+    }
+    await pickMarket(page, '美国');
+    const ledeUS = await ledeText(page);
+    await o.ctx.close();
+    // 同一份数据不带 val_import 打开，切到"美国"：总结句和带 val_import 时一样
+    const o2 = await openI({ width: 1200, height: 900 }, false);
+    await enter(o2.page);
+    await o2.page.locator(`${R} [data-val-code]`).first().waitFor({ state: 'attached', timeout: WAIT }).catch(() => {});
+    await pickMarket(o2.page, '美国');
+    const ledeUS0 = await ledeText(o2.page);
+    check('IM1 切到"美国"时总结句也和没有导入数据时一样', ledeUS === ledeUS0 && ledeUS0.length > 0, { with: ledeUS.slice(0, 160), without: ledeUS0.slice(0, 160) });
+    await o2.ctx.close();
+  });
+
+  await section('IM2 导入的历史 400 深色', async () => {
+    const { page, ctx } = await openI({ width: 400, height: 860, colorScheme: 'dark' }, true);
+    await enter(page);
+    await page.locator(`${R} [data-imp-code]`).first().waitFor({ state: 'attached', timeout: WAIT }).catch(() => {});
+    const mv = await markVal(page);
+    check('IM2 400 宽：估值板块在、5 张导入卡', !!mv?.visible && (await impCards(page).count()) === 5, { mv, n: await impCards(page).count() });
+    await page.locator('[data-imp-code]').first().scrollIntoViewIfNeeded().catch(() => {});
+    check('IM2 400 宽：页面不横向溢出', await noHScroll(page), await page.evaluate(() => [document.documentElement.scrollWidth, document.documentElement.clientWidth]));
+    const wide = await page.evaluate(() => [...document.querySelectorAll('[data-imp-code]')].map((e) => [e.getAttribute('data-imp-code'), Math.round(e.getBoundingClientRect().right)]).filter(([, r]) => r > innerWidth + 1));
+    check('IM2 400 宽：每张导入卡都在屏幕宽度里', wide.length === 0, wide);
+    const btn = page.locator('[data-qa-val]').getByRole('button', { name: /导入估值历史/ }).first();
+    const bb = await btn.boundingBox().catch(() => null);
+    check('IM2 400 宽："导入估值历史"按钮看得见、在屏幕宽度里', !!bb && bb.x >= 0 && bb.x + bb.width <= 401, bb);
+    await impCheck(page, 'IM2');
+    const lc = await lowContrast(page, ['[data-qa-val]']);
+    check('IM2 深色：估值板块（含导入卡）文字对比度 ≥ 4.5', lc.bad.length === 0, lc.bad);
+    await pickMarket(page, '新加坡');
+    check('IM2 400 宽切到"新加坡"：导入卡只剩 ES3、UPD，不横向溢出', JSON.stringify(await impCodes(page)) === JSON.stringify(['ES3', 'UPD']) && (await noHScroll(page)), await impCodes(page));
+    await ctx.close();
   });
 
 }
