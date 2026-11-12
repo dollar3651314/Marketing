@@ -9,6 +9,7 @@
  * - POST /v1/queue   {product, platform, post, score, reasons, draft, source}  存进跟帖评论清单（草稿再过一遍程序检查；同一条只存一次）
  * - POST /hooks/github       GitHub Webhook 实时进度（COMPANY_INGEST_TOKEN 当签名密钥，没填时 404；hooks.ts）
  * - POST /api/company/ingest  公司运营仪表盘：各仓库的自动检查推数据（COMPANY_INGEST_TOKEN，没填时 404；company.ts）
+ * - GET  /manifest.webmanifest、/sw.js、/icon-*.png、/apple-touch-icon.png、/favicon.*  装到主屏幕（PWA，src/pwa.ts）；不要登录，COPILOT_PASSWORD 没填时 404
  * - GET  /           网页后台：跟帖评论清单、用量和限额、插件下载、公司（COPILOT_PASSWORD 没填时 404）；接口在 /api/*（queue.ts、usage.ts、company.ts）
  * 令牌：Authorization: Bearer <COPILOT_TOKEN>（≥ 24 个字符）。COPILOT_TOKEN 或 GEMINI_API_KEY 没填时 /v1/* 全部 404（默认关着，C102）。
  * Gemini 都用不了时换备用 AI（Workers AI，ai.ts）；草稿带 engine 标出是哪个 AI 写的。
@@ -25,6 +26,7 @@ import { adminApi, adminEnabled, DEFAULT_PROJECT, doneToday, replyCap, saveToQue
 import { companyEnabled, companyIngest } from './company';
 import { githubHook } from './hooks';
 import { tiingoToken } from './funds-api';
+import { isPwaPath, pwaResponse } from './pwa';
 
 const RULES: Record<string, string> = { forecast: FORECAST_RULES };
 const PER_MINUTE = 60;
@@ -217,6 +219,8 @@ export async function handle(req: Request, env: Env, now: number, fetcher?: Fetc
   if (p === '/health' && req.method === 'GET') {
     return json({ status: 'UP', environment: env.ENVIRONMENT ?? 'unknown', version: env.VERSION ?? 'dev', copilot: configured(env) ? 'ok' : 'not_configured', admin: adminEnabled(env) ? 'ok' : 'not_configured', company: companyEnabled(env) ? 'ok' : 'not_configured', tiingo: tiingoToken(env) ? 'ok' : 'not_configured' });
   }
+  // 装到主屏幕（PWA）用的 manifest、sw.js、图标：不要登录；和后台页面一样，COPILOT_PASSWORD 没填时 404（src/pwa.ts）
+  if (isPwaPath(p)) return req.method === 'GET' && adminEnabled(env) ? (pwaResponse(p) ?? notFound()) : notFound();
   if ((p === '/' || p === '/queue') && req.method === 'GET') {
     if (!adminEnabled(env)) return notFound();
     return new Response(ADMIN_PAGE, { headers: { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-store', 'x-robots-tag': 'noindex', 'x-frame-options': 'DENY', 'referrer-policy': 'no-referrer' } });
