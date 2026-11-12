@@ -4,6 +4,7 @@ import { VOICE_CSS, VOICE_JS } from './voice-page';
 import { PRON_CSS, PRON_JS, PRON_MOD } from './pron-page';
 import { FUNDS_CSS, FUNDS_JS, FUNDS_MOD } from './funds-page';
 import { EXTENSION_VERSION } from './extension-download';
+import { PWA_HEAD, PWA_JS } from './pwa';
 import { MAX_PROJECT_PAGES, PLATFORM_CONFIG, PROJECT_PAGES_FALLBACK, PROJECT_SITE } from './projects';
 
 /**
@@ -24,6 +25,7 @@ import { MAX_PROJECT_PAGES, PLATFORM_CONFIG, PROJECT_PAGES_FALLBACK, PROJECT_SIT
 export const ADMIN_PAGE = `<!doctype html>
 <html lang="zh-Hans"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="robots" content="noindex, nofollow"><title>工作平台</title>
+${PWA_HEAD}
 <style>
 /* 设计变量（工作平台界面改版·批 A，原型 prototype-work.html，Amos 2026-11-04"好很多了，改吧"）：
    颜色沿用原来的变量名，新增 --surface-2 次要区域、--ink-2 正文次级、--teal-ink 青色文字、--hero-bg / --hero-line 最该做的事、--gray-soft 中性标签；明暗两套。
@@ -465,7 +467,7 @@ ${ASSETS_CSS}${TTS_CSS}${VOICE_CSS}${PRON_CSS}${FUNDS_CSS}
 </style></head><body>
 <div class="bars" id="bars"><header class="top" id="top"><span class="logo" aria-hidden="true"><i style="height:16px;background:#2DD4BF"></i><i style="height:10px;background:#FBBF24"></i></span><span class="brand">工作平台</span><b class="sr" id="title">工作台</b>
   <nav class="nav1" id="nav1" aria-label="一级菜单" hidden><a href="#/work" data-p="work">工作台<span class="cnt" id="c-work" hidden></span></a><span class="sep" id="nav1-sep0" aria-hidden="true" hidden></span><span class="grp-l" id="nav1-grp" hidden>项目</span><span class="sep" id="nav1-sep" aria-hidden="true"></span><a href="#/tools" data-p="tools" id="nav1-tools">公共工具</a><a href="#/funds" data-f="funds" id="nav1-funds">基金观察</a></nav>
-  <span class="sp"></span><button id="nav" hidden>用量和限额 →</button><button id="extnav" hidden>插件下载</button><details class="more-menu" id="more-menu" hidden><summary aria-label="更多：公司总览、登出">···</summary><span class="tacts" id="tacts"><button id="conav" hidden>公司总览</button><button id="logout" hidden>登出</button></span></details></header>
+  <span class="sp"></span><button id="pwa-refresh" type="button" aria-label="刷新页面" hidden>刷新</button><button id="nav" hidden>用量和限额 →</button><button id="extnav" hidden>插件下载</button><details class="more-menu" id="more-menu" hidden><summary aria-label="更多：公司总览、登出">···</summary><span class="tacts" id="tacts"><button id="conav" hidden>公司总览</button><button id="logout" hidden>登出</button></span></details></header>
 <div id="subs" hidden>
 <nav class="sub" id="sub-work" aria-label="工作台模块" hidden><div class="in">
   <a href="#/work/now" data-s="w-now">最该做的事</a><a href="#/work/todo" data-s="w-todo">全部待办<span class="n red" id="s-todo" hidden></span></a><a href="#/work/live" data-s="w-live">团队在做什么</a><a href="#/work/proj" data-s="w-proj">项目概况</a><a href="#/work/num" data-s="w-num">公司数字</a><a href="#/work/meet" data-s="w-meet">经营会</a><a href="#/work/pron" data-s="w-pron">发音训练</a>
@@ -487,7 +489,7 @@ ${ASSETS_CSS}${TTS_CSS}${VOICE_CSS}${PRON_CSS}${FUNDS_CSS}
 </div></nav>
 </div></div>
 <form class="login" id="login" hidden>
-  <b>登录</b><label for="pw">密码</label><input id="pw" type="password" autocomplete="current-password" required>
+  <b>登录</b><input class="sr" id="pw-user" type="text" name="username" autocomplete="username" value="工作台" tabindex="-1" aria-hidden="true" readonly><label for="pw">密码</label><input id="pw" type="password" name="password" autocomplete="current-password" required>
   <button class="btn primary" id="go" type="submit">登录</button><p class="msg" id="lmsg" role="alert"></p>
   <!-- 批 C：打开页面时读清单就失败、随后又要登录时，登录框上也写明读取失败和"再读一次"（boot() 重新读） -->
   <div class="l-fail" id="l-fail" role="alert" hidden><span id="l-fail-t"></span><button class="btn small" id="l-retry" type="button">再读一次</button></div>
@@ -1666,4 +1668,5 @@ var platformReady=function(){return !!PL.data;};
 <script>${VOICE_JS}</script>
 <script>${PRON_JS}</script>
 <script>${FUNDS_JS}</script>
+${PWA_JS}
 </body></html>`;
