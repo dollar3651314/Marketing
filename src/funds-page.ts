@@ -182,6 +182,24 @@ export const FUNDS_CSS = `
 #v-funds .fu-vold{font-size:12px;color:var(--err);line-height:1.5}
 #v-funds .fu-vnone{margin-top:var(--s4);font-size:var(--fs-aux);color:var(--ink-2);background:var(--surface-2);border-radius:10px;padding:var(--s3) var(--s4);line-height:1.6}
 #v-funds .fu-vamsg{font-size:var(--fs-aux);color:var(--muted);margin:var(--s2) 0 0;line-height:1.6}#v-funds .fu-vamsg:empty{display:none}#v-funds .fu-vamsg.err{color:var(--err)}
+/* 估值"参考：导入的历史"（Amos 2026-11-12，照审过的原型 v4 的 .ic / .igrid / .importbar；字号只用全站那几级） */
+#v-funds .fu-imp-h{display:flex;flex-wrap:wrap;align-items:baseline;justify-content:space-between;gap:var(--s2);margin-top:var(--s5);padding-top:var(--s4);border-top:1px solid var(--line)}
+#v-funds .fu-imp-h h3{margin:0;font-size:var(--fs-mod)}#v-funds .fu-imp-h p{margin:0;font-size:12px;color:var(--muted);line-height:1.6}
+#v-funds .fu-igrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(250px,1fr));gap:var(--s3);margin-top:var(--s3)}
+@media (max-width:760px){#v-funds .fu-igrid{grid-template-columns:minmax(0,1fr)}}
+#v-funds .fu-ic{border:1px solid var(--line);border-radius:12px;padding:var(--s3) var(--s4);background:var(--surface);display:flex;flex-direction:column;gap:6px;min-width:0}
+#v-funds .fu-ic h4{margin:0;font-size:var(--fs-aux)}#v-funds .fu-ic .fd{font-size:12px;color:var(--muted);font-family:var(--mono);overflow-wrap:anywhere}
+#v-funds .fu-chips{display:flex;flex-wrap:wrap;gap:4px}
+#v-funds .fu-chip2{font-size:12px;border-radius:4px;padding:0 6px;line-height:18px;background:var(--gray-soft);color:var(--ink-2)}
+#v-funds .fu-chip2.px{background:var(--amber-soft);color:var(--ink)}#v-funds .fu-chip2.dj{background:var(--teal-soft);color:var(--teal-ink)}
+#v-funds .fu-ic .row2{display:flex;align-items:baseline;gap:10px;flex-wrap:wrap}#v-funds .fu-ic .row2 b{font-size:18px;font-variant-numeric:tabular-nums}
+#v-funds .fu-ic .row2 span{font-size:12px;color:var(--muted)}
+#v-funds .fu-ic .verdict{font-size:12px;color:var(--ink-2)}#v-funds .fu-ic .verdict.lo{color:var(--ok)}#v-funds .fu-ic .verdict.hi{color:var(--err)}
+#v-funds .fu-ic svg{display:block;width:100%;height:36px}
+#v-funds .fu-ic .none{font-size:var(--fs-aux);color:var(--ink-2);line-height:1.6}
+#v-funds .fu-importbar{margin-top:var(--s4);display:flex;flex-wrap:wrap;align-items:center;gap:var(--s3);background:var(--surface-2);border:1px dashed var(--line);border-radius:10px;padding:var(--s3) var(--s4)}
+#v-funds .fu-importbar .btn{min-height:44px}
+#v-funds .fu-importbar .t{font-size:var(--fs-aux);color:var(--ink-2);flex:1;min-width:200px;line-height:1.6;overflow-wrap:anywhere}#v-funds .fu-importbar .t.err{color:var(--err)}
 `;
 
 /** 整页 #v-funds（放在 #app 里，和 #v-tools 平级） */
@@ -232,6 +250,9 @@ export const FUNDS_MOD = `<section class="page plat" id="v-funds" hidden>
     <div class="fu-legend"><span><i class="bar" style="background:var(--muted)"></i>竖线：10 年中位数</span><span>色块：现在的市盈率</span><span>左绿右红：比过去便宜 → 比过去贵</span></div>
     <div class="fu-va-grid" id="fu-va-grid"></div>
     <p class="fu-vamsg" id="fu-va-msg" role="status"></p>
+    <div class="fu-imp-h" id="fu-imp-h"><h3 id="fu-imp-t">参考：导入的历史</h3><p>一次性导入，不会自动更新；推断，不是预测、不是投资建议。"代理"= 不是这个指数本身公布的数（用 ETF 实际派息、别的指数或自己推算）；股息率越低越贵</p></div>
+    <div class="fu-igrid" id="fu-igrid"></div>
+    <div class="fu-importbar"><button class="btn primary" type="button" id="fu-impbtn">导入估值历史</button><input type="file" id="fu-impfile" accept=".json,application/json" hidden><span class="t" id="fu-impmsg" role="status">选一个 JSON 文件上传（文件由 Claude 整理后发给你），同一只会被新文件覆盖。</span></div>
     <div class="fu-vnone" id="fu-va-none"><b>还没有估值历史的 34 只</b>：债券和货币类 16 只不适用；其余 18 只（纳斯达克100、美国红利 5 只、美国全市场、MSCI World、科创50、恒生科技、红利低波、标普A股红利、海峡时报、4 只 REIT、东盟红利）免费公开渠道找不到可用的历史。以后打算从那时起每次刷新存一份当前值、慢慢攒出自己的历史——这一版还没有开始存。</div>
     <p class="fu-disc">市盈率口径：A 股用中证指数官网公布的市盈率（官方没有写明是滚动还是静态）；标普500 用 Shiller 的周期调整市盈率（CAPE，10 年平均实际盈利）。"长期预期年化"是两种简单推算，<b>是推断、不是预测、不是投资建议</b>：盈利收益率法 = 1 ÷ 市盈率（标普为扣通胀的实际值）；分红 + 增长法 = 股息率 + 盈利增长假设（A 股 5%、美国 4%）+ 估值回到中位数的影响（名义值）。<b>两种口径不能直接比较。</b>数据来源：中证指数有限公司、Robert Shiller，仅供本人参考，不转载。只在点「刷新数据」时取：中证每天最多取成功一次，Shiller 每月一次。</p>
   </section>
@@ -580,7 +601,52 @@ function valuation(){var G=$('fu-va-grid');G.replaceChildren();var V=D&&D.valuat
   miss.forEach(function(m){var c=el('div',{'class':'fu-vc','data-val-code':m.code});c.appendChild(el('h3',null,m.name));
     c.appendChild(el('div',{'class':'fu-vexp'},m.error?'还没有估值数据：'+plainWhy(m.error):'还没有估值数据，点「刷新数据」时会一起取（中证每天最多一次，Shiller 每月一次）'));G.appendChild(c)});}
 var VAL_DEFS=[{code:'000300',name:'沪深300',market:'中国',funds:['510300','510310']},{code:'000016',name:'上证50',market:'中国',funds:['510050']},{code:'000905',name:'中证500',market:'中国',funds:['510500']},{code:'000015',name:'上证红利',market:'中国',funds:['510880']},{code:'000922',name:'中证红利',market:'中国',funds:['515080','515180']},{code:'SPX',name:'标普500',market:'美国',funds:['VOO','IVV','SPY','XUS']}];
-function render(){meta();lede();mkcards();scatter();ranges();bonds();valuation();list_()}
+/** 估值"参考：导入的历史"（Amos 2026-11-12）：GET /api/funds 的 val_import 每只一张小卡；按市场过滤；**不进顶部总结句**（I2） */
+/** val_import 是数组（也认 {items:[…]}） */
+function impAll(){var V=D&&D.val_import;return Array.isArray(V)?V:V&&Array.isArray(V.items)?V.items:[]}
+function impShown(){return impAll().filter(function(v){return!st.m||v.market===st.m})}
+function impNum(v,m){return m==='dy'?(+v).toFixed(2)+'%':m?(+v).toFixed(1):String(+v)}
+var IMP_MN={pe:'市盈率',pb:'市净率',dy:'股息率'};
+function imported(){var G=$('fu-igrid');G.replaceChildren();var all=impAll(),list=impShown();
+  $('fu-imp-t').textContent='参考：导入的历史'+(all.length?'（'+list.length+' 只）':'（还没有导入）');
+  // 有导入的历史以后，"还没有估值历史的 34 只"那段说明就过时了
+  $('fu-va-none').hidden=all.length>0;
+  if(!impBusy&&!impDone){var at=null;all.forEach(function(v){if(v.imported_at&&(!at||v.imported_at>at))at=v.imported_at});
+    $('fu-impmsg').textContent=(at?'上次导入：'+tw(at).slice(0,10)+'，'+all.length+' 只。':'')+'选一个 JSON 文件上传（文件由 Claude 整理后发给你），同一只会被新文件覆盖。'}
+  list.forEach(function(v){var c=el('div',{'class':'fu-ic','data-imp-code':v.code});c.appendChild(el('h4',null,v.name));c.appendChild(el('div',{'class':'fd'},(v.funds||[]).join(' · ')));
+    var ch=el('div',{'class':'fu-chips'}),m=v.metric||v.shown,dt=v.now_date||v.date||'',px=v.proxy!=null?!!v.proxy:/代理|自算/.test(v.basis||''),np=v.points!=null?v.points:v.n!=null?v.n:1;
+    if(v.metric)ch.appendChild(el('span',{'class':'fu-chip2'},IMP_MN[v.metric]));
+    if(px)ch.appendChild(el('span',{'class':'fu-chip2 px',title:v.metric_basis||''},'代理'));
+    if(v.source_tag)ch.appendChild(el('span',{'class':'fu-chip2 dj',title:v.metric_source||''},v.source_tag));
+    if(v.metric&&v.short&&v.start)ch.appendChild(el('span',{'class':'fu-chip2'},'历史 '+v.start+' 起'));
+    if(ch.childNodes.length)c.appendChild(ch);
+    if(!v.metric){c.appendChild(el('div',{'class':'none'},(np===1?'只有一个点':'只有 '+np+' 个点')+(v.launched?'（指数 '+v.launched+' 才发布）':'')+'：'+(IMP_MN[m]||'当前值')+' '+impNum(v.now,m)+'（'+dt+'），等下次导入更长的历史再比贵贱'));G.appendChild(c);return}
+    var r=el('div',{'class':'row2'});r.appendChild(el('b',null,impNum(v.now,m)));r.appendChild(el('span',null,IMP_MN[m]+' · '+dt));c.appendChild(r);
+    var e=v.dear,k=e<30?'lo':e>70?'hi':'mid',word=e<30?'比过去便宜':e>70?'比过去贵':'接近过去中间';
+    c.appendChild(el('div',{'class':'verdict '+k},word+'：比'+(v.short?'上市以来':'过去 10 年')+' '+Math.round(e)+'% 的时间都贵'));
+    var s=v.series||[];if(s.length>1){var W=250,H=36,vals=s.map(function(x){return x[1]}),mn=Math.min.apply(null,vals),mx=Math.max.apply(null,vals);if(mx===mn){mx+=1;mn-=1}
+      var X=function(i){return 2+i/(s.length-1)*(W-4)},Y=function(x){return 3+(mx-x)/(mx-mn)*(H-6)};
+      var svg=sv('svg',{viewBox:'0 0 '+W+' '+H,preserveAspectRatio:'none',role:'img','aria-label':v.name+' '+IMP_MN[m]+'走势（'+v.start+' 起），虚线是中位数'});
+      if(v.median!=null)svg.appendChild(sv('line',{x1:0,x2:W,y1:Y(v.median),y2:Y(v.median),stroke:'var(--muted)','stroke-dasharray':'3 3','vector-effect':'non-scaling-stroke'}));
+      svg.appendChild(sv('path',{d:s.map(function(x,i){return(i?'L':'M')+X(i).toFixed(1)+' '+Y(x[1]).toFixed(1)}).join(''),fill:'none',stroke:px?'var(--amber)':'var(--fu-broad)','stroke-width':1.4,'vector-effect':'non-scaling-stroke'}));
+      c.appendChild(svg)}
+    G.appendChild(c)})}
+var impBusy=false,impDone=false;
+$('fu-impbtn').addEventListener('click',function(){if(!impBusy)$('fu-impfile').click()});
+$('fu-impfile').addEventListener('change',async function(){var f=this.files&&this.files[0],M=$('fu-impmsg'),btn=$('fu-impbtn');this.value='';if(!f)return;
+  M.className='t';if(f.size>2*1024*1024){M.className='t err';M.textContent='文件太大（'+(f.size/1024/1024).toFixed(1)+'MB），最多 2MB。';impDone=true;return}
+  impBusy=true;btn.disabled=true;M.textContent='正在上传 '+f.name+'…';
+  try{var txt=await f.text(),r;
+    try{r=await fetch(BASE+'/valuation/import',{method:'POST',headers:{'content-type':'application/json'},body:txt,credentials:'same-origin'})}catch(e){throw new Error('网络断了或服务器没回应')}
+    var j=await r.json().catch(function(){return{}});
+    if(r.status===401){try{showLogin('请重新登录')}catch(e){}throw new Error('请重新登录')}
+    if(!r.ok)throw new Error(j.error||('服务器出错了（'+r.status+'）'));
+    var sk=Array.isArray(j.skipped)?j.skipped:[];
+    impDone=true;M.textContent='已导入 '+j.imported+' 只，覆盖 '+j.replaced+' 只，跳过 '+sk.length+' 只'+(sk.length?'（'+sk.slice(0,8).map(function(x){return x.code+'：'+x.reason}).join('；')+(sk.length>8?'；等 '+sk.length+' 只':'')+'）':'')+'。'+(sk.length?'跳过的几只保留原来的数据。':'');
+    impBusy=false;await load()}
+  catch(e){impDone=true;M.className='t err';M.textContent='没导入：'+e.message}
+  finally{impBusy=false;btn.disabled=false}});
+function render(){meta();lede();mkcards();scatter();ranges();bonds();valuation();imported();list_()}
 function showErr(m){$('fu-err').hidden=!m;$('fu-err-t').textContent=m||''}
 async function getJson(url,body){var r;try{r=await fetch(url,{method:body?'POST':'GET',headers:{'content-type':'application/json'},body:body?JSON.stringify(body):undefined,credentials:'same-origin'})}catch(e){throw new Error('网络断了或服务器没回应')}
   var j=await r.json().catch(function(){return{}});
