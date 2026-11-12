@@ -9,8 +9,10 @@
  *
  * 显示（impCard，GET /api/funds 的 val_import 每只一项）：
  *   选指标：市盈率 ≥ 36 个点、且最后一点离导入文件的 asOf 不超过 12 个月 → pe；否则股息率 ≥ 24 个点 → dy；都不够 → metric = null，只显示当前值（不比贵贱）。
- *   百分位 = 最近 120 点里**低于**现在的点所占的百分比（四舍五入到整数，和 Amos 审过的原型 v4 一致）；
- *   "贵的程度" expensive：pe = 百分位；dy = 100 − 百分位（股息率越低越贵）。不足 120 点时 short = true（页面写"上市以来"）。
+ *   百分位 pct = 最近 120 点里**不高于**现在的点所占的百分比（1 位小数；和现有 6 张估值卡同一算法，测试会话 test/funds-v7-import.test.ts 的接口约定；
+ *     Amos 审过的原型 v4 用的是"低于"、取整，同一份数据会差 1 个点左右）；
+ *   "贵的程度" dear（同值别名 expensive）：pe = 百分位；dy = 100 − 百分位（股息率越低越贵）。不足 120 点时 short = true（页面写"上市以来"）。
+ *   都不够时显示的当前值：有市盈率用市盈率，否则股息率，否则市净率。source / basis 回导入文件里这一只的原文；选用指标那一段在 metric_source / metric_basis。
  *   proxy：选用指标的口径写着"代理"或"自算"。source_tag：选用指标的来源是蛋卷 →"来源：蛋卷，口径未公开"；
  *     来源按 seriesMeta[指标].source 判断；没有 seriesMeta 时看 basis 里"指标=…"那一段有没有写蛋卷，source 只有一个来源时直接看它；判断不了就不加标签。
  */
@@ -146,16 +148,19 @@ export interface ImpCard {
   market: Market | null;
   /** 选用的指标；null = 历史不够，只显示当前值 */
   metric: 'pe' | 'dy' | null;
-  /** metric 为 null 时显示的那个指标（有点的里面最新的） */
+  /** 显示的那个指标（metric 为 null 时：有 pe 用 pe，否则 dy，否则 pb） */
   shown: ImpMetric;
   now: number;
+  /** 当前值的月份（YYYY-MM）；date 是同值别名 */
+  now_date: string;
   date: string;
   /** 这个指标一共几个点 */
   points: number;
-  /** 百分位（最近 120 点里低于现在的占比，整数）；metric 为 null 时没有 */
-  pct?: number;
-  /** 贵的程度（0～100）：pe = pct，dy = 100 − pct */
-  expensive?: number;
+  /** 百分位（最近 120 点里不高于现在的占比，1 位小数）；metric 为 null 时是 null */
+  pct: number | null;
+  /** 贵的程度（0～100，1 位小数）：pe = pct，dy = 100 − pct；metric 为 null 时是 null。expensive 是同值别名 */
+  dear: number | null;
+  expensive: number | null;
   median?: number;
   /** 窗口里几个点、起止月份 */
   n?: number;
@@ -165,9 +170,12 @@ export interface ImpCard {
   short?: boolean;
   proxy: boolean;
   source_tag: string | null;
-  /** 选用指标的来源 / 口径原文（页面放在 title 里） */
+  /** 导入文件里这一只的 source / basis 原文 */
   source: string;
   basis: string;
+  /** 选用（显示）指标那一段的来源 / 口径（页面放在标签的 title 里）；分不出来是 '' */
+  metric_source: string;
+  metric_basis: string;
   /** 最近 120 点 */
   series: [string, number][];
   as_of: string;
@@ -183,25 +191,24 @@ export function impCard(code: string, st: ImpStored, importedAt: number | null):
   if (pe.length >= IMP_PE_MIN && asM - monthIdx(pe[pe.length - 1][0]) <= IMP_PE_RECENT) metric = 'pe';
   else if (dy.length >= IMP_DY_MIN) metric = 'dy';
   // 不够比的：显示有点的指标里最后日期最新的那个（同一天先 dy 后 pe 再 pb）
-  const lastOf = (m: ImpMetric) => { const a = S[m] ?? []; return a.length ? a[a.length - 1][0] : ''; };
-  let shown: ImpMetric = metric ?? 'dy';
-  if (!metric) for (const m of ['dy', 'pe', 'pb'] as ImpMetric[]) if (lastOf(m) > lastOf(shown)) shown = m;
+  const shown: ImpMetric = metric ?? (pe.length ? 'pe' : dy.length ? 'dy' : 'pb');
   const all = S[shown] ?? [];
   const last = all[all.length - 1];
   const basis = st.meta?.[shown]?.basis || basisOf(st.basis, shown);
   const source = st.meta?.[shown]?.source || (st.source.split(/[；;]/).length <= 1 ? st.source : '');
   const card: ImpCard = {
     code, name: st.name, funds: st.funds, market: FUNDS.find((f) => f.code === code)?.market ?? null,
-    metric, shown, now: last[1], date: last[0], points: all.length,
-    proxy: /代理|自算/.test(basis), source_tag: isDanjuan(st, shown) ? DJ_TAG : null, source, basis,
+    metric, shown, now: last[1], now_date: last[0], date: last[0], points: all.length, pct: null, dear: null, expensive: null,
+    proxy: /代理|自算/.test(basis), source_tag: isDanjuan(st, shown) ? DJ_TAG : null, source: st.source, basis: st.basis, metric_source: source, metric_basis: basis,
     series: [], as_of: st.as_of, imported_at: importedAt ? new Date(importedAt).toISOString() : null,
   };
   if (!metric) return card;
   const win = all.slice(-IMP_WIN);
   const vals = win.map((p) => p[1]);
-  const pct = Math.round((vals.filter((v) => v < last[1]).length / vals.length) * 100);
+  const pct = Math.round((vals.filter((v) => v <= last[1]).length / vals.length) * 1000) / 10;
+  const dear = metric === 'dy' ? Math.round((100 - pct) * 10) / 10 : pct;
   const sorted = [...vals].sort((a, b) => a - b);
   const mid = sorted.length >> 1;
   const median = sorted.length % 2 ? sorted[mid] : (sorted[mid - 1] + sorted[mid]) / 2;
-  return { ...card, pct, expensive: metric === 'dy' ? 100 - pct : pct, median: r4(median), n: win.length, start: win[0][0], end: last[0], short: win.length < IMP_WIN, series: win };
+  return { ...card, pct, dear, expensive: dear, median: r4(median), n: win.length, start: win[0][0], end: last[0], short: win.length < IMP_WIN, series: win };
 }

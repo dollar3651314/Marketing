@@ -64,12 +64,16 @@ describe('parseImport 校验', () => {
 
 describe('impCard 选指标与口径', () => {
   const up = (i: number) => 10 + i; // 单调升：现在是最高
-  it('pe ≥36 点且最近一点在 12 个月内 → pe；百分位用最近 120 点（低于现在的占比），贵的程度 = 百分位', () => {
+  it('pe ≥36 点且最近一点在 12 个月内 → pe；百分位用最近 120 点（不高于现在的占比，1 位小数），贵的程度 = 百分位', () => {
     const c = impCard('QQQ', st({ series: { pe: months(130, '2026-11', up), dy: months(130, '2026-11', up) } }), NOW);
     expect(c.metric).toBe('pe');
     expect(c.n).toBe(120);
-    expect(c.pct).toBe(99); // 119/120
-    expect(c.expensive).toBe(99);
+    expect(c.pct).toBe(100); // 120/120
+    expect(c.dear).toBe(100);
+    expect(c.expensive).toBe(100);
+    const mid = impCard('QQQ', st({ series: { pe: months(40, '2026-11', (i) => (i === 39 ? 10.5 : 10 + (i % 3))) } }), NOW);
+    expect(mid.pct).toBe(35); // 14/40
+    expect(mid.now_date).toBe('2026-11');
     expect(c.short).toBe(false);
     expect(c.series.length).toBe(120);
     expect(c.start).toBe('2016-12');
@@ -78,8 +82,8 @@ describe('impCard 选指标与口径', () => {
   it('pe 太旧（最后一点超过 12 个月）或不足 36 点 → dy；dy 贵的程度 = 100 − 百分位', () => {
     const old = impCard('ES3', st({ series: { pe: months(200, '2020-09', up), dy: months(60, '2026-11', up) } }), NOW);
     expect(old.metric).toBe('dy');
-    expect(old.pct).toBe(98); // 59/60
-    expect(old.expensive).toBe(2);
+    expect(old.pct).toBe(100); // 60/60
+    expect(old.dear).toBe(0);
     expect(old.short).toBe(true);
     expect(old.market).toBe('新加坡');
     const few = impCard('SCHD', st({ series: { pe: months(29, '2026-08', up), dy: months(24, '2026-11', up) } }), NOW);
@@ -91,7 +95,7 @@ describe('impCard 选指标与口径', () => {
   it('都不够 → metric = null，只给当前值（只有一个点）', () => {
     const c = impCard('UPD', st({ series: { dy: [['2025-11', 7.43]] } }), NOW);
     expect(c).toMatchObject({ metric: null, shown: 'dy', now: 7.43, date: '2025-11', points: 1, series: [] });
-    expect(c.expensive).toBeUndefined();
+    expect([c.pct, c.dear]).toEqual([null, null]);
   });
   it('代理：选用指标的口径含"代理 / 自算"；蛋卷标签按选用指标的来源（seriesMeta 优先；588000 的 pe 来自中证不加）', () => {
     const qqq = st({ source: 'Yahoo chart QQQ；蛋卷基金 pe_history', basis: 'dy=ETF代理：分红；pe=蛋卷口径；pb=蛋卷口径', series: { pe: months(40, '2026-11', up), dy: months(40, '2026-11', up) } });

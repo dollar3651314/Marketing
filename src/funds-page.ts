@@ -250,7 +250,7 @@ export const FUNDS_MOD = `<section class="page plat" id="v-funds" hidden>
     <div class="fu-legend"><span><i class="bar" style="background:var(--muted)"></i>竖线：10 年中位数</span><span>色块：现在的市盈率</span><span>左绿右红：比过去便宜 → 比过去贵</span></div>
     <div class="fu-va-grid" id="fu-va-grid"></div>
     <p class="fu-vamsg" id="fu-va-msg" role="status"></p>
-    <div class="fu-imp-h" id="fu-imp-h" hidden><h3 id="fu-imp-t">参考：导入的历史</h3><p>一次性导入，不会自动更新；推断，不是预测、不是投资建议。"代理"= 不是这个指数本身公布的数（用 ETF 实际派息、别的指数或自己推算）；股息率越低越贵</p></div>
+    <div class="fu-imp-h" id="fu-imp-h"><h3 id="fu-imp-t">参考：导入的历史</h3><p>一次性导入，不会自动更新；推断，不是预测、不是投资建议。"代理"= 不是这个指数本身公布的数（用 ETF 实际派息、别的指数或自己推算）；股息率越低越贵</p></div>
     <div class="fu-igrid" id="fu-igrid"></div>
     <div class="fu-importbar"><button class="btn primary" type="button" id="fu-impbtn">导入估值历史</button><input type="file" id="fu-impfile" accept=".json,application/json" hidden><span class="t" id="fu-impmsg" role="status">选一个 JSON 文件上传（文件由 Claude 整理后发给你），同一只会被新文件覆盖。</span></div>
     <div class="fu-vnone" id="fu-va-none"><b>还没有估值历史的 34 只</b>：债券和货币类 16 只不适用；其余 18 只（纳斯达克100、美国红利 5 只、美国全市场、MSCI World、科创50、恒生科技、红利低波、标普A股红利、海峡时报、4 只 REIT、东盟红利）免费公开渠道找不到可用的历史。以后打算从那时起每次刷新存一份当前值、慢慢攒出自己的历史——这一版还没有开始存。</div>
@@ -602,31 +602,33 @@ function valuation(){var G=$('fu-va-grid');G.replaceChildren();var V=D&&D.valuat
     c.appendChild(el('div',{'class':'fu-vexp'},m.error?'还没有估值数据：'+plainWhy(m.error):'还没有估值数据，点「刷新数据」时会一起取（中证每天最多一次，Shiller 每月一次）'));G.appendChild(c)});}
 var VAL_DEFS=[{code:'000300',name:'沪深300',market:'中国',funds:['510300','510310']},{code:'000016',name:'上证50',market:'中国',funds:['510050']},{code:'000905',name:'中证500',market:'中国',funds:['510500']},{code:'000015',name:'上证红利',market:'中国',funds:['510880']},{code:'000922',name:'中证红利',market:'中国',funds:['515080','515180']},{code:'SPX',name:'标普500',market:'美国',funds:['VOO','IVV','SPY','XUS']}];
 /** 估值"参考：导入的历史"（Amos 2026-11-12）：GET /api/funds 的 val_import 每只一张小卡；按市场过滤；**不进顶部总结句**（I2） */
-function impShown(){var A=D&&Array.isArray(D.val_import)?D.val_import:[];return A.filter(function(v){return!st.m||v.market===st.m})}
-function impNum(v,m){return m==='dy'?(+v).toFixed(2)+'%':(+v).toFixed(1)}
+/** val_import 是数组（也认 {items:[…]}） */
+function impAll(){var V=D&&D.val_import;return Array.isArray(V)?V:V&&Array.isArray(V.items)?V.items:[]}
+function impShown(){return impAll().filter(function(v){return!st.m||v.market===st.m})}
+function impNum(v,m){return m==='dy'?(+v).toFixed(2)+'%':m?(+v).toFixed(1):String(+v)}
 var IMP_MN={pe:'市盈率',pb:'市净率',dy:'股息率'};
-function imported(){var G=$('fu-igrid');G.replaceChildren();var all=D&&Array.isArray(D.val_import)?D.val_import:[],list=impShown();
-  $('fu-imp-h').hidden=!list.length;$('fu-imp-t').textContent='参考：导入的历史（'+list.length+' 只）';
+function imported(){var G=$('fu-igrid');G.replaceChildren();var all=impAll(),list=impShown();
+  $('fu-imp-t').textContent='参考：导入的历史'+(all.length?'（'+list.length+' 只）':'（还没有导入）');
   // 有导入的历史以后，"还没有估值历史的 34 只"那段说明就过时了
   $('fu-va-none').hidden=all.length>0;
   if(!impBusy&&!impDone){var at=null;all.forEach(function(v){if(v.imported_at&&(!at||v.imported_at>at))at=v.imported_at});
     $('fu-impmsg').textContent=(at?'上次导入：'+tw(at).slice(0,10)+'，'+all.length+' 只。':'')+'选一个 JSON 文件上传（文件由 Claude 整理后发给你），同一只会被新文件覆盖。'}
   list.forEach(function(v){var c=el('div',{'class':'fu-ic','data-imp-code':v.code});c.appendChild(el('h4',null,v.name));c.appendChild(el('div',{'class':'fd'},(v.funds||[]).join(' · ')));
-    var ch=el('div',{'class':'fu-chips'}),m=v.metric||v.shown;
+    var ch=el('div',{'class':'fu-chips'}),m=v.metric||v.shown,dt=v.now_date||v.date||'',px=v.proxy!=null?!!v.proxy:/代理|自算/.test(v.basis||''),np=v.points!=null?v.points:v.n!=null?v.n:1;
     if(v.metric)ch.appendChild(el('span',{'class':'fu-chip2'},IMP_MN[v.metric]));
-    if(v.proxy)ch.appendChild(el('span',{'class':'fu-chip2 px',title:v.basis||''},'代理'));
-    if(v.source_tag)ch.appendChild(el('span',{'class':'fu-chip2 dj',title:v.source||''},v.source_tag));
-    if(v.metric&&v.short)ch.appendChild(el('span',{'class':'fu-chip2'},'历史 '+v.start+' 起'));
+    if(px)ch.appendChild(el('span',{'class':'fu-chip2 px',title:v.metric_basis||''},'代理'));
+    if(v.source_tag)ch.appendChild(el('span',{'class':'fu-chip2 dj',title:v.metric_source||''},v.source_tag));
+    if(v.metric&&v.short&&v.start)ch.appendChild(el('span',{'class':'fu-chip2'},'历史 '+v.start+' 起'));
     if(ch.childNodes.length)c.appendChild(ch);
-    if(!v.metric){c.appendChild(el('div',{'class':'none'},(v.points===1?'只有一个点':'只有 '+v.points+' 个点')+'：'+IMP_MN[m]+' '+impNum(v.now,m)+'（'+v.date+'），攒够历史前不比贵贱'));G.appendChild(c);return}
-    var r=el('div',{'class':'row2'});r.appendChild(el('b',null,impNum(v.now,m)));r.appendChild(el('span',null,IMP_MN[m]+' · '+v.date));c.appendChild(r);
-    var e=v.expensive,k=e<30?'lo':e>70?'hi':'mid',word=e<30?'比过去便宜':e>70?'比过去贵':'接近过去中间';
-    c.appendChild(el('div',{'class':'verdict '+k},word+'：比'+(v.short?'上市以来':'过去 10 年')+' '+e+'% 的时间都贵'));
+    if(!v.metric){c.appendChild(el('div',{'class':'none'},(np===1?'只有一个点':'只有 '+np+' 个点')+'：'+(IMP_MN[m]||'当前值')+' '+impNum(v.now,m)+'（'+dt+'），攒够历史前不比贵贱'));G.appendChild(c);return}
+    var r=el('div',{'class':'row2'});r.appendChild(el('b',null,impNum(v.now,m)));r.appendChild(el('span',null,IMP_MN[m]+' · '+dt));c.appendChild(r);
+    var e=v.dear,k=e<30?'lo':e>70?'hi':'mid',word=e<30?'比过去便宜':e>70?'比过去贵':'接近过去中间';
+    c.appendChild(el('div',{'class':'verdict '+k},word+'：比'+(v.short?'上市以来':'过去 10 年')+' '+Math.round(e)+'% 的时间都贵'));
     var s=v.series||[];if(s.length>1){var W=250,H=36,vals=s.map(function(x){return x[1]}),mn=Math.min.apply(null,vals),mx=Math.max.apply(null,vals);if(mx===mn){mx+=1;mn-=1}
       var X=function(i){return 2+i/(s.length-1)*(W-4)},Y=function(x){return 3+(mx-x)/(mx-mn)*(H-6)};
       var svg=sv('svg',{viewBox:'0 0 '+W+' '+H,preserveAspectRatio:'none',role:'img','aria-label':v.name+' '+IMP_MN[m]+'走势（'+v.start+' 起），虚线是中位数'});
       if(v.median!=null)svg.appendChild(sv('line',{x1:0,x2:W,y1:Y(v.median),y2:Y(v.median),stroke:'var(--muted)','stroke-dasharray':'3 3','vector-effect':'non-scaling-stroke'}));
-      svg.appendChild(sv('path',{d:s.map(function(x,i){return(i?'L':'M')+X(i).toFixed(1)+' '+Y(x[1]).toFixed(1)}).join(''),fill:'none',stroke:v.proxy?'var(--amber)':'var(--fu-broad)','stroke-width':1.4,'vector-effect':'non-scaling-stroke'}));
+      svg.appendChild(sv('path',{d:s.map(function(x,i){return(i?'L':'M')+X(i).toFixed(1)+' '+Y(x[1]).toFixed(1)}).join(''),fill:'none',stroke:px?'var(--amber)':'var(--fu-broad)','stroke-width':1.4,'vector-effect':'non-scaling-stroke'}));
       c.appendChild(svg)}
     G.appendChild(c)})}
 var impBusy=false,impDone=false;
