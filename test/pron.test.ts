@@ -5,8 +5,9 @@
  * 守住十件事：
  *   1. **位置**：工作台二级菜单从 8 项变 **7 项**（去掉「英语练习」「带练」，加「发音训练」）；
  *      **上限还是 8**、**公共工具那 8 项一个都没动**（T-4：第 9 项会撑破手机菜单）。
- *   2. **四步循环**：看口型 → 对照听（他自己点「我听出来了，开始考」才进考）→ 同一组连考 10 题
+ *   2. **四步循环**：跟我做（一次一句）→ 对照听（他自己点「我听出来了，开始考」才进考）→ 同一组连考 10 题
  *      （答错当场把对照听塞回来）→ 10 题对 8 题（80%）过关给绕口令 + 三最法。
+ *      第 1 步的阶梯本身由 test/pron-lesson.test.ts 守（src/pron-lesson.ts）。
  *   3. **照实说，不硬凑**（底线 3）：第 7 组一对最小对立对都没有 → 没有听辨题、不给「开始考」按钮；
  *      第 4 组只有 1 对 → 说明里写明题会重复。
  *   4. **对错由服务端算**（页面不自己判）；一轮考完记一行 `pron_round`，过没过由 `passedRound` 算。
@@ -35,7 +36,7 @@ import {
 } from '../src/pron';
 import { audioKey, AUDIO_REV, PRON_TTS_PURPOSE } from '../src/pron-audio';
 import { asrWordsOf, GROUPS, groupsForEar, minimalPairsOf } from '../src/pron-content';
-import { mouthPair, mouthSpec } from '../src/pron-mouth';
+import { LESSON, 级 } from '../src/pron-lesson';
 import { AURA_SPEAKER, TTS_AURA, ttsNeurons } from '../src/tts';
 import { PURPOSES } from '../src/usage';
 import { ROOT, T0 } from './helpers';
@@ -150,25 +151,30 @@ describe('1. 位置：工作台二级菜单 7 项，上限还是 8，公共工�
 });
 
 // ======================================================================
-describe('2. 四步循环：看口型 → 对照听 → 同一组连考 10 题 → 80% 过关给绕口令', () => {
-  it('结构上就是四步，四块各一个，默认停在第 1 步（看口型）', () => {
+describe('2. 四步循环：跟我做 → 对照听 → 同一组连考 10 题 → 80% 过关给绕口令', () => {
+  it('结构上就是四步，四块各一个，默认停在第 1 步（跟我做）', () => {
     for (const id of ['pn-s1', 'pn-s2', 'pn-s3', 'pn-s4']) expect([id, PRON_MOD.includes('id="' + id + '"')]).toEqual([id, true]);
     expect(PRON_MOD).toMatch(/<div id="pn-s2" hidden>/);
     expect(PRON_MOD).toMatch(/<div id="pn-s3" hidden>/);
     expect(PRON_MOD).toMatch(/<div id="pn-s4" hidden>/);
     expect(PRON_MOD).not.toMatch(/<div id="pn-s1" hidden>/);
-    expect(PRON_MOD).toContain('1 看口型');
+    // 2026-11-12：第 1 步从「看口型」（一张参考卡）改成「跟我做」（一次一句），标题跟着改
+    expect(PRON_MOD).toContain('1 跟我做');
+    expect(PRON_MOD).not.toContain('1 看口型');
     expect(PRON_MOD).toContain('2 对照听');
     expect(PRON_MOD).toContain('3 考 10 题');
     expect(PRON_MOD).toContain('4 过关');
   });
 
-  it('第 1 步不考：两个音并排，课件原文的中文外号 + 逐条口型定位（页面从接口读，不自己造）', () => {
+  it('第 1 步不考：接口照样把课件原文的外号和口型定位给页面（内容没被砍掉，只是不再一屏摊开）', () => {
     const c = groupCard(G1) as Record<string, any>;
     expect(c.a).toEqual({ 音标: '/e/', 外号: '中咧嘴', 口型: ['咧嘴', '上下齿距离为 1cm 左右（可容纳一根食指）', '舌头平躺抵下齿'] });
     expect(c.b.外号).toBe('大咧嘴');
-    expect(PRON_JS).toContain("nk.textContent=s['外号']");
-    expect(PRON_JS).toContain("(s['口型']||[]).forEach");
+    // 口型示意图整套撤掉了（Amos 2026-11-12：「口型图撤掉」）：接口不再给「口型图」，页面也不再画 SVG
+    expect(c['口型图']).toBeUndefined();
+    for (const w of ['pDrawAll', 'pFront', 'pSide', 'createElementNS', 'pn-draw', 'pn-anim', '来回切换'])
+      expect([w, PRON_JS.includes(w)]).toEqual([w, false]);
+    expect(existsSync(path.join(ROOT, 'src/pron-mouth.ts'))).toBe(false);
     // 第 1 步里没有判对错的东西
     const s1 = PRON_MOD.slice(PRON_MOD.indexOf('<div id="pn-s1">'), PRON_MOD.indexOf('<div id="pn-s2"'));
     for (const w of ['对了', '不对', '两个听着一样']) expect([w, s1.includes(w)]).toEqual([w, false]);
@@ -749,107 +755,10 @@ describe('9. 内容只读不改：七组原样来自 src/pron-content.ts', () =>
 // 10～13 组：口型示意图 + 照镜子 + 慢速对照（2026-11-11，Amos：「有些发音我很难理解　你要给我做成教学视频」
 // —— 真人视频拍不了、AI 生成的"会动的嘴"是编的不能做，改成这三样，他说「都要，按这个顺序做」）
 // ======================================================================
-describe('10. 口型图的依据：画面上每一处差别都指回 src/pron-content.ts 的 mouth 某一条（底线 3）', () => {
-  it('每一条 mouth 原文都有归宿：要么翻成一个可见特征（画了），要么进"没画"，一条都不许丢', () => {
-    for (const g of GROUPS) {
-      for (const k of ['a', 'b'] as const) {
-        const sp = mouthSpec(g[k]);
-        const 收到 = [...sp.画了.map((f) => f.依据), ...sp.没画.map((x) => x.原文)];
-        // 同一条原文可能画出不止一个特征（"2cm（可容纳两根食指）"= 开口 + 手指），所以比集合
-        expect([g.id, k, [...new Set(收到)].sort()]).toEqual([g.id, k, [...g[k].mouth].sort()]);
-        for (const f of sp.画了) expect([g.id, k, f.依据, g[k].mouth.includes(f.依据)]).toEqual([g.id, k, f.依据, true]);
-      }
-    }
-  });
-
-  it('逐组判：哪几组画得出口型差别、哪几组画不出（画不出的不许画出一个假的嘴型差别）', () => {
-    expect(GROUPS.map((g) => [g.id, mouthPair(g).画得出差别])).toEqual([
-      ['g1', true], // 开口 1cm vs 2cm
-      ['g2', true], // 「由微张后慢慢闭合」vs「几乎为 0」
-      ['g3', true], // 「先张嘴后咧嘴」+「张开后慢慢闭合」vs「咧嘴」+ 2cm
-      ['g4', false], // /f/ /v/：都是「上齿轻咬下唇」，差在送气 / 声带
-      ['g5', true], // 舌尖抵上齿龈 vs 舌尖卷起（在嘴里面，剖面示意）
-      ['g6', false], // /n/ /l/：舌位一样，差在气流走鼻腔还是舌侧
-      ['g7', false], // 课件一句口型都没给
-    ]);
-  });
-
-  it('第 1 组：唯一该不一样的就是上下齿的开口，嘴型和舌位必须画成一样', () => {
-    const m = mouthPair(GROUPS[0]);
-    expect(m.差别.length).toBe(1);
-    expect(m.差别[0]).toContain('上下齿的开口');
-    expect(m.差别[0]).toContain('可容纳一根食指');
-    expect(m.差别[0]).toContain('可容纳两根食指');
-    // 嘴型、舌位两边一个值都不差
-    expect(m.a.正面!.唇).toBe(m.b.正面!.唇);
-    expect(m.a.剖面!.舌).toBe(m.b.剖面!.舌);
-    expect(m.一样的).toEqual(['咧嘴', '舌头平躺抵下齿']);
-    // 食指参照：课件说几根就画几根，不自己换算
-    expect([m.a.正面!.手指, m.b.正面!.手指]).toEqual([1, 2]);
-    expect([m.a.正面!.开口毫米, m.b.正面!.开口毫米]).toEqual([10, 20]);
-  });
-
-  it('课件没给尺寸的（「微张」「张开」）不许编一个厘米数：有尺寸 = false、不给食指参照', () => {
-    for (const [i, k] of [[1, 'a'], [2, 'a']] as const) {
-      const sp = mouthSpec(GROUPS[i][k]);
-      expect([GROUPS[i].id, sp.正面!.有尺寸]).toEqual([GROUPS[i].id, false]);
-      expect([GROUPS[i].id, sp.正面!.手指]).toEqual([GROUPS[i].id, null]);
-      expect([GROUPS[i].id, sp.正面!.到毫米]).toEqual([GROUPS[i].id, 0]); // 「由…到闭合」是会动的两帧
-    }
-  });
-
-  it('/f/ 和 /v/：口型一模一样，界面照实说"差别在喉咙，用手摸喉咙"（摸喉咙这句来自课件「声带振动」）', () => {
-    const m = mouthPair(GROUPS[3]);
-    expect(m.差别).toEqual([]);
-    expect(m.a.正面!.唇).toBe('上齿轻咬下唇');
-    expect(m.b.正面!.唇).toBe('上齿轻咬下唇');
-    expect(m.摸喉咙).toBe(true);
-    expect(m.说明).toContain('一模一样');
-    expect(m.说明).toContain('送气不发声');
-    expect(m.说明).toContain('声带振动');
-    expect(m.说明).toContain('用手摸喉咙：振动的是 /v/');
-  });
-
-  it('/n/ 和 /l/：舌位一样、两个都振动声带 → 摸喉咙也分不出来，照实说（不许说摸喉咙管用）', () => {
-    const m = mouthPair(GROUPS[5]);
-    expect(m.差别).toEqual([]);
-    expect(m.a.剖面!.舌).toBe(m.b.剖面!.舌);
-    expect(m.摸喉咙).toBe(false);
-    expect(m.说明).toContain('气流从鼻腔流出');
-    expect(m.说明).toContain('气流从舌侧流出');
-    expect(m.说明).toContain('摸喉咙也分不出来');
-  });
-
-  it('/ʒ/ 和 /dʒ/：课件一句口型都没有 → 一张图都不画，照实说（不编一个假的嘴型差别）', () => {
-    const m = mouthPair(GROUPS[6]);
-    for (const sp of [m.a, m.b]) {
-      expect(sp.正面).toBeNull();
-      expect(sp.剖面).toBeNull();
-      expect(sp.画了).toEqual([]);
-    }
-    expect(m.说明).toContain('一句口型都没有');
-    expect(m.说明).toContain('一张图都不画');
-  });
-
-  it('/l/ 和 /r/ 的差别在嘴里面：画剖面，并写明镜子里看不到', () => {
-    const m = mouthPair(GROUPS[4]);
-    expect(m.画得出差别).toBe(true);
-    expect(m.有剖面).toBe(true);
-    expect([m.a.剖面!.舌, m.b.剖面!.舌]).toEqual(['舌尖抵上齿龈', '舌尖卷起']);
-    expect(m.a.正面).toBeNull(); // 课件没给这两个音的唇形 → 一个唇都不画
-    expect(m.说明).toContain('镜子里看不到');
-  });
-
-  it('接口把口型图一起给页面（页面不自己造内容）', () => {
-    const c = groupCard(GROUPS[0]) as Record<string, any>;
-    expect(c['口型图']['画得出差别']).toBe(true);
-    expect(c['口型图'].a['画了'][0]['依据']).toBe(GROUPS[0].a.mouth[0]);
-  });
-});
-
 // ----------------------------------------------------------------------
 // 页面脚本（src/pron-page.ts 的 PRON_JS）在 jsdom 里**真的跑一遍**（写法照 test/funds-impl.test.ts）：
-// 口型图是不是照着依据画的、镜子有没有把画面送出去、录音回放的顺序对不对，这几件事光比字符串证明不了。
+// 一次是不是真的只显示一步、点下一步有没有真前进、念给我听调没调到、镜子有没有把画面送出去、
+// 录音回放的顺序对不对，这几件事光比字符串证明不了。
 // ----------------------------------------------------------------------
 type PWin = Window & typeof globalThis & { pronOpen(): void; pronStop?(): void; eval(s: string): unknown };
 /** 一台假的摄像头 / 麦克风：轨道被 stop() 过没有，测试直接数 */
@@ -861,10 +770,11 @@ const fakeStream = () => {
  * 开一个只有 #w-pron 的 jsdom 页面，跑真的 PRON_JS。
  * 网络一律走替身并**逐条记下来**（镜子那一段要证明"一次都没往外发"）。
  */
-async function pronPage(opt: { cam?: 'ok' | 'deny' | 'none'; camDelay?: number } = {}) {
+async function pronPage(opt: { cam?: 'ok' | 'deny' | 'none'; camDelay?: number; speech?: 'ok' | 'noZh' | 'none'; auto?: 'on' | 'off' } = {}) {
   const jsdomName = 'jsdom';
   const { JSDOM } = await import(jsdomName);
-  const dom = new JSDOM(`<!doctype html><body><main id="app">${PRON_MOD}</main></body>`, { runScripts: 'outside-only', pretendToBeVisual: true });
+  // 给一个 url：about:blank 下 jsdom 没有 localStorage，而「自动念」的开关就存在那里
+  const dom = new JSDOM(`<!doctype html><body><main id="app">${PRON_MOD}</main></body>`, { url: 'https://pron.test/', runScripts: 'outside-only', pretendToBeVisual: true });
   const w = dom.window as unknown as PWin;
   const net: string[] = [];
   const plays: { src: string; rate: number }[] = [];
@@ -910,6 +820,23 @@ async function pronPage(opt: { cam?: 'ok' | 'deny' | 'none'; camDelay?: number }
       },
     });
   }
+  // 假朗读：记下每一句念的是什么、lang 是什么；speech:'none' = 这台设备根本没有 speechSynthesis，
+  // speech:'noZh' = 有朗读但一个中文声音都没有（真机上很常见）
+  const said: { text: string; lang: string; rate: number }[] = [];
+  let cancels = 0;
+  if (opt.speech !== 'none') {
+    anyW.SpeechSynthesisUtterance = function (this: any, t: string) { this.text = t; this.lang = ''; this.rate = 1; };
+    anyW.speechSynthesis = {
+      cancel: () => { cancels++; },
+      speak: (u: { text: string; lang: string; rate: number }) => { said.push({ text: u.text, lang: u.lang, rate: u.rate }); },
+      getVoices: () => (opt.speech === 'noZh' ? [{ lang: 'en-US' }] : [{ lang: 'zh-CN' }]),
+    };
+  } else {
+    anyW.speechSynthesis = undefined;
+    anyW.SpeechSynthesisUtterance = undefined;
+  }
+  // 自动念的开关存 localStorage：测试要能从"他上次关掉了"这个状态开起来
+  try { if (opt.auto) anyW.localStorage.setItem('pn-auto-speak', opt.auto); else anyW.localStorage.removeItem('pn-auto-speak'); } catch { /* 取不到就当默认开着 */ }
   // 假录音机：按一下开始、再按一下停止，停的时候吐一段 3 字节的音频
   anyW.MediaRecorder = function (this: any) {
     this.state = 'recording'; this.mimeType = 'audio/webm';
@@ -925,183 +852,238 @@ async function pronPage(opt: { cam?: 'ok' | 'deny' | 'none'; camDelay?: number }
   const click = (id: string) => ($(id) as HTMLButtonElement).click();
   const until = async (cond: () => boolean) => { for (let k = 0; k < 400 && !cond(); k++) await new Promise((ok) => setTimeout(ok, 5)); return cond(); };
   w.pronOpen();
-  await until(() => w.document.querySelectorAll('#pn-draw .pn-mo').length === 2);
-  /** 两个音那两块图：每个元素的样子（标签 + 全部属性），用来逐个比 */
-  const pics = (sel = '#pn-draw') => [...w.document.querySelectorAll(sel + ' .pn-mo')].map((d) =>
-    [...d.querySelectorAll('svg *')].map((e) => e.tagName + ' ' + [...e.attributes].map((a) => a.name + '=' + a.value).sort().join(' ')));
+  await until(() => w.document.querySelectorAll('#pn-cbtns .btn').length > 0);
   const useGroup = (id: string) => {
     const b = [...w.document.querySelectorAll('#pn-pick .btn')].find((x) => x.textContent!.includes(id));
     (b as HTMLButtonElement).click();
   };
+  /** 这一步按钮里带某几个字的那一个（「做好了」「🔈」「🎤」「🔊」「上一步」） */
+  const cbtn = (t: string) => [...w.document.querySelectorAll('#pn-cbtns .btn')].find((b) => b.textContent!.includes(t)) as HTMLButtonElement | undefined;
+  /** 屏幕上现在显示的这一步（页面只会显示一步，所以这就是全部） */
+  const shown = () => ({
+    lv: $('pn-clv').textContent!, say: $('pn-csay').textContent!, big: $('pn-cbig').hidden ? '' : $('pn-cbig').textContent!,
+    hint: $('pn-chint').hidden ? '' : $('pn-chint').textContent!, src: $('pn-csrc').textContent!,
+    num: $('pn-cnum').textContent!, btns: [...w.document.querySelectorAll('#pn-cbtns .btn')].map((b) => b.textContent!),
+  });
+  const next = () => cbtn('做好了')!.click();
   // 关之前先让在飞的那几个 promise 落地（取发音、FileReader、POST say），再关窗口
   const close = async () => { 关了 = true; await new Promise((ok) => setTimeout(ok, 80)); w.close(); };
-  return { w, $, click, until, net, plays, cams, pics, useGroup, close };
+  return { w, $, click, until, net, plays, cams, said, cancels: () => cancels, useGroup, cbtn, shown, next, close };
 }
 
-describe('11. 页面照着依据画：课件没说的一笔都不画（jsdom 里真跑一遍 PRON_JS）', () => {
-  it('图里每一笔都带依据，而且依据就是这个音 mouth 里的原文（图框除外，图框两个音完全一样）', async () => {
+// ======================================================================
+// 10～11 组：「跟我做」那一屏（2026-11-12，Amos：「完全不知道该怎么开口」「口型图撤掉，念给我听要，开始做」）
+// ======================================================================
+describe('10. 跟我做：一屏只有一步，他点一下才前进（jsdom 里真跑一遍 PRON_JS）', () => {
+  /** 页面把课件原文里的两个星号渲染成加粗，所以比文字的时候要按同一把尺子去掉星号 */
+  const 去星 = (s: string) => String(s ?? '').split('**').join('');
+
+  it('一屏上**只有一步**：显示的那句就是阶梯的第 1 步，一个字不多、一个字不少', async () => {
     const p = await pronPage();
     try {
-      for (const g of GROUPS) {
-        p.useGroup(`${g.a.ipa} vs ${g.b.ipa}`);
-        await p.until(() => p.$('pn-draw').querySelectorAll('.pn-mo').length === 2);
-        const 块 = [...p.w.document.querySelectorAll('#pn-draw .pn-mo')];
-        块.forEach((d, i) => {
-          const sound = i === 0 ? g.a : g.b;
-          for (const e of [...d.querySelectorAll('svg *')]) {
-            const y = e.getAttribute('data-y');
-            const frame = e.getAttribute('data-frame');
-            // 一笔要么有依据、要么是图框，没有第三种
-            expect([g.id, i, e.tagName, !!y || !!frame]).toEqual([g.id, i, e.tagName, true]);
-            if (y) for (const one of y.split(' | ')) expect([g.id, i, one, sound.mouth.includes(one)]).toEqual([g.id, i, one, true]);
-          }
-        });
-      }
+      const 步 = LESSON[0].步;
+      const s = p.shown();
+      expect(s.say).toBe(去星(步[0].说));
+      expect(s.hint).toBe(去星(步[0].提示 ?? ''));
+      // 依据原文照抄；依据本身不是那三个字开头的（机械拆分那几步），前面才补一个类别标签
+      expect(s.src).toBe(步[0].依据.indexOf(步[0].类) === 0 ? 步[0].依据 : 步[0].类 + 步[0].依据);
+      expect(s.big).toBe(步[0].大 ?? '');
+      expect(s.num).toBe('第 1 / 共 ' + 步.length + ' 步');
+      expect(s.lv).toBe('第 1 级 · ' + 级[步[0].lv]);
+      // 屏幕上只摆得下这一步：别的步骤的那句话一个都不在 DOM 里
+      const 整块 = p.$('pn-s1').textContent!;
+      for (const x of 步.slice(1)) if (去星(x.说) !== 去星(步[0].说)) expect([x.说, 整块.includes(去星(x.说))]).toEqual([x.说, false]);
     } finally { await p.close(); }
   });
 
-  it('画不出差别的那几组（/f/ /v/、/n/ /l/）两个音的图**逐笔一模一样**，不编一个假的嘴型差别', async () => {
+  it('点「做好了，下一步」真的前进一步；「上一步」真的退回来（进度条和第几步跟着走）', async () => {
     const p = await pronPage();
     try {
-      for (const g of [GROUPS[3], GROUPS[5]]) {
-        p.useGroup(`${g.a.ipa} vs ${g.b.ipa}`);
-        await p.until(() => p.$('pn-drawnote').textContent!.includes('一模一样'));
-        const [A, B] = p.pics();
-        expect([g.id, A]).toEqual([g.id, B]);
-        expect([g.id, A.length > 0]).toEqual([g.id, true]);
-      }
+      const 步 = LESSON[0].步;
+      p.next();
+      expect(p.shown().say).toBe(去星(步[1].说));
+      expect(p.shown().num).toBe('第 2 / 共 ' + 步.length + ' 步');
+      expect(p.$('pn-cbar').getAttribute('style')).toContain(String(Math.round(2 * 100 / 步.length)) + '%');
+      p.cbtn('上一步')!.click();
+      expect(p.shown().say).toBe(去星(步[0].说));
+      // 第 1 步没有「上一步」（退无可退就不画那个按钮，不画灰的）
+      expect(p.cbtn('上一步')).toBe(undefined);
     } finally { await p.close(); }
   });
 
-  it('第 1 组：两张图**只有**上下齿那几笔不一样，不一样的每一笔都指得回"开口"那条原文', async () => {
+  it('**整条阶梯逐步走一遍**：每一句都和 src/pron-lesson.ts 对得上，走完给一屏收尾', async () => {
     const p = await pronPage();
     try {
-      const g = GROUPS[0];
-      const [A, B] = p.pics();
-      // 两张图里凡是**对面没有一模一样一笔**的，依据里必须带"1cm / 2cm"那条原文 —— 别的地方一笔都不许不一样
-      const 只在A = A.filter((x) => !B.includes(x));
-      const 只在B = B.filter((x) => !A.includes(x));
-      expect(只在A.length + 只在B.length).toBeGreaterThan(0);
-      for (const x of [...只在A, ...只在B]) {
-        expect([x, /data-y=/.test(x)]).toEqual([x, true]);
-        expect([x, /1cm|2cm/.test(x)]).toEqual([x, true]);
+      const 步 = LESSON[0].步;
+      for (let i = 0; i < 步.length; i++) {
+        expect([i, p.shown().say]).toEqual([i, 去星(步[i].说)]);
+        expect([i, p.shown().lv]).toEqual([i, '第 ' + (步[i].lv + 1) + ' 级 · ' + 级[步[i].lv]]);
+        expect([i, p.shown().src]).toEqual([i, 步[i].依据.indexOf(步[i].类) === 0 ? 步[i].依据 : 步[i].类 + 步[i].依据]);
+        expect([i, p.shown().src.includes(步[i].依据)]).toEqual([i, true]);   // 依据一个字都不许改
+        // 🔊 只在这一步有标准音时给、🎤 只在这一步能纠说时给（没有就不画，不画灰按钮）
+        expect([i, !!p.cbtn('🔊')]).toEqual([i, !!步[i].音]);
+        expect([i, !!p.cbtn('🎤')]).toEqual([i, !!步[i].麦]);
+        p.next();
       }
-      // 没提到 cm 的那几笔（嘴唇拉开多少、舌头）两边完全一样，一笔不差
-      expect(A.filter((x) => !x.includes('cm'))).toEqual(B.filter((x) => !x.includes('cm')));
-      expect(A.filter((x) => x.includes('平躺抵下齿'))).toEqual(B.filter((x) => x.includes('平躺抵下齿')));
-      expect(p.$('pn-drawnote').textContent).toContain('可容纳一根食指');
-      expect(g.a.mouth[1]).toContain('一根食指');
+      // 收尾屏：课程的作业标准照实写，并说明课程没给自查方法（这正是 🎤 要补的那一处）
+      expect(p.$('pn-fin').hidden).toBe(false);
+      expect(p.$('pn-coach').hidden).toBe(true);
+      expect(p.$('pn-fin').textContent).toContain('直到没有任何发音错误');
+      expect(p.$('pn-fin').textContent).toContain('没有给自查的办法');
+      expect(p.$('pn-fin').textContent).toContain('机器听成了哪个词');
+      // 四级都走完了 → 轨上四级全标成完成
+      expect([...p.w.document.querySelectorAll('#pn-rail .pn-lv')].map((e) => e.className)).toEqual(级.map(() => 'pn-lv ok'));
+      p.click('pn-redo');
+      expect(p.shown().num).toBe('第 1 / 共 ' + 步.length + ' 步');
     } finally { await p.close(); }
   });
 
-  it('「拿手指量」这句只在课件真给了食指参照的组上说（别把第 1 组的原文串到别人头上）', async () => {
+  it('四级轨就是课程那四级：当前级高亮、走过的标成完成（级数和名字都从 pron-lesson.ts 来）', async () => {
     const p = await pronPage();
     try {
-      for (const g of GROUPS) {
-        p.useGroup(`${g.a.ipa} vs ${g.b.ipa}`);
-        await p.until(() => p.$('pn-mouthhint').textContent!.length > 0);
-        const hint = p.$('pn-mouthhint').textContent!;
-        // 这一组课件到底给没给"可容纳几根食指"
-        const 根 = [g.a, g.b].flatMap((x) => x.mouth).filter((m) => /食指/.test(m));
-        if (根.length) {
-          expect([g.id, /拿手指量/.test(hint)]).toEqual([g.id, true]);
-          // 说几根，必须就是这一组课件写的那个数，不许拿别组的
-          for (const n of ['一根', '两根']) {
-            expect([g.id, n, hint.includes(n)]).toEqual([g.id, n, 根.some((m) => m.includes(n))]);
-          }
-        } else {
-          // 课件没给尺寸的组（/f/ /v/、/l/ /r/、/n/ /l/、/ʒ/ /dʒ/）：一个字都不许提手指和厘米
-          expect([g.id, hint]).toEqual([g.id, expect.not.stringContaining('食指')]);
-          expect([g.id, hint]).toEqual([g.id, expect.not.stringContaining('cm')]);
-          expect([g.id, /别拿手指量/.test(hint)]).toEqual([g.id, true]);
-        }
-      }
+      const 步 = LESSON[0].步;
+      expect([...p.w.document.querySelectorAll('#pn-rail .pn-lv')].map((e) => e.textContent)).toEqual(级.map((n, k) => (k + 1) + '. ' + n));
+      // 走到第 1 个第 2 级的步骤：轨上第 2 级高亮、第 1 级标完成
+      let i = 0;
+      while (步[i].lv === 0) { p.next(); i++; }
+      expect(步[i].lv).toBe(1);
+      expect([...p.w.document.querySelectorAll('#pn-rail .pn-lv')].map((e) => e.className))
+        .toEqual(['pn-lv ok', 'pn-lv on', 'pn-lv', 'pn-lv']);
     } finally { await p.close(); }
   });
 
-  it('**不该不一样的特征，两张图的数必须一样**（光比 data-y 挡不住凭空画的差别 —— 审查 🟡5）', async () => {
+  it('换一组：阶梯跟着换成那一组的，从第 1 步重新开始（不会把上一组的步数带过来）', async () => {
     const p = await pronPage();
     try {
-      for (const g of GROUPS) {
-        p.useGroup(`${g.a.ipa} vs ${g.b.ipa}`);
-        await p.until(() => p.$('pn-draw').querySelectorAll('.pn-mo').length === 2);
-        const 该不一样 = new Set(mouthPair(g).差别特征 as string[]);
-        // 每个特征：这一笔画出来的那个数（data-g）在两张图里各是什么
-        const 数 = (i: number) => {
-          const d = [...p.w.document.querySelectorAll('#pn-draw .pn-mo')][i];
-          const m: Record<string, string[]> = {};
-          for (const e of [...d.querySelectorAll('svg *')]) {
-            const f = e.getAttribute('data-f'); if (!f) continue;
-            (m[f] ??= []).push(e.getAttribute('data-g') ?? '');
-          }
-          for (const k of Object.keys(m)) m[k] = [...new Set(m[k])].sort();
-          return m;
-        };
-        const A = 数(0), B = 数(1);
-        for (const f of new Set([...Object.keys(A), ...Object.keys(B)])) {
-          if (该不一样.has(f)) continue;
-          // 手指参照是跟着开口走的，开口算一处差别时它也跟着变
-          if (f === '手指' && 该不一样.has('开口')) continue;
-          expect([g.id, f, A[f] ?? null]).toEqual([g.id, f, B[f] ?? null]);
-        }
-        // 反过来：声明该不一样的特征，画出来**真的**不一样（不能声明了却画成一样）
-        for (const f of 该不一样) expect([g.id, f, JSON.stringify(A[f] ?? null)]).not.toEqual([g.id, f, JSON.stringify(B[f] ?? null)]);
-      }
-    } finally { await p.close(); }
-  });
-
-  it('第 1 步的标题不许写死：课件口型写的一样的组，不许说"是用嘴型分开的"（审查 🔴4）', async () => {
-    const p = await pronPage();
-    try {
-      for (const g of GROUPS) {
-        p.useGroup(`${g.a.ipa} vs ${g.b.ipa}`);
-        await p.until(() => p.$('pn-s1-t').textContent!.includes(g.a.ipa));
-        const t = p.$('pn-s1-t').textContent!;
-        if (mouthPair(g).画得出差别) expect([g.id, /是用嘴型分开的/.test(t)]).toEqual([g.id, true]);
-        else {
-          // 画不出差别的组：标题必须自己说清楚，而且不能和下面那段说明打架
-          expect([g.id, t]).toEqual([g.id, expect.stringContaining('不是用嘴型分开的')]);
-          // 两种画不出：一种是两个音画出来一样（g4/g6），一种是课件压根没给口型（g7）。
-          // 标题得分清楚，别拿"写的一样"去说一个课件根本没写的东西。
-          const 有图 = mouthSpec(g.a).画了.length + mouthSpec(g.b).画了.length > 0;
-          expect([g.id, t]).toEqual([g.id, expect.stringContaining(有图 ? '口型课件写的一样' : '课件没给')]);
-          expect([g.id, p.$('pn-drawnote').textContent]).toEqual([g.id, expect.stringContaining(有图 ? '一模一样' : '一张图都不画')]);
-        }
-      }
-    } finally { await p.close(); }
-  });
-
-  it('第 7 组：一张图都不画，面板上照实说"课件没给这个音的口型"', async () => {
-    const p = await pronPage();
-    try {
+      p.next(); p.next();
       p.useGroup(`${GROUPS[6].a.ipa} vs ${GROUPS[6].b.ipa}`);
-      await p.until(() => p.$('pn-drawnote').textContent!.includes('一张图都不画'));
-      expect(p.w.document.querySelectorAll('#pn-draw svg').length).toBe(0);
-      expect(p.$('pn-draw').textContent).toContain('课件没给这个音的口型');
+      const 步 = LESSON[6].步;
+      expect(p.shown().num).toBe('第 1 / 共 ' + 步.length + ' 步');
+      expect(p.shown().say).toBe(去星(步[0].说));
     } finally { await p.close(); }
   });
 
-  it('来回切换：点一下两个音轮流高亮；课件写「由…到…」的音**两帧真的不一样**（会动的是它自己说的）', async () => {
+  it('这一步的 🎤：措辞还是「机器听成了什么」，而且结果出在**他正看着的那一屏**上', async () => {
     const p = await pronPage();
     try {
-      p.useGroup(`${GROUPS[1].a.ipa} vs ${GROUPS[1].b.ipa}`); // /eɪ/「上下齿由微张后慢慢闭合」
-      await p.until(() => p.$('pn-draw').querySelectorAll('.pn-mo').length === 2);
-      const 帧0 = p.pics()[0];
-      p.click('pn-anim');
-      expect(p.$('pn-anim').getAttribute('aria-pressed')).toBe('true');
-      expect(p.w.document.querySelectorAll('#pn-draw .pn-mo.lit').length).toBe(1);
-      await p.until(() => JSON.stringify(p.pics()[0]) !== JSON.stringify(帧0)); // 450ms 一拍，第 2 帧和第 1 帧不同
-      expect(JSON.stringify(p.pics()[0])).not.toBe(JSON.stringify(帧0));
-      p.click('pn-anim');
-      expect(p.$('pn-anim').getAttribute('aria-pressed')).toBe('false');
-      expect(p.w.document.querySelectorAll('#pn-draw .pn-mo.lit').length).toBe(0);
-      // 不会动的音（/iː/「距离几乎为 0」）两帧一样：不给它假装动
-      const b0 = JSON.stringify(p.pics()[1]);
-      p.click('pn-anim');
-      await new Promise((ok) => setTimeout(ok, 500));
-      expect(JSON.stringify(p.pics()[1])).toBe(b0);
-      p.click('pn-anim');
+      const 步 = LESSON[0].步;
+      const k = 步.findIndex((x) => !!x.麦);
+      expect(k).toBeGreaterThan(-1);
+      for (let i = 0; i < k; i++) p.next();
+      const b = p.cbtn('🎤')!;
+      expect(b.textContent).toBe('🎤 我念一遍');
+      b.click();
+      await p.until(() => /停止/.test(b.textContent ?? ''));
+      b.click();
+      await p.until(() => !p.$('pn-csayver').hidden);
+      expect(p.$('pn-csayver').textContent).toContain('机器听成了');
+      for (const 不许 of ['你念对了', '你念错了', '念对', '念错']) expect([不许, p.$('pn-csayver').textContent!.includes(不许)]).toEqual([不许, false]);
+      expect(p.$('pn-csaynote').textContent).toContain('一天最多');
+      expect(p.$('pn-sayver').hidden).toBe(true);   // 第 2 步那一份没被写花
     } finally { await p.close(); }
+  });
+
+  it('镜子左边就是**这一步的那句话**，翻一步它跟着换（口型图撤掉了，但隐私那一套一条没动）', async () => {
+    const p = await pronPage({ cam: 'ok' });
+    try {
+      const 步 = LESSON[0].步;
+      p.click('pn-mir');
+      await p.until(() => !p.$('pn-mirwrap').hidden);
+      expect(p.$('pn-mirtarget').textContent).toBe(去星(步[0].说));
+      const n0 = p.net.length;
+      p.next();
+      expect(p.$('pn-mirtarget').textContent).toBe(去星(步[1].说));
+      expect(p.net.slice(n0)).toEqual([]);          // 翻页也没往外发一个字节
+      expect(p.cams[0].track.stopped).toBe(0);
+    } finally { await p.close(); }
+  });
+
+  it('走到收尾屏：镜子关掉（那一屏没有口型要做了，指示灯不许还亮着）', async () => {
+    const p = await pronPage({ cam: 'ok' });
+    try {
+      p.click('pn-mir');
+      await p.until(() => !p.$('pn-mirwrap').hidden);
+      for (let i = 0; i < LESSON[0].步.length; i++) p.next();
+      expect(p.$('pn-fin').hidden).toBe(false);
+      expect(p.cams[0].track.stopped).toBe(1);
+      expect(p.$('pn-mirwrap').hidden).toBe(true);
+    } finally { await p.close(); }
+  });
+});
+
+describe('11. 念给我听：浏览器自带的朗读，不调 AI、不花钱；这台设备读不了中文就当面说', () => {
+  it('点「🔈 念给我听」真的念出这一句，lang 是 zh-CN、语速比正常慢', async () => {
+    const p = await pronPage();
+    try {
+      p.cbtn('🔈')!.click();
+      expect(p.said.length).toBe(1);
+      expect(p.said[0].lang).toBe('zh-CN');
+      expect(p.said[0].rate).toBeLessThan(1);
+      expect(p.said[0].text).toContain(LESSON[0].步[0].说.split('**').join(''));
+    } finally { await p.close(); }
+  });
+
+  it('点「下一步」之后**自动念新的那一句**（这样他可以对着镜子做，不用盯屏幕）', async () => {
+    const p = await pronPage();
+    try {
+      expect(p.said.length).toBe(0);              // 刚进来不念，不吓人
+      p.next();
+      expect(p.said.length).toBe(1);
+      expect(p.said[0].text).toBe(LESSON[0].步[1].说.split('**').join(''));
+      expect(p.said[0].lang).toBe('zh-CN');
+    } finally { await p.close(); }
+  });
+
+  it('开关关掉之后**不再自动念**（手点「🔈」还是念），而且开关状态存得住', async () => {
+    const p = await pronPage();
+    try {
+      p.click('pn-auto');
+      expect(p.$('pn-auto').getAttribute('aria-pressed')).toBe('false');
+      p.next(); p.next();
+      expect(p.said.length).toBe(0);
+      p.cbtn('🔈')!.click();                       // 自己点还是念
+      expect(p.said.length).toBe(1);
+      expect((p.w as any).localStorage.getItem('pn-auto-speak')).toBe('off');
+    } finally { await p.close(); }
+    // 上次关掉了：这次进来还是关着的，翻页也不念
+    const q = await pronPage({ auto: 'off' });
+    try {
+      expect(q.$('pn-auto').getAttribute('aria-pressed')).toBe('false');
+      q.next();
+      expect(q.said.length).toBe(0);
+    } finally { await q.close(); }
+  });
+
+  it('这台设备没有朗读 / 没有中文声音：**按钮上当面说清楚**，其余功能照常能用（不整屏挂掉）', async () => {
+    for (const speech of ['none', 'noZh'] as const) {
+      const p = await pronPage({ speech });
+      try {
+        p.cbtn('🔈')!.click();
+        const 按钮 = p.shown().btns.join('|');
+        expect([speech, 按钮]).toEqual([speech, expect.stringContaining('这台设备读不了中文，照着屏幕做就行')]);
+        expect([speech, p.$('pn-auto').textContent]).toEqual([speech, '这台设备读不了中文，照着屏幕做就行']);
+        // 其余照常：翻页、🎤、镜子、去对照听都还在
+        p.next();
+        expect([speech, p.shown().num]).toEqual([speech, '第 2 / 共 ' + LESSON[0].步.length + ' 步']);
+        p.click('pn-go2');
+        expect([speech, p.$('pn-s2').hidden]).toEqual([speech, false]);
+        expect([speech, p.w.document.querySelectorAll('#pn-cmp .pn-pair button').length]).toEqual([speech, 8]);
+      } finally { await p.close(); }
+    }
+  });
+
+  it('不调任何 AI、不花一分钱：朗读那一段里一次网络请求都没有，源码里也没有第二个 TTS', async () => {
+    const p = await pronPage();
+    try {
+      const n0 = p.net.length;
+      p.cbtn('🔈')!.click();
+      p.next(); p.next();
+      expect(p.net.slice(n0)).toEqual([]);
+    } finally { await p.close(); }
+    // 念的是浏览器自己带的那一套，不走 /api/
+    const 段 = PRON_JS.slice(PRON_JS.indexOf('function pCanSpeak'), PRON_JS.indexOf('function pAutoLabel'));
+    expect(段).toContain("u.lang='zh-CN'");
+    for (const w of ['fetch', 'aura', 'tts', 'AI']) expect([w, 段.includes(w)]).toEqual([w, false]);
   });
 });
 
@@ -1131,7 +1113,10 @@ describe('12. 照镜子：画面不上传、不保存、不录；关掉时摄像
       expect((p.$('pn-cam') as any).srcObject).toBe(p.cams[0]);
       expect(p.net.slice(n0)).toEqual([]); // 从开镜子到现在：fetch / XHR / WebSocket / sendBeacon 一条都没有
       expect(p.$('pn-mir').getAttribute('aria-pressed')).toBe('true');
-      expect(p.$('pn-mirtarget').querySelectorAll('svg').length).toBeGreaterThan(0); // 左边是目标口型图
+      // 2026-11-12：左边那张"目标口型图"随口型图一起撤掉了，改成**这一步要做的那句话**（一个字都来自课件）
+      expect(p.$('pn-mirtarget').querySelectorAll('svg').length).toBe(0);
+      expect(p.$('pn-mirtarget').textContent).toBe(p.$('pn-csay').textContent);
+      expect(p.$('pn-mirtarget').textContent!.length).toBeGreaterThan(0);
       expect(p.cams[0].track.stopped).toBe(0);
       p.click('pn-miroff');
       expect(p.cams[0].track.stopped).toBe(1); // 关掉 = 摄像头指示灯灭
@@ -1162,8 +1147,8 @@ describe('12. 照镜子：画面不上传、不保存、不录；关掉时摄像
         expect([cam, t.includes('怎么办：')]).toEqual([cam, true]);
         expect([cam, t.includes('照常能用')]).toEqual([cam, true]);
         expect([cam, p.$('pn-mirwrap').hidden]).toEqual([cam, true]);
-        // 其余部分照常：口型图还在、能去第 2 步、对照听的按钮还在
-        expect([cam, p.w.document.querySelectorAll('#pn-draw .pn-mo').length]).toEqual([cam, 2]);
+        // 其余部分照常：这一步那句话还在、能去第 2 步、对照听的按钮还在
+        expect([cam, p.$('pn-csay').textContent!.length > 0]).toEqual([cam, true]);
         p.click('pn-go2');
         expect([cam, p.$('pn-s2').hidden]).toEqual([cam, false]);
         expect([cam, p.w.document.querySelectorAll('#pn-cmp .pn-pair button').length]).toEqual([cam, 8]);
@@ -1205,7 +1190,7 @@ describe('14. 摄像头的三道竞态和一条出口（审查 🔴1、🔴2：�
     } finally { await p.close(); }
   });
 
-  it('还在等权限弹窗时他走到第 2 步：流一回来就掐掉，不许在看不见的 DOM 里亮着', async () => {
+  it('还在等权限弹窗时他走到第 2 步（对照听）：流一回来就掐掉，不许在看不见的 DOM 里亮着', async () => {
     const p = await pronPage({ cam: 'ok', camDelay: 60 });
     try {
       p.click('pn-mir');
@@ -1229,19 +1214,22 @@ describe('14. 摄像头的三道竞态和一条出口（审查 🔴1、🔴2：�
     } finally { await p.close(); }
   });
 
-  it('切到别的一级菜单（route() 调 window.pronStop）：摄像头关掉、切换动画停掉', async () => {
+  it('切到别的一级菜单（route() 调 window.pronStop）：摄像头关掉、没念完的那句也停掉', async () => {
     const p = await pronPage({ cam: 'ok' });
     try {
-      p.click('pn-mir'); p.click('pn-anim');
+      p.click('pn-mir');
+      p.cbtn('🔈')!.click();                 // 正在念这一句
       await p.until(() => p.cams.length === 1 && !p.$('pn-mirwrap').hidden);
+      expect(p.said.length).toBeGreaterThan(0);
+      const c0 = p.cancels();
       expect(typeof p.w.pronStop).toBe('function');
       p.w.pronStop!();
       expect(p.cams[0].track.stopped).toBe(1);
       expect(p.$('pn-mirwrap').hidden).toBe(true);
-      // 动画也停了：等两拍（450ms × 2）高亮不再变
-      const 高亮 = () => [...p.w.document.querySelectorAll('#pn-draw .pn-mo')].map((d) => d.className).join('|');
-      const a = 高亮(); await 睡(1000);
-      expect(高亮()).toBe(a);
+      // 他已经看不见这一屏了，手机不许还在念
+      expect(p.cancels()).toBeGreaterThan(c0);
+      const n = p.said.length; await 睡(200);
+      expect(p.said.length).toBe(n);
     } finally { await p.close(); }
   });
 

@@ -12,7 +12,10 @@
  * 课程（Top Speaker S1 语音课）给了缺的那一半：**先讲口型（可以用手指量）→ 对照听 → 同一组连考 → 过关给绕口令**。
  *
  * **四步循环**（这是全部价值所在，别改成别的）：
- *   1. **看口型**（不考）：两个音并排，各自显示课件原文的 `nick`（中文外号）和 `mouth`（逐条口型定位）。
+ *   1. **跟我做**（不考，2026-11-12 改）：**一次只说一句话**，他做完点一下才给下一句；
+ *      四级阶梯（单音 → 音素拼合 → 单词拼读 → 句子和绕口令）照课程 S1 的练法顺序，由 `src/pron-lesson.ts` 生成，
+ *      页面从那里取，服务端这里**不插手**（接口只给内容和成绩）。原来的"看口型"是一张参考卡，
+ *      Amos 2026-11-12 原话「完全不知道该怎么开口」「口型图撤掉，念给我听要，开始做」，所以口型示意图整套撤掉。
  *   2. **对照听**（不考）：这一组的最小对立对，两个词各一个大按钮，想点几次点几次；
  *      **他自己点「我听出来了，开始考」才进第 3 步**。
  *   3. **考**（同一组连考 `ROUND_N` 题，**不换别的音**）：放一段音 → 两个词二选一 → 当场对错；
@@ -40,7 +43,6 @@
  */
 import type { Env } from './env';
 import { asrWordsOf, GROUPS, minimalPairsOf, type PronGroup, type PronPair, type PronWord } from './pron-content';
-import { mouthPair } from './pron-mouth';
 import { accountLimitedMessage, isAccountLimited, noteAccountLimit, utcDay } from './usage';
 import { chargeNeurons, dailyCap, usedToday, type AiLike } from './workers-ai';
 
@@ -117,9 +119,6 @@ export function groupCard(g: PronGroup): Record<string, unknown> {
     名字: `${g.a.ipa} vs ${g.b.ipa}`,
     a: { 音标: g.a.ipa, 外号: g.a.nick, 口型: g.a.mouth },
     b: { 音标: g.b.ipa, 外号: g.b.nick, 口型: g.b.mouth },
-    // 口型示意图怎么画：**逐条从上面那个 `口型` 原文翻译出来的**（src/pron-mouth.ts），页面只负责照着画。
-    // 画不出差别的组（/f/ /v/、/n/ /l/、/ʒ/ /dʒ/）这里的 `画得出差别` 就是 false，页面照实说，不画假的（底线 3）
-    口型图: mouthPair(g),
     对: g.pairs.map((p, i) => ({ 第几对: i + 1, 最小对立对: p.minimal, a: w(i, 'a'), b: w(i, 'b') })),
     能听辨: canEar(g),
     听辨对数: minimalPairsOf(g).length,
