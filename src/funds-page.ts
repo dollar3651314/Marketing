@@ -620,7 +620,7 @@ function imported(){var G=$('fu-igrid');G.replaceChildren();var all=impAll(),lis
     if(v.source_tag)ch.appendChild(el('span',{'class':'fu-chip2 dj',title:v.metric_source||''},v.source_tag));
     if(v.metric&&v.short&&v.start)ch.appendChild(el('span',{'class':'fu-chip2'},'历史 '+v.start+' 起'));
     if(ch.childNodes.length)c.appendChild(ch);
-    if(!v.metric){c.appendChild(el('div',{'class':'none'},(np===1?'只有一个点':'只有 '+np+' 个点')+'：'+(IMP_MN[m]||'当前值')+' '+impNum(v.now,m)+'（'+dt+'），攒够历史前不比贵贱'));G.appendChild(c);return}
+    if(!v.metric){c.appendChild(el('div',{'class':'none'},(np===1?'只有一个点':'只有 '+np+' 个点')+(v.launched?'（指数 '+v.launched+' 才发布）':'')+'：'+(IMP_MN[m]||'当前值')+' '+impNum(v.now,m)+'（'+dt+'），等下次导入更长的历史再比贵贱'));G.appendChild(c);return}
     var r=el('div',{'class':'row2'});r.appendChild(el('b',null,impNum(v.now,m)));r.appendChild(el('span',null,IMP_MN[m]+' · '+dt));c.appendChild(r);
     var e=v.dear,k=e<30?'lo':e>70?'hi':'mid',word=e<30?'比过去便宜':e>70?'比过去贵':'接近过去中间';
     c.appendChild(el('div',{'class':'verdict '+k},word+'：比'+(v.short?'上市以来':'过去 10 年')+' '+Math.round(e)+'% 的时间都贵'));
@@ -642,7 +642,7 @@ $('fu-impfile').addEventListener('change',async function(){var f=this.files&&thi
     if(r.status===401){try{showLogin('请重新登录')}catch(e){}throw new Error('请重新登录')}
     if(!r.ok)throw new Error(j.error||('服务器出错了（'+r.status+'）'));
     var sk=Array.isArray(j.skipped)?j.skipped:[];
-    impDone=true;M.textContent='已导入 '+j.imported+' 只，覆盖 '+j.replaced+' 只，跳过 '+sk.length+' 只'+(sk.length?'（'+sk.slice(0,8).map(function(x){return x.code+'：'+x.reason}).join('；')+(sk.length>8?'；等 '+sk.length+' 只':'')+'）':'')+'。';
+    impDone=true;M.textContent='已导入 '+j.imported+' 只，覆盖 '+j.replaced+' 只，跳过 '+sk.length+' 只'+(sk.length?'（'+sk.slice(0,8).map(function(x){return x.code+'：'+x.reason}).join('；')+(sk.length>8?'；等 '+sk.length+' 只':'')+'）':'')+'。'+(sk.length?'跳过的几只保留原来的数据。':'');
     impBusy=false;await load()}
   catch(e){impDone=true;M.className='t err';M.textContent='没导入：'+e.message}
   finally{impBusy=false;btn.disabled=false}});

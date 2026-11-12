@@ -5,7 +5,9 @@
  *   { asOf: 'YYYY-MM-DD', indexes: [{ code, name, funds: string[], source, basis, series: { pe?: [['YYYY-MM', 值]…], pb?: […], dy?: […] },
  *                                     seriesMeta?: { pe?: { source, basis }, … }, alternates?: […] }] }
  *   校验（parseImport）：整个文件 ≤ 2MB（接口里量）；code 必须是基金观察 45 只之一（FUNDS 的 code）；日期 YYYY-MM；数值有限正数；每个序列 ≤ 600 点、月份不重复。
- *   有一项不对就整只跳过（skipped 里写原因），别的照样导入。alternates（对照用的别的口径）不存、不显示。
+ *   有一项不对就整只跳过（skipped 里写原因，指标写中文：市盈率 / 市净率 / 股息率），别的照样导入。alternates（对照用的别的口径）不存、不显示。
+ *   可选字段 launched（'YYYY-MM'，指数发布月份）：只有一个点的卡写"只有一个点（指数 YYYY-MM 才发布）"；没给就不写。
+ *   页面按导入文件里 indexes 的顺序排（存 ord；主会话 11/12）。
  *
  * 显示（impCard，GET /api/funds 的 val_import 每只一项）：
  *   选指标：市盈率 ≥ 36 个点、且最后一点离导入文件的 asOf 不超过 12 个月 → pe；否则股息率 ≥ 24 个点 → dy；都不够 → metric = null，只显示当前值（不比贵贱）。
@@ -45,6 +47,10 @@ export interface ImpStored {
   basis: string;
   /** 导入文件的 asOf（YYYY-MM-DD） */
   as_of: string;
+  /** 在导入文件 indexes 里的位置（0 起）：页面按它排（主会话 11/12：按导入文件顺序） */
+  ord?: number;
+  /** 指数发布月份（导入文件可选字段 launched，YYYY-MM）：只有一个点的卡写"指数 … 才发布" */
+  launched?: string;
   series: Partial<Record<ImpMetric, [string, number][]>>;
   meta?: Partial<Record<ImpMetric, { source?: string; basis?: string }>>;
 }
@@ -57,6 +63,8 @@ export interface ImpParsed {
 const isMonth = (s: unknown): s is string => typeof s === 'string' && /^\d{4}-(0[1-9]|1[0-2])$/.test(s);
 const str = (v: unknown, max = TEXT_MAX) => (typeof v === 'string' ? v.trim().slice(0, max) : '');
 const CODES = new Set(FUNDS.map((f) => f.code));
+/** 跳过原因里的指标名（主会话 11/12：写中文，不写 pe / pb / dy） */
+export const MN: Record<ImpMetric, string> = { pe: '市盈率', pb: '市净率', dy: '股息率' };
 
 /** 校验导入文件。整个文件不对（不是对象、没有 indexes）回 { error }；单只不对进 skipped */
 export function parseImport(body: unknown, today: string): ImpParsed | { error: string } {
@@ -84,16 +92,16 @@ export function parseImport(body: unknown, today: string): ImpParsed | { error: 
     for (const m of METRICS) {
       const arr = (s as Record<string, unknown>)[m];
       if (arr == null) continue;
-      if (!Array.isArray(arr)) return skip(`${m} 不是列表`);
-      if (arr.length > IMP_MAX_POINTS) return skip(`${m} 有 ${arr.length} 个点，最多 ${IMP_MAX_POINTS}`);
+      if (!Array.isArray(arr)) return skip(`${MN[m]} 不是列表`);
+      if (arr.length > IMP_MAX_POINTS) return skip(`${MN[m]} 有 ${arr.length} 个点，最多 ${IMP_MAX_POINTS}`);
       const pts: [string, number][] = [];
       const months = new Set<string>();
       for (let k = 0; k < arr.length; k++) {
         const p = arr[k];
-        if (!Array.isArray(p) || p.length < 2) return skip(`${m} 第 ${k + 1} 个点格式不对（要 [YYYY-MM, 数值]）`);
-        if (!isMonth(p[0])) return skip(`${m} 第 ${k + 1} 个点日期不是 YYYY-MM`);
-        if (typeof p[1] !== 'number' || !Number.isFinite(p[1]) || p[1] <= 0) return skip(`${m} 第 ${k + 1} 个点的值不是正数`);
-        if (months.has(p[0])) return skip(`${m} 的 ${p[0]} 出现了两次`);
+        if (!Array.isArray(p) || p.length < 2) return skip(`${MN[m]} 第 ${k + 1} 个点格式不对（要 [YYYY-MM, 数值]）`);
+        if (!isMonth(p[0])) return skip(`${MN[m]} 第 ${k + 1} 个点日期不是 YYYY-MM`);
+        if (typeof p[1] !== 'number' || !Number.isFinite(p[1]) || p[1] <= 0) return skip(`${MN[m]} 第 ${k + 1} 个点的值不是正数`);
+        if (months.has(p[0])) return skip(`${MN[m]} 的 ${p[0]} 出现了两次`);
         months.add(p[0]);
         pts.push([p[0], p[1]]);
       }
@@ -111,7 +119,7 @@ export function parseImport(body: unknown, today: string): ImpParsed | { error: 
         if (Object.keys(e).length) meta[m] = e;
       }
     }
-    out.ok.push({ code, stored: { name, funds: funds.length ? funds : [code], source: str(x.source), basis: str(x.basis), as_of: asOf, series, ...(Object.keys(meta).length ? { meta } : {}) } });
+    out.ok.push({ code, stored: { name, funds: funds.length ? funds : [code], source: str(x.source), basis: str(x.basis), as_of: asOf, ord: i, ...(isMonth(x.launched) ? { launched: x.launched } : {}), series, ...(Object.keys(meta).length ? { meta } : {}) } });
   });
   return out;
 }
@@ -179,6 +187,10 @@ export interface ImpCard {
   /** 最近 120 点 */
   series: [string, number][];
   as_of: string;
+  /** 导入文件里的顺序（旧数据没有时是 null） */
+  ord: number | null;
+  /** 指数发布月份（导入文件给了才有） */
+  launched: string | null;
   imported_at: string | null;
 }
 
@@ -200,7 +212,7 @@ export function impCard(code: string, st: ImpStored, importedAt: number | null):
     code, name: st.name, funds: st.funds, market: FUNDS.find((f) => f.code === code)?.market ?? null,
     metric, shown, now: last[1], now_date: last[0], date: last[0], points: all.length, pct: null, dear: null, expensive: null,
     proxy: /代理|自算/.test(basis), source_tag: isDanjuan(st, shown) ? DJ_TAG : null, source: st.source, basis: st.basis, metric_source: source, metric_basis: basis,
-    series: [], as_of: st.as_of, imported_at: importedAt ? new Date(importedAt).toISOString() : null,
+    series: [], as_of: st.as_of, ord: typeof st.ord === 'number' ? st.ord : null, launched: st.launched ?? null, imported_at: importedAt ? new Date(importedAt).toISOString() : null,
   };
   if (!metric) return card;
   const win = all.slice(-IMP_WIN);

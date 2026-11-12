@@ -1077,7 +1077,7 @@ export async function fundsApi(env: Env, req: Request, now: number, sub: string,
 
 // ---------------------------------------------------------------- 估值"参考：导入的历史"（Amos 2026-11-12；计算在 src/funds-import.ts，表 migrations/0021_fund_val_import.sql）
 
-/** GET /api/funds 里的 val_import：按 45 只的顺序，每只一张小卡（读不到时回 []，不影响别的） */
+/** GET /api/funds 里的 val_import：按导入文件里的顺序（ord），每只一张小卡（读不到时回 []，不影响别的） */
 export async function importList(env: Env): Promise<ImpCard[]> {
   try {
     const rows = (await env.DB.prepare('SELECT code, data, imported_at FROM fund_val_import').all<{ code: string; data: string; imported_at: number }>()).results ?? [];
@@ -1088,7 +1088,8 @@ export async function importList(env: Env): Promise<ImpCard[]> {
       if (!r) continue;
       try { out.push(impCard(f.code, JSON.parse(r.data) as ImpStored, r.imported_at)); } catch { /* 坏行跳过 */ }
     }
-    return out;
+    // 主会话 11/12：按导入文件里的顺序（ord）；不同次导入的同号按 45 只顺序（sort 稳定）
+    return out.sort((a, b) => (a.ord ?? 1e9) - (b.ord ?? 1e9));
   } catch {
     return [];
   }

@@ -51,12 +51,17 @@ describe('parseImport 校验', () => {
     expect(r.skipped.map((x) => x.code)).toEqual(['ZZZ', 'VIG', 'VYM', 'SDY', 'DGRO', 'SCHD', 'QQQ', 'VTI', 'ES3']);
     expect(r.skipped[0].reason).toContain('45 只');
     expect(r.skipped[4].reason).toContain('600');
+    // 主会话 11/12：原因里指标写中文
+    expect(r.skipped[1].reason).toBe('股息率 第 1 个点日期不是 YYYY-MM');
+    expect(r.skipped.map((x) => x.reason).join('')).not.toMatch(/\b(pe|pb|dy)\b/);
     expect(r.skipped.every((x) => x.reason.length > 0)).toBe(true);
   });
   it('alternates 不存；seriesMeta 只留 source / basis 文字；没写 asOf 用今天', () => {
     const r = parseImport({ indexes: [{ code: '588000', name: '科创50', funds: ['588000'], source: 'a；b', basis: 'pe=x', series: { pe: [['2026-10', 50]] }, seriesMeta: { pe: { source: '中证', basis: 'peg', n: 3 } }, alternates: [{ metric: 'pe', series: [['2026-10', 1]] }] }] }, '2026-11-12');
     if ('error' in r) throw new Error(r.error);
     expect(r.ok[0].stored.as_of).toBe('2026-11-12');
+    expect(r.ok[0].stored.ord).toBe(0);
+    expect(r.ok[0].stored.launched).toBeUndefined();
     expect(r.ok[0].stored.meta).toEqual({ pe: { source: '中证', basis: 'peg' } });
     expect(JSON.stringify(r.ok[0].stored)).not.toContain('alternates');
   });
@@ -96,6 +101,11 @@ describe('impCard 选指标与口径', () => {
     const c = impCard('UPD', st({ series: { dy: [['2025-11', 7.43]] } }), NOW);
     expect(c).toMatchObject({ metric: null, shown: 'dy', now: 7.43, date: '2025-11', points: 1, series: [] });
     expect([c.pct, c.dear]).toEqual([null, null]);
+    expect(c.launched).toBe(null);
+    const r = parseImport({ indexes: [{ code: 'UPD', name: 'u', launched: '2025-10', series: { dy: [['2025-11', 7.43]] } }, { code: 'ES3', name: 'e', launched: '2025年', series: { dy: [['2025-11', 3]] } }] }, '2026-11-12');
+    if ('error' in r) throw new Error(r.error);
+    expect(impCard('UPD', r.ok[0].stored, NOW)).toMatchObject({ launched: '2025-10', ord: 0 });
+    expect(impCard('ES3', r.ok[1].stored, NOW)).toMatchObject({ launched: null, ord: 1 }); // 不是 YYYY-MM 不收
   });
   it('代理：选用指标的口径含"代理 / 自算"；蛋卷标签按选用指标的来源（seriesMeta 优先；588000 的 pe 来自中证不加）', () => {
     const qqq = st({ source: 'Yahoo chart QQQ；蛋卷基金 pe_history', basis: 'dy=ETF代理：分红；pe=蛋卷口径；pb=蛋卷口径', series: { pe: months(40, '2026-11', up), dy: months(40, '2026-11', up) } });
@@ -150,7 +160,7 @@ describe('接口', () => {
     const b = await (await post(file(['VIG', 'CFA'], 5), ck)).json();
     expect(b).toEqual({ imported: 2, replaced: 1, skipped: [] });
     const g = await (await handle(new Request(HOST + '/api/funds', { headers: { cookie: ck } }), env(), NOW)).json() as { val_import: { code: string; now: number; metric: string; proxy: boolean; series: unknown[]; imported_at: string }[] };
-    expect(g.val_import.map((x) => x.code)).toEqual(['CFA', 'VIG']); // FUNDS 的顺序：新加坡在前
+    expect(g.val_import.map((x) => x.code)).toEqual(['VIG', 'CFA']); // 主会话 11/12：按导入文件里的顺序（不是 45 只的顺序：CFA 在前）
     const vig = g.val_import.find((x) => x.code === 'VIG')!;
     expect(vig.now).toBeCloseTo(5.29, 6);
     expect(vig).toMatchObject({ metric: 'dy', proxy: true });
