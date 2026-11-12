@@ -7,6 +7,8 @@
  *   POST /api/funds/refresh  {cursor?} → { next|null, done, total, updated:[这一批更新了的 code], failed:[{code, reason}], requests }
  *                              从第 cursor 只开始往下取，**这一次对外请求不超过 45 个**（Cloudflare 免费版一次请求最多 50 个对外子请求，留 5 个余量；
  *                              翻页、2y→1y、.SS 回退东方财富、重试都算），取不完就回 next，页面接着调，直到 next 为 null。
+ *   POST /api/funds/valuation/import  导入的估值历史（Amos 2026-11-12，≤2MB JSON）→ { imported, replaced, skipped:[{code, reason}] }；
+ *                              GET /api/funds 多回 val_import（每只一张小卡，src/funds-import.ts impCard）。表 fund_val_import（迁移 0021）。
  * 和其他 /api 一样要登录（queue.ts adminApi 先验会话再转到这里）。
  *
  * 外部调用（C81）：单次请求连接 + 读取 8 秒超时，失败（网络错、超时、429、5xx）最多试 2 次、间隔 1 秒；一次 refresh 调用总时长控制在约 25 秒内
@@ -17,6 +19,7 @@
  * 只放在 Authorization 请求头里，不进地址、不下发前端、不写日志、不进错误文字；没配置或取不到退回 Yahoo，快照 source 照实写）。
  */
 import type { Env } from './env';
+import { impCard, IMP_MAX_BYTES, parseImport, type ImpCard, type ImpStored } from './funds-import';
 import { cfbStream, mergeMonths, parseCsIndicator, parseCsPerf, shillerCell, shillerDone, shillerInit, shillerLocate, shillerXlsUrl, valCard, VAL_INDEXES, VAL_KEEP, xlsWalk, type ShillerState, type ValCard, type ValIndexDef, type ValStored } from './funds-val';
 import { bandCoverage, bondCenter, cleanPoints, eastmoneyMoneyIndex, eastmoneyPageOldest, FUNDS, MIN_POINTS, parseEastmoney, parseTiingo, parseYahoo, rangeBand, summarize, usesTiingo, type FundDef, type FundSnapshot, type Point } from './funds';
 import {
@@ -1054,7 +1057,9 @@ export async function valuationList(env: Env, now: number): Promise<ValuationLis
 /** /api/funds 和 /api/funds/refresh（第二版：最后一批顺带取债券收益率）；别的地址回 null（由 adminApi 回 404） */
 export async function fundsApi(env: Env, req: Request, now: number, sub: string, f?: FetchLike): Promise<Response | null> {
   // 第四版：GET 多一个 valuation（估值卡片 + due）；表还没建时是 null
-  if (sub === '' && req.method === 'GET') return json({ ...(await fundsList(env)), valuation: await valuationList(env, now) });
+  // 2026-11-12：多一个 val_import（"参考：导入的历史"，src/funds-import.ts）；表还没建时是 []
+  if (sub === '' && req.method === 'GET') return json({ ...(await fundsList(env)), valuation: await valuationList(env, now), val_import: await importList(env) });
+  if (sub === 'valuation/import' && req.method === 'POST') return importValuation(env, req, now);
   if (sub === 'valuation/refresh' && req.method === 'POST') {
     const body = (await req.json().catch(() => ({}))) as Record<string, unknown>;
     const st = body?.cursor ?? 0;
@@ -1068,4 +1073,48 @@ export async function fundsApi(env: Env, req: Request, now: number, sub: string,
     return json(await refreshBatch(env, c, now, f));
   }
   return null;
+}
+
+// ---------------------------------------------------------------- 估值"参考：导入的历史"（Amos 2026-11-12；计算在 src/funds-import.ts，表 migrations/0021_fund_val_import.sql）
+
+/** GET /api/funds 里的 val_import：按 45 只的顺序，每只一张小卡（读不到时回 []，不影响别的） */
+export async function importList(env: Env): Promise<ImpCard[]> {
+  try {
+    const rows = (await env.DB.prepare('SELECT code, data, imported_at FROM fund_val_import').all<{ code: string; data: string; imported_at: number }>()).results ?? [];
+    const by = new Map(rows.map((r) => [r.code, r]));
+    const out: ImpCard[] = [];
+    for (const f of FUNDS) {
+      const r = by.get(f.code);
+      if (!r) continue;
+      try { out.push(impCard(f.code, JSON.parse(r.data) as ImpStored, r.imported_at)); } catch { /* 坏行跳过 */ }
+    }
+    return out;
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * POST /api/funds/valuation/import：整个文件 ≤ 2MB（413）、不是 JSON / 格式不对（400）；每只校验（src/funds-import.ts parseImport），按 code 覆盖写入。
+ * 回 { imported, replaced, skipped:[{code, reason}] }。
+ */
+export async function importValuation(env: Env, req: Request, now: number): Promise<Response> {
+  const tooBig = () => json({ error: `文件太大，最多 ${IMP_MAX_BYTES / 1024 / 1024}MB` }, 413);
+  if (Number(req.headers.get('content-length') ?? 0) > IMP_MAX_BYTES) return tooBig();
+  const buf = await req.arrayBuffer().catch(() => null);
+  if (!buf) return json({ error: '没读到上传的文件' }, 400);
+  if (buf.byteLength > IMP_MAX_BYTES) return tooBig();
+  let body: unknown;
+  try { body = JSON.parse(new TextDecoder().decode(buf)); } catch { return json({ error: '文件不是 JSON' }, 400); }
+  const r = parseImport(body, day8(now));
+  if ('error' in r) return json({ error: r.error }, 400);
+  let replaced = 0;
+  if (r.ok.length) {
+    const had = new Set(((await env.DB.prepare('SELECT code FROM fund_val_import').all<{ code: string }>()).results ?? []).map((x) => x.code));
+    replaced = r.ok.filter((x) => had.has(x.code)).length;
+    await env.DB.batch(r.ok.map(({ code, stored }) => env.DB.prepare(
+      'INSERT INTO fund_val_import (code, data, imported_at, source, basis) VALUES (?1, ?2, ?3, ?4, ?5) ON CONFLICT (code) DO UPDATE SET data = ?2, imported_at = ?3, source = ?4, basis = ?5',
+    ).bind(code, JSON.stringify(stored), now, stored.source || null, stored.basis || null)));
+  }
+  return json({ imported: r.ok.length, replaced, skipped: r.skipped });
 }
