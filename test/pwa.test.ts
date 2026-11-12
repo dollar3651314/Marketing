@@ -14,7 +14,7 @@
  *   GET /sw.js                  不要登录；200、content-type 含 javascript、cache-control 含 no-cache
  *   页面（/）<head>：<link rel="manifest" href="/manifest.webmanifest">、<link rel="apple-touch-icon" href=…>（180x180 PNG）、
  *       <meta name="theme-color">、<meta name="apple-mobile-web-app-capable" content="yes">、<meta name="apple-mobile-web-app-title" content="工作台">；
- *       <title> 不长于 6 个字符；favicon = <link rel="icon" href=…>，没写就是 /favicon.ico
+ *       <meta name="apple-mobile-web-app-status-bar-style" content="black">（产品复核 11/12）；<title> 不长于 6 个字符；favicon = <link rel="icon" href=…>，没写就是 /favicon.ico
  *   以上地址都由 Worker 的 handle() 回（和 /api/extension.zip 一样内嵌，不走 wrangler [assets]），所以这里直接调 handle() 就能验。
  */
 import { readFileSync, readdirSync } from 'node:fs';
@@ -137,6 +137,10 @@ describe('2. 页面 <head>：manifest、apple-touch-icon、theme-color、iOS 主
     expect(of('theme-color').every((c) => /^#[0-9a-f]{3,8}$/i.test(c ?? ''))).toBe(true);
     expect(of('apple-mobile-web-app-capable')).toEqual(['yes']);
     expect(of('apple-mobile-web-app-title')).toEqual(['工作台']);
+  });
+  it('meta：apple-mobile-web-app-status-bar-style = black（产品复核 11/12）', async () => {
+    const m = tags(await html(), 'meta');
+    expect(m.filter((a) => (a.name ?? '').toLowerCase() === 'apple-mobile-web-app-status-bar-style').map((a) => a.content)).toEqual(['black']);
   });
   it('<title> 不长于 6 个字符（主屏幕上不截断）', async () => {
     const t = (/<title>([^<]*)<\/title>/i.exec(await html()) ?? [, ''])[1]!.trim();
