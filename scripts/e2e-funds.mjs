@@ -54,8 +54,8 @@
  *       子菜单"估值"点了定位 / 滚动高亮、切"美国"只剩标普500、"中国"5 张、"新加坡"只剩标普500（含 XUS；主会话规格更正，依据原型 v3）、对比度；VB. 判词分界；VC. 400 深色不横向溢出、对比度。
  *   估值"导入的历史"（2026-11-12，Amos 11/12 都按建议；I2 未定，默认导入数据不进顶部总结句；接口一侧在 test/funds-v7-import.test.ts；页面约定见 IM 段开头）：
  *   IM1. 1200 浅色：估值板块里有"参考：导入的历史"和按钮"导入估值历史"；选文件上传 → POST /api/funds/valuation/import（JSON 原样）→ "已导入 X 只…"；
- *        卡片判词"比过去 10 年 / 上市以来 X% 的时间都贵"、三档（< 30 / 30～70 / > 70）、只有一个点写"攒够历史前不比贵贱"、"代理"标签；
- *        市场切换过滤；顶部总结句导入前后文字相同；原来 6 张估值卡不变；免责在；对比度。IM2. 400 深色：不横向溢出、对比度、市场切换。
+ *        卡片判词"比过去 10 年 / 上市以来 X% 的时间都贵"、三档、单点写"等下次导入更长的历史再比贵贱"、"代理"按选用指标那段口径、小卡按文件顺序；
+ *        市场切换过滤；顶部总结句导入前后文字相同；原来 6 张估值卡不变；免责在；对比度。IM2. 400 深色：不横向溢出、对比度、市场切换。IM3. 部分失败（真走本地服务器）：提示不写 dy / pe / pb、写"跳过的几只保留原来的数据"。
  *   全程没有页面脚本报错（pageerror）。
  *
  * 页面约定（研发照加；要改名就在同一个提交里改这里并写明）：
@@ -1181,21 +1181,29 @@ if (!PROTO) {
   //   - 按钮可见文字含"导入估值历史"，点了弹出选文件（input[type=file]，可以藏起来）；选好后页面把文件内容原样作 JSON 请求体 POST /api/funds/valuation/import，
   //     成功后重新 GET /api/funds，页面写"已导入 X 只"（X = 回包 imported）。
   //   - 判词所在元素（或它到卡片之间的祖先）带 data-tier="lo|mid|hi"，或 class 里有 lo / mid / hi（现有估值卡 .fu-verdict 的做法）：dear < 30 → lo，30～70（含两端）→ mid，> 70 → hi。
-  //     判词文字：short=false 写"比过去 10 年 X% 的时间都贵"，short=true 写"比上市以来 X% 的时间都贵"（X = dear 四舍五入到整数）；metric 为 null 写"攒够历史前不比贵贱"、不写"% 的时间都贵"。
-  //   - basis 里有"代理"的卡写"代理"（标签），没有的不写。
+  //     判词文字：short=false 写"比过去 10 年 X% 的时间都贵"，short=true 写"比上市以来 X% 的时间都贵"（X = dear 四舍五入到整数）；
+  //     metric 为 null 写"等下次导入更长的历史再比贵贱"（产品复核 11/12 改，原"攒够历史前不比贵贱"作废）、不写"% 的时间都贵"。
+  //   - "代理"标签（卡里一个文字正好是"代理"的元素）：按选用指标那一段口径判断（主会话 11/12 采纳研发口径）——basis 里 "<指标>=…" 那一段写着"代理"才有；
+  //     夹具里 QQQ 用 pe、只有 dy 那段写代理 → 没有；SCHD 用 dy、只有 pe 那段写代理 → 没有；ES3 用 dy、dy 那段写代理 → 有。
+  //   - "12 个月内"按导入文件 asOf 算（主会话 11/12 采纳）；百分位和现有估值卡同一算法。
+  //   - 小卡按导入文件 indexes 的顺序排（产品复核 11/12）：全部时 QQQ、ES3、588000、SCHD、UPD。
   //   - 市场切换：按 val_import 每只的 market（全部 5；美国 QQQ、SCHD；新加坡 ES3、UPD；中国 588000）。
+  //   - 部分失败（IM3，产品复核 11/12）：导入真走本地服务器（不用替身），有跳过的时提示里不出现 dy / pe / pb 这种英文缩写（写成中文），
+  //     并写明"跳过的几只保留原来的数据"（"跳过的…保留原来的数据"）。
   const IMPFX = JSON.parse(readFileSync(path.join(ROOT, 'test/fixtures/funds/val-import-qa.json'), 'utf8'));
   const MK2 = Object.fromEntries(SNAP2.items.map((x) => [x.code, x.market]));
   /** 参考算法（和 test/funds-v7-import.test.ts 同一份规格）：fixture → GET /api/funds 的 val_import.items */
   const impItems = (() => {
-    const ymN = 2026 * 12 + 10; // 2026-11
     const ymOf = (s) => Number(s.slice(0, 4)) * 12 + Number(s.slice(5, 7)) - 1;
+    const ymN = ymOf(IMPFX.asOf); // 按导入文件 asOf 算
     return IMPFX.indexes.map((x) => {
       const pe = x.series.pe, dy = x.series.dy;
       const metric = pe.length >= 36 && ymN - ymOf(pe[pe.length - 1][0]) <= 12 ? 'pe' : dy.length >= 24 ? 'dy' : null;
       const s = metric === 'pe' ? pe : metric === 'dy' ? dy : pe.length ? pe : dy;
       const last = s[s.length - 1];
-      const base = { code: x.code, name: x.name, funds: x.funds, market: MK2[x.code], source: x.source, basis: x.basis, metric, now: last[1], now_date: last[0] };
+      const seg = (k) => (String(x.basis).split(/[；;]/).find((t) => t.trim().startsWith(k + '=')) || '');
+      const proxy = /代理/.test(seg(metric || (pe.length ? 'pe' : 'dy')));
+      const base = { code: x.code, name: x.name, funds: x.funds, market: MK2[x.code], source: x.source, basis: x.basis, metric, now: last[1], now_date: last[0], proxy };
       if (!metric) return { ...base, pct: null, dear: null, n: 1, short: true };
       const w = s.slice(-120).map((p) => p[1]);
       const pct = Math.round((w.filter((v) => v <= last[1]).length / w.length) * 1000) / 10;
@@ -1249,19 +1257,20 @@ if (!PROTO) {
         const tr = await impTier(page, x.code);
         if (tr !== tierOf(x.dear)) miss.push(`档位 ${tr}，应为 ${tierOf(x.dear)}（贵的程度 ${x.dear}）`);
       } else {
-        if (!/攒够历史前不比贵贱/.test(t)) miss.push('只有一个点要写"攒够历史前不比贵贱"');
+        if (!/等下次导入更长的历史再比贵贱/.test(t)) miss.push('只有一个点要写"等下次导入更长的历史再比贵贱"');
         if (/%\s*的时间都贵/.test(t)) miss.push('只有一个点不该写"% 的时间都贵"');
       }
-      if (/代理/.test(x.basis) !== /代理/.test(t)) miss.push(/代理/.test(x.basis) ? '缺"代理"标签' : '不该有"代理"');
+      const tag = await page.evaluate(({ R, c }) => [...(document.querySelector(`${R} [data-imp-code="${c}"]`)?.querySelectorAll('*') ?? [])].some((e) => (e.textContent || '').trim() === '代理'), { R, c: x.code });
+      if (x.proxy !== tag) miss.push(x.proxy ? '缺"代理"标签（选用指标那段口径写着代理）' : '不该有"代理"标签（选用指标那段口径没写代理）');
       if (miss.length) bad.push([x.code, miss, t.slice(0, 200)]);
     }
-    check(`${tag} 每张导入卡：名字、判词"比过去 10 年 / 上市以来 X% 的时间都贵"、三档（< 30 / 30～70 / > 70）、单点写"攒够历史前不比贵贱"、"代理"标签`, bad.length === 0, bad);
+    check(`${tag} 每张导入卡：名字、判词"比过去 10 年 / 上市以来 X% 的时间都贵"、三档（< 30 / 30～70 / > 70）、单点写"等下次导入更长的历史再比贵贱"、"代理"标签按选用指标那段口径`, bad.length === 0, bad);
   }
 
   await section('IM1 导入的历史 1200 浅色', async () => {
-    check('IM 前提：夹具 5 只的预期覆盖三档 + 单点 + short / 不 short + pe / dy',
-      JSON.stringify(impItems.map((x) => [x.code, x.metric, tierOf(x.dear), x.short])) === JSON.stringify([['QQQ', 'pe', 'hi', false], ['ES3', 'dy', 'lo', true], ['588000', 'pe', 'mid', true], ['SCHD', 'dy', 'mid', true], ['UPD', null, null, true]]),
-      impItems.map((x) => [x.code, x.metric, x.dear, x.n]));
+    check('IM 前提：夹具 5 只的预期覆盖三档 + 单点 + short / 不 short + pe / dy + 代理有 / 没有',
+      JSON.stringify(impItems.map((x) => [x.code, x.metric, tierOf(x.dear), x.short, x.proxy])) === JSON.stringify([['QQQ', 'pe', 'hi', false, false], ['ES3', 'dy', 'lo', true, true], ['588000', 'pe', 'mid', true, false], ['SCHD', 'dy', 'mid', true, false], ['UPD', null, null, true, false]]),
+      impItems.map((x) => [x.code, x.metric, x.dear, x.n, x.proxy]));
     const o = await openI({ width: 1200, height: 900 });
     const { page } = o;
     await enter(page);
@@ -1288,6 +1297,8 @@ if (!PROTO) {
     const codes = await impCodes(page);
     check('IM1 导入后：5 张导入卡（[data-imp-code]）', JSON.stringify(codes) === JSON.stringify(['588000', 'ES3', 'QQQ', 'SCHD', 'UPD']), codes);
     await impCheck(page, 'IM1');
+    const order = await impCards(page).evaluateAll((es) => es.map((e) => e.getAttribute('data-imp-code')));
+    check('IM1 小卡按导入文件 indexes 的顺序（QQQ、ES3、588000、SCHD、UPD）', JSON.stringify(order) === JSON.stringify(IMPFX.indexes.map((x) => x.code)), order);
     check('IM1 原来 6 张估值卡（[data-val-code]）不变', (await valCards(page).count()) === 6, await valCodes(page));
     const lede1 = await ledeText(page);
     check('IM1 顶部总结句导入前后文字相同（I2 未定，导入的数据不进总结句）', lede1 === lede0, { before: lede0.slice(0, 200), after: lede1.slice(0, 200) });
@@ -1334,6 +1345,50 @@ if (!PROTO) {
     check('IM2 深色：估值板块（含导入卡）文字对比度 ≥ 4.5', lc.bad.length === 0, lc.bad);
     await pickMarket(page, '新加坡');
     check('IM2 400 宽切到"新加坡"：导入卡只剩 ES3、UPD，不横向溢出', JSON.stringify(await impCodes(page)) === JSON.stringify(['ES3', 'UPD']) && (await noHScroll(page)), await impCodes(page));
+    await ctx.close();
+  });
+
+  await section('IM3 部分失败提示（真走本地服务器）', async () => {
+    const { page, ctx, api } = await openV({ width: 1200, height: 900 });
+    const res = [];
+    // 导入请求原样转给本地服务器（真校验、真写 D1），之后 GET /api/funds 也转给它，看服务器给的 val_import
+    await ctx.route(/\/api\/funds\/valuation\/import(\?.*)?$/, async (r) => {
+      const f = await r.fetch();
+      const body = await f.text();
+      let j = null; try { j = JSON.parse(body); } catch { j = null; }
+      res.push({ status: f.status(), j });
+      try { const ckh = (await r.request().allHeaders()).cookie || ''; const g = await page.context().request.get(BASE + '/api/funds', { headers: { cookie: ckh } }); const gj = await g.json(); api.snap = { ...api.snap, val_import: gj.val_import }; res.push({ get: g.status(), n: (gj.val_import?.items ?? gj.val_import ?? []).length }); } catch (e) { res.push({ getErr: String(e) }); }
+      await r.fulfill({ status: f.status(), contentType: 'application/json', body });
+    });
+    await enter(page);
+    await page.locator(`${R} [data-val-code]`).first().waitFor({ state: 'attached', timeout: WAIT }).catch(() => {});
+    const bad = JSON.parse(JSON.stringify(IMPFX));
+    bad.indexes.push(
+      { code: 'NOPE', name: '不在清单（QA）', funds: ['NOPE'], source: 'QA', basis: 'dy=QA', series: { pe: [], pb: [], dy: [['2026-10', 1.1], ['2026-11', 1.2]] } },
+      { code: 'CLR', name: '股息率有 0（QA）', funds: ['CLR'], source: 'QA', basis: 'dy=QA', series: { pe: [], pb: [], dy: [['2026-10', 5.1], ['2026-11', 0]] } },
+      { code: 'SRT', name: '市盈率日期坏（QA）', funds: ['SRT'], source: 'QA', basis: 'pe=QA', series: { pe: [['2026/10', 9.1]], pb: [], dy: [] } },
+      { code: 'BYJ', name: '市净率负数（QA）', funds: ['BYJ'], source: 'QA', basis: 'pb=QA', series: { pe: [], pb: [['2026-10', -1]], dy: [['2026-10', 3.3]] } },
+    );
+    const btn = page.locator(R).getByRole('button', { name: /导入估值历史/ }).first();
+    try {
+      const [fc] = await Promise.all([page.waitForEvent('filechooser', { timeout: 3000 }), btn.click({ timeout: 2000 })]);
+      await fc.setFiles({ name: 'val-import-bad.json', mimeType: 'application/json', buffer: Buffer.from(JSON.stringify(bad)) });
+    } catch { /* 下面报红 */ }
+    await page.waitForFunction((R) => /已导入/.test(document.querySelector(R)?.innerText || ''), R, { timeout: WAIT }).catch(() => {});
+    await page.waitForTimeout(400);
+    const sk = res[0]?.j?.skipped ?? [];
+    check('IM3 前提：服务器真收了、回 200，跳过 4 只（NOPE、CLR、SRT、BYJ）', res.filter((x) => 'status' in x).length === 1 && res[0].status === 200 && JSON.stringify(sk.map((x) => x.code).sort()) === JSON.stringify(['BYJ', 'CLR', 'NOPE', 'SRT']), res);
+    check('IM3 前提：导入后从本地服务器读到 val_import 5 只', res.some((x) => x.get === 200 && x.n === 5), res.filter((x) => !('status' in x)));
+    // 提示：含"已导入"的最小元素
+    const msg = await page.evaluate((R) => {
+      const els = [...document.querySelectorAll(R + ' *')].filter((e) => /已导入/.test(e.textContent || '') && e.getClientRects().length && ![...e.children].some((k) => /已导入/.test(k.textContent || '')));
+      return els.map((e) => e.textContent.replace(/\s+/g, ' ').trim()).join(' | ');
+    }, R);
+    check('IM3 部分失败提示写了"已导入 5 只"和跳过的', /已导入\s*5\s*只/.test(msg) && /跳过/.test(msg), msg);
+    check('IM3 部分失败提示不出现 dy / pe / pb 这种英文缩写（写成中文）', !/(^|[^A-Za-z])(dy|pe|pb)([^A-Za-z]|$)/i.test(msg), msg);
+    check('IM3 部分失败提示写明"跳过的几只保留原来的数据"', /跳过的[^。]{0,8}保留原来的数据/.test(msg), msg);
+    const codes = await impCodes(page);
+    check('IM3 页面上是服务器给的 5 只（跳过的不出现）', JSON.stringify(codes) === JSON.stringify(['588000', 'ES3', 'QQQ', 'SCHD', 'UPD']), codes);
     await ctx.close();
   });
 

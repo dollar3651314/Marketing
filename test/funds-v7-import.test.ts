@@ -18,7 +18,9 @@
  *       dear：贵的程度（pe 时 = pct，dy 时 = 100 − pct；只有当前值时 null）、short：n < 120。
  * 测试会话的理解（研发有异议走主会话，不私下改）：
  *   - 校验按"只"整只判：一只里任何一个点不合格（日期不是 YYYY-MM、值不是有限正数、某个序列超过 600 点）就整只进 skipped，不是丢掉那个点照写。
- *   - "12 个月内"按服务器现在的时间（UTC+8 的年月）算；本文件只用离边界很远的数据（2026-08 算新、2020-09 和 2025-06 算旧），不测恰好 12 个月。
+ *   - "12 个月内"按导入文件的 asOf 算（主会话 11/12 采纳研发口径，原先写的"按服务器现在"作废）：另有一例 asOf = 2025-12-15、pe 最近点 2025-01
+ *     （离 asOf 11 个月、离现在 22 个月）→ 用 pe。本文件只用离边界很远的数据，不测恰好 12 个月。
+ *   - 百分位和现有估值卡同一算法（主会话 11/12 采纳）：窗口里 ≤ 当前值的点占比 × 100、1 位小数。
  *   - 请求体超过 2MB 回 413（回 400 也认），什么都不写；JSON 坏了回 400。
  *   - 导入的数据不混进原来的 valuation（6 个指数的卡片），也不让 45 只的快照变。
  * 做法：本地 D1（Miniflare 真 SQLite，每个 describe 一个新库）+ 替身 fetch（任何对外请求都记下来并失败）。不连网。
@@ -44,11 +46,10 @@ type Idx = { code: string; name: string; funds: string[]; source: string; basis:
 type Imp = { asOf: string; note?: string; indexes: Idx[] };
 
 // ---------------------------------------------------------------- 参考算法（按规格②自己写一遍，不引用 src）
-const ym = (t: number) => { const d = new Date(t + 8 * 3600_000); return d.getUTCFullYear() * 12 + d.getUTCMonth(); };
 const ymOf = (s: string) => Number(s.slice(0, 4)) * 12 + Number(s.slice(5, 7)) - 1;
-function expectOf(x: Idx, now = NOW) {
+function expectOf(x: Idx, asOf = '2026-11-12') {
   const pe = x.series.pe as Pt[], dy = x.series.dy as Pt[];
-  const peFresh = pe.length >= 36 && ym(now) - ymOf(pe[pe.length - 1][0]) <= 12;
+  const peFresh = pe.length >= 36 && ymOf(asOf) - ymOf(pe[pe.length - 1][0]) <= 12;
   const metric: 'pe' | 'dy' | null = peFresh ? 'pe' : dy.length >= 24 ? 'dy' : null;
   const s = metric === 'pe' ? pe : metric === 'dy' ? dy : pe.length ? pe : dy;
   const last = s[s.length - 1];
@@ -108,8 +109,8 @@ async function items(): Promise<Record<string, any>> {
 const count = (v: unknown) => (Array.isArray(v) ? v.length : typeof v === 'number' ? v : NaN);
 const near = (a: unknown, b: number | null, tol = 0.15) => (b === null ? a === null || a === undefined : typeof a === 'number' && Math.abs(a - b) <= tol);
 /** 一只卡和参考算法对不上的字段 */
-function diff(x: any, ref: Idx): string[] {
-  const e = expectOf(ref);
+function diff(x: any, ref: Idx, asOf = '2026-11-12'): string[] {
+  const e = expectOf(ref, asOf);
   const bad: string[] = [];
   if (!x) return ['没有这一只'];
   if (x.name !== ref.name) bad.push(`name=${x.name}`);
@@ -250,6 +251,14 @@ describe('② GET /api/funds 的 val_import：选指标、百分位、贵的程�
   it.each(edge.map(([why, x]) => [why, x.code]))('%s（%s）', async (_why, code) => {
     const got = await items();
     expect(diff(got[code], edge.find((e) => e[1].code === code)![1])).toEqual([]);
+  });
+  it('"12 个月内"按导入文件的 asOf 算：asOf 2025-12-15、pe 最近点 2025-01（离现在 22 个月）→ 仍用 pe', async () => {
+    const x = idx('IVV', { pe: ser('2025-01', 40, 18, 6, 21.5), dy: ser('2026-11', 30, 1, 1) });
+    const r = await imp({ asOf: '2025-12-15', indexes: [x] });
+    expect(r.status).toBe(200);
+    const got = (await items()).IVV;
+    expect(diff(got, x, '2025-12-15')).toEqual([]);
+    expect(got?.metric).toBe('pe');
   });
   it('只有当前值的（DGRO、UPD）pct、dear 是 null（页面写"攒够历史前不比贵贱"）', async () => {
     const got = await items();
