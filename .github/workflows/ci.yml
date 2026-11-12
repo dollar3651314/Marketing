@@ -66,6 +66,8 @@ jobs:
         run: npm run e2e:live
       - name: 公共工具「基金观察」（入口、刷新按 cursor 循环、四个时间段、市场切换、散点、逐只对比、单日 ±3%、展开详情、涨绿跌红、400 宽、明暗对比度、空状态）
         run: npm run e2e:funds
+      - name: 网页 App（PWA）第一版（manifest 和图标、SW 注册、SW 不缓存 /api、离线提示页、standalone 顶栏「刷新」、密码框 autocomplete）
+        run: npm run e2e:pwa
 
   # 汇总：分支保护只把这一项设为"必须通过"
   ci-ok:
