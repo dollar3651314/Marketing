@@ -1791,6 +1791,10 @@ try {
       await q.waitForTimeout(900); // 真的录一段（假麦克风）
       await mic.click();
       await q.waitForFunction(() => !document.getElementById('pn-my').hidden, null, { timeout: 8000 });
+      // 回放区出现 ≠ 纠说那一路已经回来：录音是本地就有的，而"没绑 Workers AI"那句是接口回来才写上去的。
+      // 不等这一句就读 #pn-saymsg，大多数时候读到的是空字符串 —— 2026-11-13 这条就是这么随机红的。
+      // 本地一定没有 AI 绑定，所以这句必然出现，等它是确定的，不是靠 sleep 碰运气。
+      await q.waitForFunction(() => (document.getElementById('pn-saymsg').innerText || '').trim().length > 0, null, { timeout: 15000 });
       const my = await q.evaluate(() => ({ std: document.getElementById('pn-std').textContent, mine: document.getElementById('pn-mine').textContent,
         slow: document.getElementById('pn-slow').textContent, chain: document.getElementById('pn-chain').textContent,
         t: document.getElementById('pn-my-t').textContent, note: document.querySelector('#pn-my .pn-saynote').textContent,
