@@ -61,7 +61,7 @@ beforeAll(async () => {
 });
 afterAll(async () => dispose());
 beforeEach(async () => {
-  await db.batch(['pron_round', 'pron_say', 'pron_audio', 'en_audio', 'settings', 'ai_usage', 'model_usage', 'usage_by_project', 'usage_by_purpose', 'auth_fail', 'auth_lock'].map((t) => db.prepare(`DELETE FROM ${t}`)));
+  await db.batch(['pron_round', 'pron_say', 'pron_audio', 'en_audio', 'en_audio_part', 'settings', 'ai_usage', 'model_usage', 'usage_by_project', 'usage_by_purpose', 'auth_fail', 'auth_lock'].map((t) => db.prepare(`DELETE FROM ${t}`)));
 });
 
 const env = (): Env => ({ DB: db, ENVIRONMENT: 'test', COPILOT_PASSWORD: PASS });
@@ -590,8 +590,10 @@ describe('6. 发音：预先生成好的 mp3，页面只去取、运行时一次
 
   it('库里有 → 回 audio/mpeg；**整条路一次 AI 都不调**（给了 env.AI 也一次没碰）', async () => {
     const k = audioKey('bed', 英文声音);
+    // 2026-11-13：字节存在分块表 en_audio_part 里（迁移 0023，线上 SQLITE_TOOBIG），en_audio 只留元数据
     await db.prepare('INSERT INTO en_audio (k, voice, txt, mp3, bytes, at) VALUES (?1, ?2, ?3, ?4, ?5, ?6)')
-      .bind(k, 英文声音, 'bed', MP3, MP3.byteLength, T0).run();
+      .bind(k, 英文声音, 'bed', new Uint8Array(0), MP3.byteLength, T0).run();
+    await db.prepare('INSERT INTO en_audio_part (k, part, mp3) VALUES (?1, 0, ?2)').bind(k, MP3).run();
     const f = fakeAi();
     const r = await getAudio(k, f.env());
     expect(r.status).toBe(200);
@@ -732,7 +734,9 @@ describe('8. 不让他打字、按钮够大、不碰密钥', () => {
     // pron.ts 自己只写 pron_round / pron_say / settings，en-audio.ts 只**读** en_audio —— 范围没变宽。
     const t = readFileSync(path.join(ROOT, 'src/pron.ts'), 'utf8') + readFileSync(path.join(ROOT, 'src/en-audio.ts'), 'utf8');
     const tables = new Set([...t.matchAll(/(?:FROM|INTO|UPDATE)\s+(\w+)/g)].map((m) => m[1]).filter((x) => x !== 'SET'));
-    expect([...tables].sort()).toEqual(['en_audio', 'pron_round', 'pron_say', 'settings']);
+    // 2026-11-13 第二次：语音的字节挪进分块表 en_audio_part（迁移 0023），en-audio.ts 那条 SELECT 查的是它。
+    // 范围还是**没变宽**：多的那张是语音自己的表，照样在 src/english.ts 的清单里。
+    expect([...tables].sort()).toEqual(['en_audio_part', 'pron_round', 'pron_say', 'settings']);
   });
 
   it('不造占位词：没有「暂无」「待补」这类（底线 3）', () => {
