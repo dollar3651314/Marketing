@@ -193,6 +193,9 @@ describe('英语练习、它记得住你、带练（含听辨小测）：整套�
       'drill-review.ts', 'drill-audio.ts', 'ear.ts', 'ear-content.ts', 'ear-page.ts'])
       expect([f, existsSync(path.join(ROOT, 'src', f))]).toEqual([f, false]);
     // 接替它们的是发音训练（src/pron.ts）
-    for (const f of ['pron.ts', 'pron-audio.ts', 'pron-page.ts', 'pron-content.ts']) expect([f, existsSync(path.join(ROOT, 'src', f))]).toEqual([f, true]);
+    // 2026-11-13：发音那条链路从 src/pron-audio.ts（aura-2-en 按需生成）整条换成 src/en-audio.ts
+    // （微软的神经网络语音**预先生成**好存 D1，运行时只读）——**文件改名了，守的东西不变**：接替它们的那几个文件得在。
+    for (const f of ['pron.ts', 'en-audio.ts', 'pron-page.ts', 'pron-content.ts']) expect([f, existsSync(path.join(ROOT, 'src', f))]).toEqual([f, true]);
+    expect(existsSync(path.join(ROOT, 'src', 'pron-audio.ts'))).toBe(false);
   });
 });

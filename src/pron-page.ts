@@ -3,7 +3,7 @@
  * 地址 `#/Practical/pron`、模块 `#f-pron`（原来是工作台二级菜单第 7 项 `#/work/pron`、`#w-pron`）。
  * Amos 的两句原话：「工作台 发音训练 这个模块不需要再出现在 工作台 发音训练这个位置了」
  * 「工作台 practical 用来存储和展示所有与我英语学习有关的内容」。**挪位置，功能一条没减。**
- * 服务端 src/pron.ts、发音 src/pron-audio.ts、内容 src/pron-content.ts、教学阶梯 src/pron-lesson.ts；
+ * 服务端 src/pron.ts、语音 src/en-audio.ts（预先生成好存 D1，运行时只读）、内容 src/pron-content.ts、教学阶梯 src/pron-lesson.ts；
  * 接口前缀 2026-11-13 起统一成 `/api/en/pron/*`（拆分清单 src/english.ts）。
  * 拆成样式 / 结构 / 脚本三段导出，`admin-page.ts` 插这三段。
  * 写法上的约定（和 admin-page.ts 一样）：这是模板字符串，里面**不能出现没转义的反引号或 ${**。
@@ -46,13 +46,19 @@
  * 没有麦克风权限 / 浏览器不支持 / 识别失败：**当面说清楚**，而且**整块的其余部分照常能用**
  * （纠说是加分项，不是前置条件）；**不自动重试**。
  *
- * **念给我听**用浏览器自带的 `speechSynthesis`（`lang='zh-CN'`，语速稍慢）：**不调任何 AI、不花一分钱、
- * 不加环境变量**。这台设备不支持或者没有中文语音时，**按钮上当面说清楚**，其余功能照常能用，不整屏挂掉。
+ * **2026-11-13：全部语音换成微软 Edge 的神经网络语音，而且改成预先生成**（Amos 原话：**嫌手机朗读太机械**）。
+ *  - 🔊 **标准音**：英文 Sonia（`en-GB-SoniaNeural`）；**念给我听**：中文 晓晓（`zh-CN-XiaoxiaoNeural`）；语速一律 -5%。
+ *  - 字节由 `scripts/build-audio.py` 预先生成好写进 D1 的 `en_audio`（**mp3 不进仓库**），页面只按内容哈希的键去取。
+ *  - **运行时一次 Workers AI 都不调**：原来 aura-2-en 那条"点到才生成"的链路整条去掉了，
+ *    每天的额度**全省下来给 🎤 纠说用**。
+ *  - 库里没有那一条 → **当面照实说**（「这个词的发音还没生成」/「这一句的朗读还没生成」），
+ *    **不回退去调 AI、不静默装作在念**（底线 3）；其余功能照常能用，不整屏挂掉。
  *
  * 把用户当小白（agents #92）：**一个输入框都没有**（录音按钮不是 input），页面上不出现命令行；
  * 按钮都 ≥52px（这里全是 56px），手机 390 宽单手够得着、不横滚；发音生成不出来**当面说**，不假装有。
  * 字号只用全站那几级（30 / 26 / 24 / 22 / 18 / 15 / 13 / 12，控件可以 14；e2e-platform 的 fontOutliers 守着）。
  */
+import { audioKey, 中文声音, 指令文本 } from './en-audio';
 import { LESSON, 级 } from './pron-lesson';
 
 export const PRON_CSS = `
@@ -320,8 +326,8 @@ export const PRON_MOD = `<section class="card mod pn" id="f-pron"><header class=
   <p><b>「跟我做」的四级顺序不是我编的</b>：<b>单音 → 音素拼合 → 单词拼读 → 句子和绕口令</b>，是那套课程自己写的练法顺序；作业统一写「用某某方法朗读，直到没有任何发音错误」。每一步底下的小字写明了这句话出自<b>课件原文</b>、<b>课程练法</b>，还是<b>机械拆分</b>（把课件给的音标按符号切开）。课件没写的口型，就生不出那一步 —— 不会给你编一句。</p>
   <p><b>第 7 组（/ʒ/ 和 /dʒ/）一对最小对立对都没有</b>，所以它只能跟读和纠说，没有听辨题 —— 不会给你硬凑的题。第 4 组只有 1 对，10 题会一直考那一对，页面上也写明了。</p>
   <p><b>纠说</b>用的是 Workers AI 的语音识别：你念一个词，它告诉你<b>它听成了哪个词</b>。有几个词（ketch、reen、roose、rove）不是现代常用词，识别基本不会输出它们，拿它们判对错是冤枉人，所以这几个词<b>不给纠说</b>。</p>
-  <p><b>发音</b>用 Workers AI 的 aura-2-en 念，一个词念一次就<b>存在服务器上永久复用</b>（56 个词全生成一遍约 820 neurons，免费额度每天 10,000），<b>不新增任何费用</b>。念不出来的时候会当面说，不会假装有声音，也不会自动重试。</p>
-  <p><b>念给我听</b>用的是浏览器自己带的朗读（和 Siri 读网页是同一套），<b>不调任何 AI、不花一分钱</b>：它只念屏幕上这一句中文指令，好让你对着镜子做、不用盯着屏幕。这台设备没有中文朗读的时候，按钮上会当面说，其余照常能用。</p>
+  <p><b>发音</b>和<b>念给我听</b>用的都是<b>微软 Edge「大声朗读」背后的神经网络语音</b>：英文是 Sonia（英国女声），中文是 晓晓，语速都调慢了 5%，方便跟读。它是用真人录音训练出来的，比手机自带的朗读自然得多 —— 你原话说手机朗读太机械，所以换了。</p>
+  <p>这些声音是<b>提前生成好存在服务器上</b>的（不在仓库里），点一下就放，<b>运行时一次 AI 都不调、一分钱不花</b>；每天的 AI 额度全省下来给 🎤「我念一遍」用。还没生成的那几句，页面会<b>当面说"还没生成"</b>，不会假装在念，也不会偷偷换一个机械的声音顶上。</p>
   <p><b>口型示意图撤掉了</b>（2026-11-12，你的原话「口型图撤掉，念给我听要，开始做」）：原来那一屏把图、音标、外号、口型定位一次全摊开，你说「完全不知道该怎么开口」。现在改成一次一句、做完点一下。</p>
   <p><b>照镜子</b>用的是手机的前置摄像头：画面<b>只在这台手机上显示，不上传、不保存、不录像</b>，关掉镜子摄像头就停（指示灯灭）；左边显示的就是你现在这一步要做的那句话。<b>「我刚才念的」</b>是纠说那一次录的那段，留在浏览器里<b>不另外上传</b>，<b>刷新就没了</b>；慢速 0.7 倍对标准音和你的录音都管用，「连着放」是标准音 → 停 0.3 秒 → 你的录音。</p>
   <p>每一轮的成绩（考了几题、对几题、点过几次"两个听着一样"、过没过）<b>存在服务器上</b>，换一台设备接着练就行。</p></div></details></section>`;
@@ -339,12 +345,14 @@ try{
 var PNL=`;
 
 const PRON_JS_TAIL = `;
-var PN={base:(window.__pronBase||'/api/en/pron/'),zu:[],cur:null,ji:null,step:1,loaded:false,busy:false,
+var PN={base:(window.__pronBase||'/api/en/pron/'),auBase:(window.__enAudioBase||'/api/en/audio/'),zu:[],cur:null,ji:null,step:1,loaded:false,busy:false,
   q:[],i:0,ok:0,same:0,bad:[],au:{},auBusy:{},player:null,rec:null,recId:'',recT0:0,recBtn:null,
   /* 「跟我做」：bu = 这一组的那串步骤、si = 走到第几步、fin = 走完了没 */
   bu:[],si:0,fin:false,
-  /* 念给我听：speak = 自动念开着没（存 localStorage）、noSpeak = 这台设备读不了中文 */
-  speak:true,noSpeak:false,
+  /* 念给我听：speak = 翻页自动念开着没（存 localStorage）。
+     **念的是预先生成好的中文语音（晓晓）**，不是浏览器自带的朗读 —— 他原话嫌手机朗读太机械。
+     库里没有那一条就当面说，不假装在念（底线 3）。 */
+  speak:true,
   /* 镜子拿到的摄像头流：**只赋给 video.srcObject**，关掉时 getTracks().stop()。不录、不传、不存。
      camSeq 是请求序号：getUserMedia 要等他点权限弹窗，这中间他可能已经关掉镜子、
      走到收尾屏、或者又点了一下。流回来时序号对不上就**当场 stop 掉**，绝不留一个没人管的流亮着。 */
@@ -371,10 +379,12 @@ function pJson(path,init){return fetch(PN.base+path,init||{}).then(function(r){
 });}
 function pPost(path,body){return pJson(path,{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(body)});}
 
-/* ---- 发音：同一段只取一次，之后复用；**失败就当面说，不自动重试** ---- */
-function pAuErr(j,msgId){
+/* ---- 语音：全部是**预先生成好**存在 D1 里的（微软 Edge 的神经网络语音：英文 Sonia、中文 晓晓）。
+   这里**只取、只放，不生成**：一次 AI 都不调、一分钱不花。
+   库里没有那一条 → **当面照实说**，不回退去调 AI、不静默无声（底线 3）。 ---- */
+function pAuErr(j,msgId,什么){
   var m=pq(msgId||'pn-msg');if(!m)return;
-  var s='这个词的发音没生成出来，这一次先跳过发音（上面的字和音标照常看）。';
+  var s=(什么||'这个词的发音')+'还没生成，这一次先跳过声音（上面的字和音标照常看）。';
   if(j&&j['出错'])s+='\\n'+j['出错'];
   if(j&&j['怎么办'])s+='\\n怎么办：'+j['怎么办'];
   m.textContent=s;m.hidden=false;
@@ -400,20 +410,27 @@ function pPlay(url,msgId){
     });
   }catch(e){pAuErr({'出错':'这台设备放不了这段声音。'},msgId);}
 }
+/* 按**内容哈希的键**去取一段语音（/api/en/audio/<键>）。同一段只取一次，之后复用。 */
+function pKey(key,msgId,什么){
+  if(!key){pAuErr({'出错':'这一步没有对应的语音编号。'},msgId,什么);return;}
+  var m=pq(msgId||'pn-msg');if(m)m.hidden=true;
+  if(PN.au[key]){pPlay(PN.au[key],msgId);return;}
+  /* 取的这一两百毫秒里他若再点一下，不拦住就会再发一个一模一样的请求 */
+  if(PN.auBusy[key])return;
+  PN.auBusy[key]=1;
+  var done=function(){delete PN.auBusy[key];};
+  fetch(PN.auBase+encodeURIComponent(key)).then(function(r){
+    var ct=r.headers.get('content-type')||'';
+    if(!r.ok||ct.indexOf('audio')<0){return r.json().catch(function(){return {}}).then(function(j){done();pAuErr(j,msgId,什么)});}
+    return r.blob().then(function(b){done();if(m)m.hidden=true;var u=URL.createObjectURL(b);PN.au[key]=u;pPlay(u,msgId);});
+  },function(e){done();pAuErr({'出错':'没连上服务器（'+e.message+'）。','怎么办':'等一下再点一次。'},msgId,什么);});
+}
+/* 某个词的标准音：编号 → 这一组里那个词的「音键」（服务端 groupCard 给的）。
+   取不到键就照实说，**不临时生成**。 */
 function pAudio(id,msgId){
   if(!id)return;
-  var m=pq(msgId||'pn-msg');if(m)m.hidden=true;
-  if(PN.au[id]){pPlay(PN.au[id],msgId);return;}
-  /* 第一次要现生成，aura 要一两秒。这期间他若再点一下，不拦住就会**再发一个请求、再调一次模型、再记一次账** */
-  if(PN.auBusy[id])return;
-  PN.auBusy[id]=1;
-  if(m){m.textContent='第一次要先生成这个词的发音，一两秒……';m.hidden=false;}
-  var done=function(){delete PN.auBusy[id];};
-  fetch(PN.base+'audio/'+encodeURIComponent(id)).then(function(r){
-    var ct=r.headers.get('content-type')||'';
-    if(!r.ok||ct.indexOf('audio')<0){return r.json().catch(function(){return {}}).then(function(j){done();pAuErr(j,msgId)});}
-    return r.blob().then(function(b){done();if(m)m.hidden=true;var u=URL.createObjectURL(b);PN.au[id]=u;pPlay(u,msgId);});
-  },function(e){done();pAuErr({'出错':'没连上服务器（'+e.message+'）。','怎么办':'等一下再点一次。'},msgId);});
+  var w=pWordOf(id);
+  pKey(w&&w['音键'],msgId,'这个词的发音');
 }
 
 /* ---- 选一组 ---- */
@@ -499,8 +516,9 @@ function pCBtn(label,cls,fn){
   b.addEventListener('click',fn);
   return b;
 }
-/* 念出来的是哪些字：这一步那句话 + 提示（**自动念和手点那个按钮走同一个函数，不许有两套**） */
-function pSayText(s){return s['说']+(s['提示']?('　'+s['提示']):'');}
+/* 念的是哪一段：这一步的「说键」—— 那一句 + 提示，**打包时就算好的同一个键**
+   （自动念和手点那个按钮走同一个函数、同一个键，不许有两套） */
+function pSpeak(s){pKey(s&&s['说键'],'pn-csaymsg','这一句的朗读');}
 /* 画这一步。move = 这次是不是"翻到了新的一句"（翻页才自动念，重画不念） */
 function pCoach(move){
   var box=pq('pn-cbtns');
@@ -545,9 +563,7 @@ function pCoach(move){
     box.appendChild(mb);
   }
   box.appendChild(pCBtn(PN.si+1<PN.bu.length?'做好了，下一步':'做好了，这一组走完','go primary',pCNext));
-  box.appendChild(pCBtn(PN.noSpeak?'这台设备读不了中文，照着屏幕做就行':'🔈 念给我听','',function(){
-    pSpeak(pSayText(s));
-  }));
+  box.appendChild(pCBtn('🔈 念给我听','',function(){pSpeak(s);}));
   if(PN.si>0)box.appendChild(pCBtn('上一步','',pCPrev));
   pText('pn-cnum','第 '+(PN.si+1)+' / 共 '+PN.bu.length+' 步');
   var bar=pq('pn-cbar');if(bar)bar.style.width=Math.round((PN.si+1)*100/PN.bu.length)+'%';
@@ -555,7 +571,7 @@ function pCoach(move){
   /* 翻到新的一句就自动念（这样他可以对着镜子做，不用盯着屏幕）；开关关掉就不念。
      **念的内容和手点「🔈 念给我听」完全一样**（那一句 + 提示）：
      提示里才有"塞一根手指""捏住鼻子"这种能照着做的话，只念前半句等于还是要他低头看屏幕 */
-  if(move&&PN.speak)pSpeak(pSayText(s));
+  if(move&&PN.speak)pSpeak(s);
 }
 function pCNext(){
   if(PN.si+1<PN.bu.length){PN.si++;pCoach(true);return;}
@@ -567,41 +583,13 @@ function pCPrev(){
 }
 function pRedo(){PN.fin=false;PN.si=0;pCoach(true);}
 
-/* ---- 念给我听：浏览器自己带的朗读（**不调任何 AI、不花一分钱、不加环境变量**）---- */
-/* 这台设备读不了中文：按钮上当面说清楚，自动念也关掉，**其余功能照常能用**（不整屏挂掉） */
-function pNoSpeak(){
-  PN.noSpeak=true;PN.speak=false;
-  var a=pq('pn-auto');if(a){a.textContent='这台设备读不了中文，照着屏幕做就行';a.setAttribute('aria-pressed','false');}
-  var box=pq('pn-cbtns');
-  if(box)[].forEach.call(box.querySelectorAll('.btn'),function(b){
-    if(b.textContent.indexOf('念给我听')>=0)b.textContent='这台设备读不了中文，照着屏幕做就行';
-  });
-}
-function pCanSpeak(){
-  try{
-    if(!window.speechSynthesis||typeof window.SpeechSynthesisUtterance!=='function')return false;
-    var vs=[];
-    try{vs=window.speechSynthesis.getVoices()||[];}catch(e){vs=[];}
-    /* 声音列表第一次可能还没加载好（是空的）——**空的时候不当作"没有中文"**，念一次就知道了 */
-    if(vs.length&&!vs.some(function(v){return /^zh/i.test(String(v&&v.lang||''))}))return false;
-    return true;
-  }catch(e){return false;}
-}
-function pSpeak(t){
-  if(!pCanSpeak()){pNoSpeak();return false;}
-  try{
-    window.speechSynthesis.cancel();
-    var u=new window.SpeechSynthesisUtterance(String(t||''));
-    u.lang='zh-CN';
-    u.rate=0.85;   /* 语速稍慢：他要跟着做动作，不是听新闻 */
-    window.speechSynthesis.speak(u);
-    return true;
-  }catch(e){pNoSpeak();return false;}
-}
+/* ---- 念给我听：**预先生成好的中文语音（晓晓，语速 -5%）**，从库里取，运行时一次 AI 都不调。
+   2026-11-13 之前这里用的是浏览器自带的那套朗读 —— Amos 的原话是**嫌手机朗读太机械**，所以整条换掉了，
+   现在这段脚本里**连那个浏览器接口的名字都不出现**（test/en-audio.test.ts 守着）。
+   库里没有那一条就当面说「这一句的朗读还没生成」，**不回退去调 AI、不静默装作在念**（底线 3）。 ---- */
 /* 自动念的开关：存 localStorage（**包 try/catch**，取不到就当默认开着） */
 function pAutoLabel(){
   var a=pq('pn-auto');if(!a)return;
-  if(PN.noSpeak){a.textContent='这台设备读不了中文，照着屏幕做就行';a.setAttribute('aria-pressed','false');return;}
   a.textContent=PN.speak?'🔈 自动念：开着':'🔇 自动念：关着';
   a.setAttribute('aria-pressed',PN.speak?'true':'false');
 }
@@ -610,10 +598,9 @@ function pAutoLoad(){
   pAutoLabel();
 }
 function pAutoToggle(){
-  if(PN.noSpeak)return;
   PN.speak=!PN.speak;
   try{window.localStorage.setItem('pn-auto-speak',PN.speak?'on':'off');}catch(e){}
-  if(!PN.speak)try{window.speechSynthesis.cancel();}catch(e){}
+  if(!PN.speak)pShutUp();
   pAutoLabel();
 }
 
@@ -976,7 +963,8 @@ function pStep(n){
   if(n===2){pSayWords();}
 }
 /* 把朗读停掉（切走、切标签页都要停，不然他已经看不见这一屏了，手机还在念） */
-function pShutUp(){try{if(window.speechSynthesis)window.speechSynthesis.cancel();}catch(e){}}
+/* 把正在响的那一段停掉（原来是掐浏览器自带的朗读，现在语音走的是同一个播放器） */
+function pShutUp(){try{if(PN.player)PN.player.pause();}catch(e){}}
 function pLead(){
   var rec=null;
   ((PN.ji&&PN.ji['记录'])||[]).forEach(function(r){if(PN.cur&&r['组']===PN.cur['组'])rec=r;});
@@ -1041,4 +1029,12 @@ try{document.addEventListener('visibilitychange',function(){
 `;
 
 /** 阶梯是静态课件内容，打包时拼进脚本（不走接口的原因见文件头：pron.ts 去 import pron-lesson.ts 会成环） */
-export const PRON_JS = PRON_JS_HEAD + JSON.stringify({ 级: [...级], 组: LESSON }) + PRON_JS_TAIL;
+export const PRON_JS =
+  PRON_JS_HEAD +
+  JSON.stringify({
+    级: [...级],
+    // 说键 = 这一步那句指令（那一句 + 提示）在 en_audio 里的那一条。**打包时就算好**：
+    // 页面上手点🔈和翻页自动念用的是同一个键，不可能一个念全、一个只念半句。
+    组: LESSON.map((z) => ({ ...z, 步: z.步.map((x) => ({ ...x, 说键: audioKey(指令文本(x), 中文声音) })) })),
+  }) +
+  PRON_JS_TAIL;

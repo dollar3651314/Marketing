@@ -9,7 +9,7 @@
  *   /api/assets/*（素材生成器，assets.ts）、/api/tts/*（语音生成，tts.ts）、/api/voice/*（语音对话实测，voice.ts）、
  *   /api/en/*（**英语学习**，2026-11-13 起统一在这个前缀下；拆分清单 src/english.ts。旧的 /api/pron/* 直接去掉，不留兼容：只有 Amos 一个人用，没有外部调用方）：
  *     /api/en/pron/*（Practical 项目页「发音训练」，pron.ts：七组易错音的四步循环 state / answer / round，和纠说 say；内容在 pron-content.ts），
- *     /api/en/pron/audio/*（发音，pron-audio.ts：aura-2-en 生成一次存 D1 永久复用），
+ *     /api/en/audio/*（**全部语音**，en-audio.ts：微软 Edge 的神经网络语音预先生成好存在 D1 里，运行时**只读不生成**），
  *   GET /api/funds、POST /api/funds/refresh {cursor?}（基金观察，funds-api.ts：45 只基金的快照、分批去 Yahoo / 东方财富取数）。
  * 登录：密钥 COPILOT_PASSWORD（≥ 16 个字符，没填时后台 404）；同一 IP 15 分钟错 5 次锁 15 分钟，全站 1 小时错 20 次锁 1 小时；
  * 失败一律回答同一句（不透露锁定规则，C128）；会话 12 小时，签名密钥由密码派生，改密码旧会话全部失效。
@@ -25,12 +25,12 @@ import { assetsApi } from './assets';
 import { ttsApi } from './tts';
 import { voiceApi } from './voice';
 import { pronApi } from './pron';
-import { pronAudioApi } from './pron-audio';
+import { enAudioApi } from './en-audio';
 import { fundsApi } from './funds-api';
 
 /** 英语学习的接口前缀（2026-11-13 统一；src/english.ts 的 接口前缀 是同一份，test/english-boundary.test.ts 核对两边一致） */
 const EN_PRON = '/api/en/pron/';
-const EN_PRON_AUDIO = '/api/en/pron/audio/';
+const EN_AUDIO = '/api/en/audio/';
 
 export const SESSION_MS = 12 * 3600_000;
 const LOCK = { ipWindow: 15 * 60_000, ipMax: 5, ipLock: 15 * 60_000, allWindow: 3600_000, allMax: 20, allLock: 3600_000 };
@@ -172,8 +172,9 @@ export async function adminApi(env: Env, req: Request, now: number): Promise<Res
   if (p.startsWith('/api/tts/')) return (await ttsApi(env, req, now, p.slice('/api/tts/'.length))) ?? new Response('Not found', { status: 404 });
   if (p.startsWith('/api/voice/')) return (await voiceApi(env, req, now, p.slice('/api/voice/'.length))) ?? new Response('Not found', { status: 404 });
   // ===== 英语学习（/api/en/*）：这一段整体属于 src/english.ts 那份拆分清单，将来整块搬走 =====
-  // 发音训练的发音（pron-audio.ts）：aura-2-en 第一次需要时生成一次、存 D1 永久复用（56 个词全生成一遍约 820 neurons，底线 8 / C117）
-  if (p.startsWith(EN_PRON_AUDIO)) return (await pronAudioApi(env, req, now, p.slice(EN_PRON_AUDIO.length))) ?? new Response('Not found', { status: 404 });
+  // 英语学习的语音（en-audio.ts）：全部由 scripts/build-audio.py 用微软的神经网络语音**预先生成好**写进库里，
+  // 这里**只读不生成**——不调 Workers AI、不花一分钱；库里没有就当面说「这一段语音还没生成」（底线 3）。
+  if (p.startsWith(EN_AUDIO)) return (await enAudioApi(env, req, p.slice(EN_AUDIO.length))) ?? new Response('Not found', { status: 404 });
   // 发音训练（Practical 项目页 → 发音训练，pron.ts）：四步循环的 state / answer / round 都不调 AI、不花钱；
   // 只有「纠说」say 调一次 whisper（约 0.78 neurons），走已有的额度闸 + 自己的一天 200 次闸（C117）
   if (p.startsWith(EN_PRON)) return (await pronApi(env, req, now, p.slice(EN_PRON.length))) ?? new Response('Not found', { status: 404 });

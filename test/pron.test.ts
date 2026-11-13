@@ -1,5 +1,6 @@
 /**
- * 工作台「发音训练」（src/pron.ts、src/pron-audio.ts、src/pron-page.ts、migrations/0019_pron.sql）的测试。
+ * 工作台「发音训练」（src/pron.ts、src/pron-page.ts、migrations/0019_pron.sql）的测试。
+ * 语音那条链路（src/en-audio.ts、en_audio 表、生成脚本）在 test/en-audio.test.ts，这里只测**页面怎么用它**。
  * 内容在 src/pron-content.ts（主会话从课件逐张抽的，**这个测试不许改那个文件，只读它**）。
  *
  * 守住十件事：
@@ -15,8 +16,9 @@
  *      三种结果（命中目标 / 命中另一个 / 两个都不是）各记一笔 `pron_say`；
  *      `asr: false` 的词（ketch、reen、roose、rove）**不给纠说**。
  *   6. **两道额度闸**：Amos 自己设的 cap + 一天最多 200 次；失败**不自动重试**，按估算记一笔账。
- *   7. **发音链路照搬带练那一条**：aura-2-en + `AUDIO_REV` 版本号键 + 额度闸 + 失败当面说；
- *      第一次生成存 `pron_audio`，第二次**一次 AI 都不调**。
+ *   7. **发音是预先生成好的**（2026-11-13 改）：微软 Edge 的神经网络语音（英文 Sonia），
+ *      页面按**内容哈希的键**去 `/api/en/audio/<键>` 取一段现成的 mp3，**运行时一次 AI 都不调**；
+ *      库里没有就**当面照实说「还没生成」**，不回退去调 AI、不静默无声（底线 3）。
  *   8. **迁移只 CREATE**：0019 里只有三条 CREATE TABLE，没有 ALTER / DROP；**旧表一张都没删**
  *      （drill_item / drill_review / drill_audio / ear_pair / en_* 全在，他的历史数据还在）。
  *   9. **不让他打字**：整块里一个 `<input>` 都没有（录音按钮不是 input）；按钮 ≥52px；字号只用全站那几级。
@@ -34,10 +36,9 @@ import {
   ASR_MODEL, ASR_PER_MIN, asrNeurons, audioTextOf, canEar, earNote, groupCard, groupOf, groupStats, judgeSay, MAX_SAY_PER_DAY,
   normalize, PASS_RATE, passedRound, PRON_ASR_PURPOSE, PRON_PROJECT, PRON_WORD_IDS, ROUND_N, sayStats, wordId, wordOf, type RoundRow,
 } from '../src/pron';
-import { audioKey, AUDIO_REV, PRON_TTS_PURPOSE } from '../src/pron-audio';
+import { audioKey, AUDIO_REV, 英文声音, 中文声音, 指令文本 } from '../src/en-audio';
 import { asrWordsOf, GROUPS, groupsForEar, minimalPairsOf } from '../src/pron-content';
 import { LESSON, 级 } from '../src/pron-lesson';
-import { AURA_SPEAKER, TTS_AURA, ttsNeurons } from '../src/tts';
 import { PURPOSES } from '../src/usage';
 import { ROOT, T0 } from './helpers';
 
@@ -60,7 +61,7 @@ beforeAll(async () => {
 });
 afterAll(async () => dispose());
 beforeEach(async () => {
-  await db.batch(['pron_round', 'pron_say', 'pron_audio', 'settings', 'ai_usage', 'model_usage', 'usage_by_project', 'usage_by_purpose', 'auth_fail', 'auth_lock'].map((t) => db.prepare(`DELETE FROM ${t}`)));
+  await db.batch(['pron_round', 'pron_say', 'pron_audio', 'en_audio', 'settings', 'ai_usage', 'model_usage', 'usage_by_project', 'usage_by_purpose', 'auth_fail', 'auth_lock'].map((t) => db.prepare(`DELETE FROM ${t}`)));
 });
 
 const env = (): Env => ({ DB: db, ENVIRONMENT: 'test', COPILOT_PASSWORD: PASS });
@@ -77,6 +78,8 @@ const api = async (p: string, body?: unknown, e: Env = env(), now = T0) => {
 };
 /** 直接拿 Response（发音回的是 audio/mpeg，不是 JSON） */
 const getRaw = (p: string, e: Env = env(), now = T0) => handle(req('/api/en/pron/' + p, { cookie: ck }), e, now);
+/** 语音在 /api/en/audio/<键>（2026-11-13 起 S1 S2 共用这一条，不再挂在 /api/en/pron/ 下面） */
+const getAudio = (key: string, e: Env = env(), now = T0) => handle(req('/api/en/audio/' + key, { cookie: ck }), e, now);
 
 /** 假的 Workers AI：发音默认回 {audio: base64}（toMp3 两种都认），纠说回 whisper 那种 {text, transcription_info} */
 const MP3 = Uint8Array.from([0x49, 0x44, 0x33, 0x04, 0x00, 0x11, 0x22, 0x33]);
@@ -184,13 +187,13 @@ describe('2. 四步循环：跟我做 → 对照听 → 同一组连考 10 题 �
 
   // 2026-11-12 主会话复核时发现的一类洞：口型图整套撤掉了，可是**出错时弹给他看的那些话**
   // 还在把他指回那块屏幕（"上面的 X、对照听和考题照常能用""今天先 X 和音标""回第 1 步再 X 一遍"，X 就是那四个字）。
-  // 一共 11 处，分散在 pron.ts / pron-page.ts / pron-audio.ts 的错误分支里 ——
+  // 一共 11 处，分散在 pron.ts / pron-page.ts / en-audio.ts 的错误分支里 ——
   // 全都只在录音失败、额度用完、没给权限、考砸了的时候才出现，**正是他最需要一句能照做的话的时候**，
   // 结果指着一块已经不存在的屏幕。钉一条结构性的：源码里（注释除外）不许再出现这四个字。
   it('撤掉的功能不许在任何一句出错提示里复活：源码里不留"看口型"（注释除外）', () => {
     const 去注释 = (t: string) =>
       t.replace(/\/\*[\s\S]*?\*\//g, '').split('\n').filter((l) => !/^\s*(\/\/|\*)/.test(l)).join('\n');
-    for (const f of ['pron.ts', 'pron-page.ts', 'pron-audio.ts', 'pron-content.ts', 'pron-lesson.ts']) {
+    for (const f of ['pron.ts', 'pron-page.ts', 'en-audio.ts', 'pron-content.ts', 'pron-lesson.ts']) {
       const p = path.join(__dirname, '..', 'src', f);
       if (!existsSync(p)) continue;
       const 命中 = 去注释(readFileSync(p, 'utf8')).split('\n')
@@ -565,7 +568,7 @@ describe('5. 纠说：只说「机器听成了什么」，不说"你念对了"�
 });
 
 // ======================================================================
-describe('6. 发音：照搬带练那条链路（aura-2-en + 版本号键 + 额度闸 + 失败当面说）', () => {
+describe('6. 发音：预先生成好的 mp3，页面只去取、运行时一次 AI 都不调（2026-11-13 换掉 aura-2-en）', () => {
   it('56 个词的编号：7 组 × 4 对 × 2，念的就是那个词本身，一个修饰词都不加', () => {
     expect(PRON_WORD_IDS).toHaveLength(56);
     expect(new Set(PRON_WORD_IDS).size).toBe(56);
@@ -577,69 +580,61 @@ describe('6. 发音：照搬带练那条链路（aura-2-en + 版本号键 + 额�
     expect(wordOf('g9-1a')).toBeNull();
   });
 
-  it('第一次点🔊：调一次 aura-2-en（text + speaker + encoding）、存进 pron_audio、回 audio/mpeg；第二次**不再调 AI**', async () => {
+  it('接口给页面的「音键」= 这个词内容的哈希（Sonia 念的那一条），版本号是 e1', () => {
+    const 卡 = groupCard(GROUPS[0]) as { 对: { a: { 词: string; 音键: string }; b: { 词: string; 音键: string } }[] };
+    for (const 对 of 卡.对)
+      for (const k of ['a', 'b'] as const) expect([对[k].词, 对[k].音键]).toEqual([对[k].词, audioKey(对[k].词, 英文声音)]);
+    expect(AUDIO_REV).toBe('e1');
+    expect(卡.对[0].a.音键).toBe('e1-9eeb44316ba59b1e');   // bed，钉死
+  });
+
+  it('库里有 → 回 audio/mpeg；**整条路一次 AI 都不调**（给了 env.AI 也一次没碰）', async () => {
+    const k = audioKey('bed', 英文声音);
+    await db.prepare('INSERT INTO en_audio (k, voice, txt, mp3, bytes, at) VALUES (?1, ?2, ?3, ?4, ?5, ?6)')
+      .bind(k, 英文声音, 'bed', MP3, MP3.byteLength, T0).run();
     const f = fakeAi();
-    const r = await getRaw('audio/' + BED, f.env());
+    const r = await getAudio(k, f.env());
     expect(r.status).toBe(200);
     expect(r.headers.get('content-type')).toBe('audio/mpeg');
-    expect(f.calls).toHaveLength(1);
-    expect(f.calls[0].model).toBe(TTS_AURA);
-    expect(f.calls[0].inp).toEqual({ text: 'bed', speaker: AURA_SPEAKER, encoding: 'mp3' });
-    const row = await db.prepare('SELECT item FROM pron_audio').first<{ item: string }>();
-    expect(row?.item).toBe(audioKey(BED));
-    expect(audioKey(BED)).toBe('a2:g1-1a');
-    expect(AUDIO_REV).toBe('a2');
-    const again = await getRaw('audio/' + BED, f.env());
-    expect(again.status).toBe(200);
-    expect(f.calls).toHaveLength(1); // 一次都没再调
-  });
-
-  it('56 段全生成一遍也远不到免费额度（别偷偷变成一笔新开销）', () => {
-    const total = PRON_WORD_IDS.reduce((s, id) => s + ttsNeurons(TTS_AURA, audioTextOf(id)!), 0);
-    expect(total).toBeLessThan(1000);
-    expect(total).toBeGreaterThan(0);
-  });
-
-  it('没绑 Workers AI → 503 两句话；编号不认识 → 400；额度不够 → 429 且一次 AI 都不调（都不进库）', async () => {
-    const off = await getRaw('audio/' + BED);
-    expect(off.status).toBe(503);
-    expect((await off.json() as any).怎么办).toBeTruthy();
-    const f = fakeAi();
-    const bad = await getRaw('audio/不认识的编号', f.env());
-    expect(bad.status).toBe(400);
-    expect(f.calls).toEqual([]);
-    await db.prepare('INSERT INTO ai_usage (day, neurons) VALUES (?1, 99999)').bind(new Date(T0).toISOString().slice(0, 10)).run();
-    const over = await getRaw('audio/' + BED, f.env());
-    expect(over.status).toBe(429);
-    expect(f.calls).toEqual([]);
-    expect((await db.prepare('SELECT COUNT(*) AS n FROM pron_audio').first<{ n: number }>())?.n).toBe(0);
-  });
-
-  it('模型出错 → 502 两句话、按估算记一笔账、库里不留半截；**失败就失败，不自动重试**', async () => {
-    const f = fakeAi(async () => { throw new Error('aura 挂了'); });
-    const r = await getRaw('audio/' + BED, f.env());
-    expect(r.status).toBe(502);
-    const j = await r.json() as any;
-    expect(j.出错).toContain('aura 挂了');
-    expect(j.怎么办).toContain('不会自动重试');
-    expect((await db.prepare('SELECT COUNT(*) AS n FROM pron_audio').first<{ n: number }>())?.n).toBe(0);
-    const u = await db.prepare('SELECT purpose FROM usage_by_purpose').first<{ purpose: string }>();
-    expect(u?.purpose).toBe(PRON_TTS_PURPOSE);
-    expect(PRON_TTS_PURPOSE).toBe('pron-tts');
-  });
-
-  it('aura 真实返回的是**二进制流**（不是 {audio: base64}）：这条路也要走得通', async () => {
-    const f = fakeAi(async () => new Response(MP3).body as ReadableStream);
-    const r = await getRaw('audio/' + BAD, f.env());
-    expect(r.status).toBe(200);
     expect(new Uint8Array(await r.arrayBuffer())).toEqual(MP3);
+    expect(f.calls).toEqual([]);           // ← 原来这里会调一次 aura，现在一次都不调
+    // 再取一次还是不调（原来靠"第一次生成、之后复用"才做到，现在是根本没有生成这条路）
+    expect((await getAudio(k, f.env())).status).toBe(200);
+    expect(f.calls).toEqual([]);
   });
 
-  it('页面：同一段只取一次、连点闸、「正在生成」提示、失败当面说（和带练那一套一字不差地同一个做法）', () => {
-    expect(PRON_JS).toContain('if(PN.au[id]){pPlay(PN.au[id],msgId);return;}');
-    expect(PRON_JS).toContain('if(PN.auBusy[id])return;');
-    expect(PRON_JS).toContain("m.textContent='第一次要先生成这个词的发音，一两秒……'");
-    expect(PRON_JS).toContain('function pAuErr(j,msgId)');
+  it('库里没有 → **404 照实说「还没生成」**，不回退去调 AI、库里也不留半截', async () => {
+    const f = fakeAi();
+    const k = audioKey('bad', 英文声音);
+    const r = await getAudio(k, f.env());
+    expect(r.status).toBe(404);
+    const j = (await r.json()) as { 出错: string; 怎么办: string };
+    expect(j.出错).toContain('还没生成');
+    expect(j.怎么办).toBeTruthy();
+    expect(f.calls).toEqual([]);
+    expect((await db.prepare('SELECT COUNT(*) AS n FROM en_audio').first<{ n: number }>())?.n).toBe(0);
+  });
+
+  it('键不像键 → 400；没登录一律 401', async () => {
+    expect((await getAudio('不认识的编号')).status).toBe(400);
+    const r = await handle(req('/api/en/audio/' + audioKey('bed', 英文声音)), env(), T0);
+    expect(r.status).toBe(401);
+  });
+
+  it('旧的 /api/en/pron/audio/<编号> 整条去掉（不留兼容：只有 Amos 一个人用）', async () => {
+    const r = await getRaw('audio/' + BED);
+    expect(r.status).toBe(404);
+  });
+
+  it('页面：同一段只取一次、连点闸、失败当面说；**不再有「第一次要先生成」那句话**（已经没有生成这回事）', () => {
+    expect(PRON_JS).toContain('if(PN.au[key]){pPlay(PN.au[key],msgId);return;}');
+    expect(PRON_JS).toContain('if(PN.auBusy[key])return;');
+    expect(PRON_JS).toContain('function pAuErr(j,msgId,什么)');
+    expect(PRON_JS).toContain('还没生成，这一次先跳过声音');
+    expect(PRON_JS).not.toContain('第一次要先生成这个词的发音');
+    // 取的地址是语音那一条，不是发音训练自己的前缀
+    expect(PRON_JS).toContain("auBase:(window.__enAudioBase||'/api/en/audio/')");
+    expect(PRON_JS).toContain('fetch(PN.auBase+encodeURIComponent(key))');
   });
 
   it('来回点两个词对比不许蹦假错误：play() 的 AbortError 要忽略掉', () => {
@@ -653,11 +648,6 @@ describe('6. 发音：照搬带练那条链路（aura-2-en + 版本号键 + 额�
     expect(PRON_JS).not.toContain("pr.catch(function(){pAuErr(");
     // 真被拦住的那条路还在
     expect(PRON_JS).toContain("'出错':'浏览器把这次播放挡住了。'");
-  });
-
-  it('没登录一律 401', async () => {
-    const r = await handle(req('/api/en/pron/audio/' + BED), env(), T0);
-    expect(r.status).toBe(401);
   });
 });
 
@@ -729,18 +719,20 @@ describe('8. 不让他打字、按钮够大、不碰密钥', () => {
     }
   });
 
-  it('服务端不碰密钥：whisper 和 aura 都走 env.AI 绑定，没有新环境变量', () => {
-    for (const f of ['src/pron.ts', 'src/pron-audio.ts']) {
+  it('服务端不碰密钥：whisper 走 env.AI 绑定，语音只读库，没有新环境变量', () => {
+    for (const f of ['src/pron.ts', 'src/en-audio.ts']) {
       const t = readFileSync(path.join(ROOT, f), 'utf8');
       expect([f, /env\.(?!AI|DB)[A-Z]/.test(t)]).toEqual([f, false]);
       for (const w of ['API_KEY', 'TOKEN', 'PASSWORD', 'Authorization']) expect([f, w, t.includes(w)]).toEqual([f, w, false]);
     }
   });
 
-  it('SQL 只碰自己那三张表 + settings（放今天纠了几次），别的表一个都不写', () => {
-    const t = readFileSync(path.join(ROOT, 'src/pron.ts'), 'utf8') + readFileSync(path.join(ROOT, 'src/pron-audio.ts'), 'utf8');
+  it('SQL 只碰自己那几张表 + settings（放今天纠了几次），别的表一个都不写', () => {
+    // 2026-11-13：发音从 pron_audio（aura 按需生成）换成 en_audio（预先生成，只读）。
+    // pron.ts 自己只写 pron_round / pron_say / settings，en-audio.ts 只**读** en_audio —— 范围没变宽。
+    const t = readFileSync(path.join(ROOT, 'src/pron.ts'), 'utf8') + readFileSync(path.join(ROOT, 'src/en-audio.ts'), 'utf8');
     const tables = new Set([...t.matchAll(/(?:FROM|INTO|UPDATE)\s+(\w+)/g)].map((m) => m[1]).filter((x) => x !== 'SET'));
-    expect([...tables].sort()).toEqual(['pron_audio', 'pron_round', 'pron_say', 'settings']);
+    expect([...tables].sort()).toEqual(['en_audio', 'pron_round', 'pron_say', 'settings']);
   });
 
   it('不造占位词：没有「暂无」「待补」这类（底线 3）', () => {
@@ -803,7 +795,7 @@ const fakeStream = () => {
  * 开一个只有 #f-pron 的 jsdom 页面，跑真的 PRON_JS。
  * 网络一律走替身并**逐条记下来**（镜子那一段要证明"一次都没往外发"）。
  */
-async function pronPage(opt: { cam?: 'ok' | 'deny' | 'none'; camDelay?: number; speech?: 'ok' | 'noZh' | 'none'; auto?: 'on' | 'off' } = {}) {
+async function pronPage(opt: { cam?: 'ok' | 'deny' | 'none'; camDelay?: number; 没有语音?: boolean; auto?: 'on' | 'off' } = {}) {
   const jsdomName = 'jsdom';
   const { JSDOM } = await import(jsdomName);
   // 给一个 url：about:blank 下 jsdom 没有 localStorage，而「自动念」的开关就存在那里
@@ -811,6 +803,7 @@ async function pronPage(opt: { cam?: 'ok' | 'deny' | 'none'; camDelay?: number; 
   const w = dom.window as unknown as PWin;
   const net: string[] = [];
   const plays: { src: string; rate: number }[] = [];
+  let pauses = 0;
   const state = { 一共几组: GROUPS.length, 一轮几题: ROUND_N, 组: GROUPS.map(groupCard), 记录: [], 纠说: {}, 旧的去哪了: '样例' };
   const anyW = w as any;
   let 关了 = false;
@@ -818,7 +811,13 @@ async function pronPage(opt: { cam?: 'ok' | 'deny' | 'none'; camDelay?: number; 
     if (关了) return new Promise(() => {}); // 窗口关掉之后不再往回调（不然回调里 document 已经没了，冒一个假错误）
     net.push((init?.method ?? 'GET') + ' ' + url);
     if (/state$/.test(url)) return { ok: true, status: 200, json: async () => JSON.parse(JSON.stringify(state)) };
-    if (/audio\//.test(url)) return { ok: true, status: 200, headers: { get: () => 'audio/mpeg' }, blob: async () => new anyW.Blob(['mp3'], { type: 'audio/mpeg' }), json: async () => ({}) };
+    if (/\/api\/en\/audio\//.test(url)) {
+      // 没有语音 = 库里还没生成这一条：服务端回 404 两句话（src/en-audio.ts 的「还没生成」）
+      if (opt.没有语音)
+        return { ok: false, status: 404, headers: { get: () => 'application/json' },
+          json: async () => ({ 出错: '这一段语音还没生成（库里没有这一条）。', 怎么办: '照着屏幕上的字做就行。' }) };
+      return { ok: true, status: 200, headers: { get: () => 'audio/mpeg' }, blob: async () => new anyW.Blob(['mp3'], { type: 'audio/mpeg' }), json: async () => ({}) };
+    }
     return { ok: true, status: 200, json: async () => ({ 一句话: '✅ 机器听成了 bed —— 对了', 判定: 1, 这是线索不是判决: '线索', 今天已经纠了几次: 1, 一天最多: 200 }) };
   };
   // 往外发东西的路，一条都不许在镜子那一段被用到
@@ -831,7 +830,8 @@ async function pronPage(opt: { cam?: 'ok' | 'deny' | 'none'; camDelay?: number; 
   // 假播放器：记下每次放的是哪一段、倍速多少；放完触发 onended（「连着放」靠它接上第二段）
   anyW.Audio = function (this: any) {
     this.src = ''; this.playbackRate = 1; this.onended = null;
-    this.pause = () => {};
+    // 停掉正在响的那一段：pShutUp()（离开这一屏、关掉自动念）靠它
+    this.pause = () => { pauses++; };
     this.play = () => {
       plays.push({ src: this.src, rate: this.playbackRate });
       setTimeout(() => { if (this.onended) this.onended(); }, 0);
@@ -853,21 +853,8 @@ async function pronPage(opt: { cam?: 'ok' | 'deny' | 'none'; camDelay?: number; 
       },
     });
   }
-  // 假朗读：记下每一句念的是什么、lang 是什么；speech:'none' = 这台设备根本没有 speechSynthesis，
-  // speech:'noZh' = 有朗读但一个中文声音都没有（真机上很常见）
-  const said: { text: string; lang: string; rate: number }[] = [];
-  let cancels = 0;
-  if (opt.speech !== 'none') {
-    anyW.SpeechSynthesisUtterance = function (this: any, t: string) { this.text = t; this.lang = ''; this.rate = 1; };
-    anyW.speechSynthesis = {
-      cancel: () => { cancels++; },
-      speak: (u: { text: string; lang: string; rate: number }) => { said.push({ text: u.text, lang: u.lang, rate: u.rate }); },
-      getVoices: () => (opt.speech === 'noZh' ? [{ lang: 'en-US' }] : [{ lang: 'zh-CN' }]),
-    };
-  } else {
-    anyW.speechSynthesis = undefined;
-    anyW.SpeechSynthesisUtterance = undefined;
-  }
+  // 2026-11-13：「念给我听」不再用浏览器自带的那套朗读，改成放**预先生成好的中文语音**。
+  // 所以这里**连假朗读都不给**（页面真去调的话会当场 undefined 报错），念了什么全看 plays / net。
   // 自动念的开关存 localStorage：测试要能从"他上次关掉了"这个状态开起来
   try { if (opt.auto) anyW.localStorage.setItem('pn-auto-speak', opt.auto); else anyW.localStorage.removeItem('pn-auto-speak'); } catch { /* 取不到就当默认开着 */ }
   // 假录音机：按一下开始、再按一下停止，停的时候吐一段 3 字节的音频
@@ -901,7 +888,7 @@ async function pronPage(opt: { cam?: 'ok' | 'deny' | 'none'; camDelay?: number; 
   const next = () => cbtn('做好了')!.click();
   // 关之前先让在飞的那几个 promise 落地（取发音、FileReader、POST say），再关窗口
   const close = async () => { 关了 = true; await new Promise((ok) => setTimeout(ok, 80)); w.close(); };
-  return { w, $, click, until, net, plays, cams, said, cancels: () => cancels, useGroup, cbtn, shown, next, close };
+  return { w, $, click, until, net, plays, pauses: () => pauses, cams, useGroup, cbtn, shown, next, close };
 }
 
 // ======================================================================
@@ -1026,7 +1013,12 @@ describe('10. 跟我做：一屏只有一步，他点一下才前进（jsdom 里
       const n0 = p.net.length;
       p.next();
       expect(p.$('pn-mirtarget').textContent).toBe(去星(步[1].说));
-      expect(p.net.slice(n0)).toEqual([]);          // 翻页也没往外发一个字节
+      // 2026-11-13：翻页会**去取**下一句的朗读（自动念那一段预先生成好的中文语音）。
+      // 守的那件事一点没松 —— **摄像头的画面一个字节都没出去**：
+      // 翻页发出去的只能是 GET 取语音那一条，而且只能是 GET（没有任何 POST / 上传）。
+      const 新发的 = p.net.slice(n0);
+      expect(新发的.every((x) => /^GET \/api\/en\/audio\//.test(x))).toBe(true);
+      expect(新发的.length).toBeLessThanOrEqual(1);
       expect(p.cams[0].track.stopped).toBe(0);
     } finally { await p.close(); }
   });
@@ -1044,33 +1036,42 @@ describe('10. 跟我做：一屏只有一步，他点一下才前进（jsdom 里
   });
 });
 
-describe('11. 念给我听：浏览器自带的朗读，不调 AI、不花钱；这台设备读不了中文就当面说', () => {
-  it('点「🔈 念给我听」真的念出这一句，lang 是 zh-CN、语速比正常慢', async () => {
+describe('11. 念给我听：放**预先生成好的中文语音（晓晓）**，不调 AI、不花钱；库里没有就当面说', () => {
+  const 睡 = (ms: number) => new Promise((ok) => setTimeout(ok, ms));
+  // 2026-11-13 换掉的是**谁在念**：原来是浏览器自带的那套朗读（Amos：嫌手机朗读太机械），
+  // 现在是微软 Edge 的神经网络语音，提前生成好存在库里。守的四件事一件没少、还多了一件：
+  //   原来守：① 点了真的念出这一句（含提示）② 翻页自动念、和手点念的是同一段 ③ 开关关得掉、存得住
+  //           ④ 念不了的时候当面说、其余照常能用
+  //   现在守：①～④ 照旧（念 → 放那一段 mp3；"念不了" → "库里还没生成"），
+  //           **另加**：念的是哪一段由**内容哈希的键**钉死（不可能一个念全、一个只念半句），
+  //           而且整段脚本里连浏览器那套朗读的名字都不许出现（test/en-audio.test.ts 第 3 组）。
+  const 键 = (i: number) => audioKey(指令文本(LESSON[0].步[i]), 中文声音);
+
+  it('点「🔈 念给我听」真的去取**这一句 + 提示**那一段（晓晓念的那条键），并放出来', async () => {
     const p = await pronPage();
     try {
+      const n0 = p.plays.length;
       p.cbtn('🔈')!.click();
-      expect(p.said.length).toBe(1);
-      expect(p.said[0].lang).toBe('zh-CN');
-      expect(p.said[0].rate).toBeLessThan(1);
-      expect(p.said[0].text).toContain(LESSON[0].步[0].说.split('**').join(''));
+      expect(await p.until(() => p.plays.length > n0)).toBe(true);
+      expect(p.net.some((x) => x.includes('/api/en/audio/' + 键(0)))).toBe(true);
+      // 这一句 + 提示才是他能照着做的那段话：键里**两段都在**
+      expect(指令文本(LESSON[0].步[0])).toContain(LESSON[0].步[0].说);
+      if (LESSON[0].步[0].提示) expect(指令文本(LESSON[0].步[0])).toContain(LESSON[0].步[0].提示!);
     } finally { await p.close(); }
   });
 
-  it('点「下一步」之后**自动念新的那一句**（这样他可以对着镜子做，不用盯屏幕）', async () => {
+  it('点「下一步」之后**自动念新的那一句**，而且和手点「🔈」取的是同一条键（同一段，不可能一个念全一个念半句）', async () => {
     const p = await pronPage();
     try {
-      expect(p.said.length).toBe(0);              // 刚进来不念，不吓人
+      expect(p.net.some((x) => x.includes('/api/en/audio/'))).toBe(false);  // 刚进来不念，不吓人
       p.next();
-      expect(p.said.length).toBe(1);
-      const s1 = LESSON[0].步[1];
-      // **自动念和手点「🔈」念的必须是同一段字**：只念前半句，提示里"塞一根手指""捏住鼻子"
-      // 这种真能照着做的话他就听不到，等于还是要低头看屏幕
-      expect(p.said[0].text).toContain(s1.说.split('**').join(''));
-      if (s1.提示) expect(p.said[0].text).toContain(s1.提示.split('**').join(''));
-      expect(p.said[0].lang).toBe('zh-CN');
-      const auto = p.said[0].text;
+      expect(await p.until(() => p.net.some((x) => x.includes('/api/en/audio/' + 键(1))))).toBe(true);
+      const 取过 = p.net.filter((x) => x.includes('/api/en/audio/')).length;
+      const n0 = p.plays.length;
       p.cbtn('🔈')!.click();
-      expect(p.said[1].text).toBe(auto);
+      // 同一条键第二次不再发请求（取过一次就存着），但**还是要响**
+      expect(await p.until(() => p.plays.length > n0)).toBe(true);
+      expect(p.net.filter((x) => x.includes('/api/en/audio/')).length).toBe(取过);
     } finally { await p.close(); }
   });
 
@@ -1080,9 +1081,10 @@ describe('11. 念给我听：浏览器自带的朗读，不调 AI、不花钱；
       p.click('pn-auto');
       expect(p.$('pn-auto').getAttribute('aria-pressed')).toBe('false');
       p.next(); p.next();
-      expect(p.said.length).toBe(0);
+      await 睡(60);
+      expect(p.net.some((x) => x.includes('/api/en/audio/'))).toBe(false);
       p.cbtn('🔈')!.click();                       // 自己点还是念
-      expect(p.said.length).toBe(1);
+      expect(await p.until(() => p.plays.length > 0)).toBe(true);
       expect((p.w as any).localStorage.getItem('pn-auto-speak')).toBe('off');
     } finally { await p.close(); }
     // 上次关掉了：这次进来还是关着的，翻页也不念
@@ -1090,40 +1092,42 @@ describe('11. 念给我听：浏览器自带的朗读，不调 AI、不花钱；
     try {
       expect(q.$('pn-auto').getAttribute('aria-pressed')).toBe('false');
       q.next();
-      expect(q.said.length).toBe(0);
+      await 睡(60);
+      expect(q.net.some((x) => x.includes('/api/en/audio/'))).toBe(false);
     } finally { await q.close(); }
   });
 
-  it('这台设备没有朗读 / 没有中文声音：**按钮上当面说清楚**，其余功能照常能用（不整屏挂掉）', async () => {
-    for (const speech of ['none', 'noZh'] as const) {
-      const p = await pronPage({ speech });
-      try {
-        p.cbtn('🔈')!.click();
-        const 按钮 = p.shown().btns.join('|');
-        expect([speech, 按钮]).toEqual([speech, expect.stringContaining('这台设备读不了中文，照着屏幕做就行')]);
-        expect([speech, p.$('pn-auto').textContent]).toEqual([speech, '这台设备读不了中文，照着屏幕做就行']);
-        // 其余照常：翻页、🎤、镜子、去对照听都还在
-        p.next();
-        expect([speech, p.shown().num]).toEqual([speech, '第 2 / 共 ' + LESSON[0].步.length + ' 步']);
-        p.click('pn-go2');
-        expect([speech, p.$('pn-s2').hidden]).toEqual([speech, false]);
-        expect([speech, p.w.document.querySelectorAll('#pn-cmp .pn-pair button').length]).toEqual([speech, 8]);
-      } finally { await p.close(); }
-    }
+  it('库里还没生成这一句：**当面照实说**，不静默、不假装在念，其余功能照常能用（不整屏挂掉）', async () => {
+    const p = await pronPage({ 没有语音: true });
+    try {
+      const n0 = p.plays.length;
+      p.cbtn('🔈')!.click();
+      expect(await p.until(() => !p.$('pn-csaymsg').hidden)).toBe(true);
+      const 话 = p.$('pn-csaymsg').textContent!;
+      expect(话).toContain('这一句的朗读还没生成');
+      expect(话).toContain('这一段语音还没生成');     // 服务端那两句原样摆出来
+      expect(p.plays.length).toBe(n0);                // **一声都没响**，没有偷偷换个机械的声音顶上
+      // 其余照常：翻页、🎤、镜子、去对照听都还在
+      p.next();
+      expect(p.shown().num).toBe('第 2 / 共 ' + LESSON[0].步.length + ' 步');
+      p.click('pn-go2');
+      expect(p.$('pn-s2').hidden).toBe(false);
+      expect(p.w.document.querySelectorAll('#pn-cmp .pn-pair button').length).toBe(8);
+    } finally { await p.close(); }
   });
 
-  it('不调任何 AI、不花一分钱：朗读那一段里一次网络请求都没有，源码里也没有第二个 TTS', async () => {
+  it('不调任何 AI、不花一分钱：念那一段只去取一个现成的字节流，脚本里没有第二条 TTS', async () => {
     const p = await pronPage();
     try {
-      const n0 = p.net.length;
       p.cbtn('🔈')!.click();
       p.next(); p.next();
-      expect(p.net.slice(n0)).toEqual([]);
+      await 睡(60);
+      // 发出去的请求**只有**取语音那一种（没有生成、没有记账、没有模型调用）
+      expect(p.net.filter((x) => !/\/api\/en\/(audio|pron)\//.test(x))).toEqual([]);
+      expect(p.net.every((x) => x.startsWith('GET '))).toBe(true);
     } finally { await p.close(); }
-    // 念的是浏览器自己带的那一套，不走 /api/
-    const 段 = PRON_JS.slice(PRON_JS.indexOf('function pCanSpeak'), PRON_JS.indexOf('function pAutoLabel'));
-    expect(段).toContain("u.lang='zh-CN'");
-    for (const w of ['fetch', 'aura', 'tts', 'AI']) expect([w, 段.includes(w)]).toEqual([w, false]);
+    const 段 = PRON_JS.slice(PRON_JS.indexOf('function pSpeak'), PRON_JS.indexOf('function pAutoToggle'));
+    for (const w of ['aura', 'melotts', '@cf/', 'env.AI', 'AI.run', 'speechSynthesis']) expect([w, 段.includes(w)]).toEqual([w, false]);
   });
 });
 
@@ -1259,17 +1263,16 @@ describe('14. 摄像头的三道竞态和一条出口（审查 🔴1、🔴2：�
     try {
       p.click('pn-mir');
       p.cbtn('🔈')!.click();                 // 正在念这一句
-      await p.until(() => p.cams.length === 1 && !p.$('pn-mirwrap').hidden);
-      expect(p.said.length).toBeGreaterThan(0);
-      const c0 = p.cancels();
+      await p.until(() => p.cams.length === 1 && !p.$('pn-mirwrap').hidden && p.plays.length > 0);
+      const c0 = p.pauses();
       expect(typeof p.w.pronStop).toBe('function');
       p.w.pronStop!();
       expect(p.cams[0].track.stopped).toBe(1);
       expect(p.$('pn-mirwrap').hidden).toBe(true);
-      // 他已经看不见这一屏了，手机不许还在念
-      expect(p.cancels()).toBeGreaterThan(c0);
-      const n = p.said.length; await 睡(200);
-      expect(p.said.length).toBe(n);
+      // 他已经看不见这一屏了，手机不许还在念 —— 正在放的那一段当场停掉
+      expect(p.pauses()).toBeGreaterThan(c0);
+      const n = p.plays.length; await 睡(200);
+      expect(p.plays.length).toBe(n);
     } finally { await p.close(); }
   });
 
