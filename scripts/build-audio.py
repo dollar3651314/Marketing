@@ -117,7 +117,19 @@ def wrangler_d1(env: str, args: list[str]) -> str:
     r = subprocess.run(cmd, cwd=ROOT, capture_output=True, text=True,
                        env={**os.environ, "WRANGLER_SEND_METRICS": "false"})
     if r.returncode != 0:
-        raise SystemExit(f"✗ D1 执行失败：\n{(r.stdout + r.stderr).strip()[:2000]}")
+        全文 = (r.stdout + r.stderr).strip()
+        # 表还没建：甩一段 Cloudflare 的 JSON 没人看得懂，当场说清楚是什么事、怎么办。
+        # （2026-11-13 生产上连撞两次：第一次 en_audio、第二次 en_audio_part，
+        #   都是这个 job 和部署并行、迁移还没跑完就来写。触发方式已经改成等 ci 跑完，
+        #   这里是第二道：万一还撞上，让人一眼看懂，不用去翻 JSON。）
+        import re as _re
+        缺表 = _re.search(r"no such table: (\w+)", 全文)
+        if 缺表:
+            raise SystemExit(
+                f"✗ 这个环境里还没有 {缺表.group(1)} 这张表 —— 建表的迁移还没跑。\n"
+                f"  怎么办：等这次部署跑完（ci 工作流里那一步会跑迁移），再手动跑一次 audio 工作流就行。\n"
+                f"  一句话：不是语音生成坏了，是跑早了。\n\n{全文[:800]}")
+        raise SystemExit(f"✗ D1 执行失败：\n{全文[:2000]}")
     return r.stdout
 
 
