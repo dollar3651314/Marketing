@@ -66,14 +66,16 @@ export const 共用底座 = ['./env', './usage', './workers-ai'] as const;
  * 英语学习自己的表（迁移在 `迁移` 里）。**这几张里是 Amos 练出来的真实成绩，任何时候都不许 DROP。**
  * 2026-11-13 多一张 `en_audio_part`（迁移 0023）：一条语音的字节**拆成多行存**，
  * `en_audio` 还在、还存元数据（线上 `SQLITE_TOOBIG` 那次，详见 src/en-audio.ts）。
+ * 同一天再多一张 `en_done`（迁移 0024）：「发音训练」清单上**打上勾的那几条**
+ * （`follow` 跟我做走完、`listen` 对照听过；另外两条按 `pron_round` / `pron_say` 现算，不落库）。
  */
-export const 表 = ['pron_round', 'pron_say', 'pron_audio', 'en_audio', 'en_audio_part'] as const;
+export const 表 = ['pron_round', 'pron_say', 'pron_audio', 'en_audio', 'en_audio_part', 'en_done'] as const;
 
 /**
  * 建这几张表的迁移。拆出去 = 把这个文件照抄过去 + 从旧库 `.dump` 出这三张表的数据。
  * 句子训练这一批**不存进度、不加迁移**（学习进度模块是第二批，由 Amos 决定要不要做）。
  */
-export const 迁移 = ['migrations/0019_pron.sql', 'migrations/0022_en_audio.sql', 'migrations/0023_en_audio_part.sql'] as const;
+export const 迁移 = ['migrations/0019_pron.sql', 'migrations/0022_en_audio.sql', 'migrations/0023_en_audio_part.sql', 'migrations/0024_en_done.sql'] as const;
 
 /**
  * 共用的 key-value 表 `settings` 里属于英语的 key 前缀（纠说的一天 200 次闸）。

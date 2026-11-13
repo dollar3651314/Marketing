@@ -4,6 +4,7 @@
  * e2e-admin.mjs 自己起服务，但共用下面的 waitForServer（2026-11-03 起，同一个端口竞争的毛病它也有）。
  *   const srv = await startServer({ name: 'e2e-queue', vars: { DAILY_REPLY_CAP: '3' }, seedSql: 'INSERT …' });
  *   srv.BASE  // http://127.0.0.1:<端口>（端口由 workerd 自己挑，起来之后才知道）
+ *   srv.sql('SELECT * FROM en_done')  // 直接查这台服务用的那个本地库（证明"界面上那个勾真的写进库里了"）
  *   srv.stop()
  * seedSql：迁移跑完、服务启动前直接写进本地库的样例数据（不经过插件接口，所以不需要插件令牌，也不用伪造来源）。
  * 密码和令牌是只给测试用的假值，不是线上的。
@@ -42,12 +43,23 @@ export async function startServer({ name, vars = {}, seedSql = '' }) {
   const stop = () => { try { process.kill(-dev.pid, 'SIGTERM'); } catch { /* 已经停了 */ } };
   process.on('exit', stop);
   const BASE = await waitForServer(dev, { name, stop });
+  /**
+   * **直接查这台服务用的那个本地库**（不经过接口）。
+   * 为什么要它：有些事光看界面证明不了 —— 比如「清单上那个勾到底写进库里没有」「取消之后那一行真的删了没有」。
+   * 界面可以画成勾上的而库里什么都没写，刷新一次他就白做一遍，所以这几条**必须查库**。
+   * 只读：`sql('SELECT …')` 回一个数组（每行一个对象）。
+   */
+  const sql = (q) => {
+    const out = execFileSync(process.execPath, [WRANGLER, 'd1', 'execute', 'DB', '--local', '--json', '--command', q, ...cfg], { cwd: ROOT, env: wenv, encoding: 'utf8' });
+    const j = JSON.parse(out.slice(out.indexOf('[')));
+    return j[0]?.results ?? [];
+  };
   /** 用测试令牌推公司块（和 agents 自动检查走同一个接口）；返回状态码和内容，不抛错，让调用方自己判断 */
   const ingest = async (source, blocks) => {
     const r = await fetch(BASE + '/api/company/ingest', { method: 'POST', headers: { authorization: `Bearer ${TOKEN}`, 'content-type': 'application/json' }, body: JSON.stringify({ source, blocks }) });
     return { status: r.status, body: await r.text() };
   };
-  return { BASE, stop, ingest, log: () => dev.e2eLog };
+  return { BASE, stop, ingest, sql, log: () => dev.e2eLog };
 }
 
 /**
