@@ -92,7 +92,7 @@ const b64 = (buf: ArrayBuffer): string => {
 };
 const unb64 = (s: string): ArrayBuffer => Uint8Array.from(atob(s), (c) => c.charCodeAt(0)).buffer;
 
-/** melotts 回 {audio:base64}，aura 回二进制流：两种都认（发音训练的发音 src/pron-audio.ts 也用这一份，别各写一套） */
+/** melotts 回 {audio:base64}，aura 回二进制流：两种都认 */
 export async function toMp3(r: unknown): Promise<ArrayBuffer> {
   if (r instanceof ReadableStream) return await new Response(r).arrayBuffer();
   if (r instanceof ArrayBuffer) return r;

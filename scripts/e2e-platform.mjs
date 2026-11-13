@@ -10,7 +10,7 @@
  * 页面约定（照原型 v2 的元素；研发要改名就同一个 PR 改这里并在 PR 描述写明）：
  *   一级菜单 nav.nav1 a[data-p="work" | "project" | "tools"]（项目链接另带 data-proj="<项目名>"，有几个项目出几个）；
  *   二级菜单 #sub-work、#sub-project、#sub-tools 里的 a[data-s="<模块 id>"]，地址 #/work/todo、#/<项目>/guide 这类锚点
- *   页面 #v-work、#v-project（一套 DOM 轮流显示每个项目）、#v-tools；工作台模块 #w-now（#hero）、#w-todo（#w-todos li.todo、#w-donelist）、#w-live、#w-proj、#w-num、#w-meet、#w-pron（发音训练：跟我做（一次一句）→ 对照听 → 连考 10 题 → 过关，第 15 段）
+ *   页面 #v-work、#v-project（一套 DOM 轮流显示每个项目）、#v-tools；工作台模块 #w-now（#hero）、#w-todo（#w-todos li.todo、#w-donelist）、#w-live、#w-proj、#w-num、#w-meet（工作台「发音训练」#w-pron 2026-11-13 整块下线，搬去 Practical 仓库了）
  *   待办 li.todo 带颜色类 over（红，超时）/ soon（橙，24 小时内）/ later / none（没定截止时间）；打勾按钮 .tick；撤销 [data-undo]
  *   全部待办按时间段分组（改版批 A，2026-11-04；取代 2026-11-02 的按项目分组 .over-grp / details.tgrp[data-proj] / #w-todo-all）：
  *     #w-todos 下按页面顺序是 [data-bucket="over" | "soon" | "later" | "none"]（已超时 / 24 小时内到期 / 之后到期 / 没定截止时间，空的组不出），
@@ -38,10 +38,10 @@
  * 时间：页面时钟用 Playwright page.clock 固定在"现在"，拨时钟只拨浏览器（C106）；服务端的"现在"是真实时间，样例的截止时间都按真实时间算。
  * 每段单独 try：一段没做出来不影响别的段报结果；等待都有短超时，等不到就照实报"实际值"。任何一条不符就以非 0 退出。
  */
-import { mkdirSync, readFileSync } from 'node:fs';
+import { mkdirSync } from 'node:fs';
 import path from 'node:path';
 import { chromium } from 'playwright';
-import { startServer, PASS, checker, ROOT } from './e2e-server.mjs';
+import { startServer, PASS, checker } from './e2e-server.mjs';
 import * as LOOK from './e2e-look.mjs';
 
 const shotsAt = process.argv.indexOf('--shots');
@@ -56,25 +56,9 @@ const WAIT = 4000;
  */
 const REDESIGN_B = true;
 
-/**
- * 发音训练那 56 段发音（src/pron.ts 的 PRON_WORD_IDS，g1-1a…g7-4b）：本地没有 Workers AI，现场生成一定失败。
- * 所以**先把它们当成"已经生成过"放进 pron_audio**（aura-2-en 生成一次就永久复用，这是他第二次之后看到的常态），
- * 放的是 test/fixtures/pron/silent.mp3 —— 一段 0.26 秒的**静音** mp3（本地用 ffmpeg 生成，不是模型的声音）。
- * 所以这一段测的是**界面和流程**，不是"两个词念得像不像"；像不像只有人能判断，那正是「两个听着一样」那个按钮的事。
- * **纠说那条路一个替身都不放**：本地没绑 Workers AI，它走的就是"当面说用不了、其余照常能用"那条真路。
- */
-const PRON_WORD_IDS = [];
-for (const g of ['g1', 'g2', 'g3', 'g4', 'g5', 'g6', 'g7']) for (const i of [1, 2, 3, 4]) for (const k of ['a', 'b']) PRON_WORD_IDS.push(`${g}-${i}${k}`);
-const SILENT_MP3 = readFileSync(path.join(ROOT, 'test/fixtures/pron/silent.mp3')).toString('hex');
-/** 发音在库里的键 = 版本号 + 编号，和 src/pron-audio.ts 的 audioKey 一致（那边改了这里要跟着改） */
-const audioKey = (item) => `a2:${item}`;
-const srv = await startServer({
-  name: 'e2e-platform',
-  // 键要带**发音版本号前缀**（src/pron-audio.ts 的 audioKey）：换 TTS 模型时前缀会变，
-  // 旧模型生成的那些段就再也读不到。这里不预置成新键的话，页面会当成"还没生成过"去调 AI（本地没绑 → 报错）。
-  // 2026-11-10 从 melotts 换成 aura-2-en 时，就是这条 e2e 先红的。
-  seedSql: PRON_WORD_IDS.map((i) => `INSERT INTO pron_audio (item, mp3, at) VALUES ('${audioKey(i)}', X'${SILENT_MP3}', 0);`).join('\n'),
-});
+// 工作台「发音训练」2026-11-13 整块下线（搬去 Practical 仓库并已上生产），原来为它预置 56 段发音
+// （test/fixtures/pron/silent.mp3 → pron_audio）的 seedSql 跟着删掉；D1 里那三张表和迁移 0019 一个字没动。
+const srv = await startServer({ name: 'e2e-platform' });
 const BASE = srv.BASE;
 const now = Date.now();
 const GH = 'https://github.com/dollar3651314/agents/blob/main/';
@@ -350,7 +334,7 @@ try {
   await section('二级菜单', async () => {
     // 页名（#sub-<页>、#v-<页>）和地址段分开：项目页的页名一律是 project，地址段是项目名
     const SUB = [
-      { nav: 'work', page: 'work', seg: 'work', mods: ['w-now', 'w-todo', 'w-live', 'w-proj', 'w-num', 'w-meet', 'w-pron'] },
+      { nav: 'work', page: 'work', seg: 'work', mods: ['w-now', 'w-todo', 'w-live', 'w-proj', 'w-num', 'w-meet'] },
       { nav: 'forecast', page: 'project', seg: 'forecast', mods: ['f-next', 'f-guide', 'f-live', 'f-card', 'f-pack', 'f-match', 'f-tools', 'f-handoff'] },
       { nav: 'Practical', page: 'project', seg: 'Practical', mods: ['f-next', 'f-card', 'f-handoff'] },
       { nav: 'tools', page: 'tools', seg: 'tools', mods: ['t-queue'] },
@@ -582,33 +566,32 @@ try {
   });
 
 
-  // ---------- 8.5 发音训练：位置和手机排版（2026-11-11 换掉「英语练习」和「带练」）----------
-  // Amos 2026-11-11 原话：「工作台 英语练习和代练（带练）都没用了，用你新做的东西彻底替换掉它们吧」。
-  // 守四件事：① 工作台二级菜单从 8 项变 **7 项**（去掉「英语练习」「带练」，加「发音训练」）；
-  //    **上限还是 8、公共工具那 8 项一个都没动**（T-4：第 9 项会撑破手机菜单）；
-  // ② 点菜单滚得到「发音训练」，地址是 #/work/pron；③ 整块里**一个输入框都没有**、按钮 ≥52px；
-  // ④ 手机 390 宽不横向滚动、子菜单一行（可以横滑）、选中项完整看得见且不在右侧渐隐区、两层菜单 ≤25%。
-  await section('发音训练·位置', async () => {
+  // ---------- 8.5 工作台二级菜单：条数和手机排版 ----------
+  // 这一段 2026-11-11 加的时候叫「发音训练·位置」，守的是"工作台二级菜单 **7 项**、第 7 项是 w-pron"。
+  // 2026-11-13 **发音训练整块下线**（Amos：「工作台 发音训练 这个模块不需要再出现在 工作台 发音训练这个位置了」；
+  // 这一块已整套搬去 Practical 仓库、上了生产），所以**菜单从 7 项变 6 项**，最后一项回到「经营会」w-meet。
+  // **这不是放宽**：条数照样钉死（6 就是 6，多一项少一项都红），上限还是 8、公共工具那 8 项一个都不许动
+  //（T-4：第 9 项会撑破手机菜单），手机 390 宽那四条排版一条没少 —— 只是被量的那一项从 w-pron 换成了现在的最后一项 w-meet。
+  await section('工作台二级菜单·条数和手机排版', async () => {
     for (const width of [390, 1280]) {
       const p = await open({ width, height: 900 });
       await login(p, '/#/work');
-      // ① 菜单第 7 项
+      // ① 正好 6 项
       const mods = await p.locator('#sub-work a[data-s]').evaluateAll((a) => a.map((x) => x.dataset.s));
       const tools = await p.locator('#sub-tools a[data-s]').evaluateAll((a) => a.map((x) => x.dataset.s));
-      check(`${width} 宽：工作台二级菜单 7 项、第 7 项是 w-pron（上限还是 8；公共工具还是 8 项，T-4）`,
-        mods.length === 7 && mods[6] === 'w-pron' && mods.length <= 8 && tools.length === 8, { mods, tools });
-      check(`${width} 宽：下线的「英语练习」「带练」都不在菜单里了`, !mods.includes('w-english') && !mods.includes('w-drill'), mods);
-      await p.click('#sub-work a[data-s="w-pron"]', { timeout: WAIT });
+      check(`${width} 宽：工作台二级菜单正好 6 项、最后一项是 w-meet（上限还是 8；公共工具还是 8 项，T-4）`,
+        mods.length === 6 && mods[5] === 'w-meet' && mods.length <= 8 && tools.length === 8, { mods, tools });
+      check(`${width} 宽：下线的「英语练习」「带练」「发音训练」都不在菜单里了`,
+        !mods.includes('w-english') && !mods.includes('w-drill') && !mods.includes('w-pron'), mods);
+      // ② 点菜单滚得到最后一项，地址跟着走
+      await p.click('#sub-work a[data-s="w-meet"]', { timeout: WAIT });
       await p.waitForTimeout(400);
-      const seen = await p.evaluate(() => { const e = document.getElementById('w-pron'); if (!e) return null; const r = e.getBoundingClientRect(); return { top: r.top, h: innerHeight, hash: location.hash }; });
-      check(`${width} 宽：点菜单滚到「发音训练」，地址是 #/work/pron`, !!seen && seen.top >= -2 && seen.top < seen.h && seen.hash === '#/work/pron', seen);
-      // ③ 一个输入框都没有；看得见的按钮都 ≥52px
-      const inputs = await p.locator('#w-pron input, #w-pron textarea, #w-pron [contenteditable]').count();
-      check(`${width} 宽：整块里一个输入框都没有（不让他打字；录音按钮是 button）`, inputs === 0, inputs);
-      const small = await p.evaluate(() => [...document.querySelectorAll('#w-pron button')].filter((b) => b.getClientRects().length && !b.closest('summary') && b.tagName !== 'SUMMARY')
-        .map((b) => ({ t: b.textContent.slice(0, 10), h: Math.round(b.getBoundingClientRect().height) })).filter((x) => x.h < 52));
-      check(`${width} 宽：看得见的按钮都 ≥52px 高（手机单手够得着）`, small.length === 0, small);
-      // ④ 不横向滚动；子菜单一行、可以横滑，选中项完整看得见（和 T-4 / R9 同一个口径）
+      const seen = await p.evaluate(() => { const e = document.getElementById('w-meet'); if (!e) return null; const r = e.getBoundingClientRect(); return { top: r.top, h: innerHeight, hash: location.hash }; });
+      check(`${width} 宽：点菜单滚到最后一项「经营会」，地址是 #/work/meet`, !!seen && seen.top >= -2 && seen.top < seen.h && seen.hash === '#/work/meet', seen);
+      // ③ 下线的那一块在页面上也找不到了
+      const gone = await p.evaluate(() => [!document.getElementById('w-pron'), !document.body.innerHTML.includes('#/work/pron')]);
+      check(`${width} 宽：页面上没有 #w-pron，也没有指向 #/work/pron 的链接`, gone.every(Boolean), gone);
+      // ④ 不横向滚动；子菜单一行（可以横滑）、选中项完整看得见（和 T-4 / R9 同一个口径）
       await p.waitForTimeout(400);
       const fit = await p.evaluate(() => {
         const nav = document.querySelector('#sub-work .in');
@@ -625,8 +608,8 @@ try {
           barsPct: +(bars / innerHeight * 100).toFixed(1),
         };
       });
-      check(`${width} 宽：不横向滚动；子菜单一行（可以横滑）、选中的 w-pron 完整看得见且不在右侧渐隐区；两层菜单 ${fit.barsPct}% ≤ 25%（T-4 / R9 同一个口径）`,
-        (await noHScroll(p)) && fit.rows === 1 && fit.sel === 'w-pron' && fit.selIn && fit.barsPct <= 25, { h: await noHScroll(p), ...fit });
+      check(`${width} 宽：不横向滚动；子菜单一行（可以横滑）、选中的 w-meet 完整看得见且不在右侧渐隐区；两层菜单 ${fit.barsPct}% ≤ 25%（T-4 / R9 同一个口径）`,
+        (await noHScroll(p)) && fit.rows === 1 && fit.sel === 'w-meet' && fit.selIn && fit.barsPct <= 25, { h: await noHScroll(p), ...fit });
       await p.context().close();
     }
   });
@@ -727,7 +710,8 @@ try {
     const r = await srv.ingest('agents', [{ kind: 'todo', key: 'Practical', source_at: Date.now(), payload: { product: 'Practical', items: PA.map((x) => ({ type: 'action', ...x })) } }]);
     check('批 A：推送 Practical 的 5 条待办（已超时 1、24 小时内 1、之后 2、没定 1）收得下', r.status === 200, r);
   }
-  const W7 = ['w-now', 'w-todo', 'w-live', 'w-proj', 'w-num', 'w-meet', 'w-pron'];
+  // 2026-11-13 发音训练下线后工作台是 6 个模块（原来 7 个，最后一个是 w-pron）
+  const W6 = ['w-now', 'w-todo', 'w-live', 'w-proj', 'w-num', 'w-meet'];
   // 字号阶梯（设计规范）：页面标题 24 / 手机 22，模块标题 18 / 手机 17，正文 15，辅助 13，大数字 30 / 手机 26，12 只给角标标签；允许 ±0.5（亚像素取整）
   const FS = [12, 13, 15, 17, 18, 22, 24, 26, 30];
   // 放宽：按钮、输入框、菜单链接（nav 里的 a）、chip、summary 这类"能点、能填"的控件可以是 14——原型里 .btn、.nav1 a、.sub a 都是 14px，
@@ -794,7 +778,7 @@ try {
         await login(p, '/#/work');
         await waitFor(p, '#w-todos li.todo');
         await p.waitForTimeout(400);
-        // ① 7 个模块都有看得见的一句话结论（#w-now 的结论是 #hero；其余是 .lead，前面一个状态圆点）
+        // ① 6 个模块都有看得见的一句话结论（#w-now 的结论是 #hero；其余是 .lead，前面一个状态圆点）
         const leads = await p.evaluate((ids) => ids.map((id) => {
           const m = document.getElementById(id);
           if (!m) return { id, why: '没有这个模块' };
@@ -805,7 +789,7 @@ try {
           const dot = el.querySelector('.dot');
           const dotCls = dot ? ['red', 'amber', 'ok', 'gray'].find((c) => dot.classList.contains(c)) || '' : '';
           return { id, shown, text, dotCls };
-        }), W7);
+        }), W6);
         for (const L of leads) {
           if (L.why) { check(`${tag}：${L.id} 有一句话结论`, false, L.why); continue; }
           // "结论"不是空的说明文字：要带件数 / 数字，或者明说"没事、没有、不用、还没、都…了"；不能是"正在读取"；一句话 = 6～80 字
@@ -815,14 +799,14 @@ try {
           const dotOk = L.id === 'w-now' || !!L.dotCls;
           check(`${tag}：${L.id} 的一句话结论看得见、是结论（带件数或"没事"之类）${L.id === 'w-now' ? '' : '、前面有红/橙/绿/灰圆点'}、不超过 80 字`, L.shown && isConcl && lenOk && dotOk, { shown: L.shown, dot: L.dotCls, len: body.length, text: body.slice(0, 90) });
         }
-        // ② 说明默认折叠：#v-work 里每个 details.more 都没有 open；有说明的模块（原型：全部待办、团队在做什么、项目概况，加 2026-11-11 换上来的发音训练）说明是模块最后一块；"做完的"也收起
+        // ② 说明默认折叠：#v-work 里每个 details.more 都没有 open；有说明的模块（原型：全部待办、团队在做什么、项目概况；2026-11-11 换上来的发音训练 2026-11-13 已下线）说明是模块最后一块；"做完的"也收起
         const more = await p.evaluate(() => ({
           open: [...document.querySelectorAll('#v-work details.more[open]')].map((d) => d.closest('.mod')?.id || '?'),
-          last: ['w-todo', 'w-live', 'w-proj', 'w-pron'].map((id) => { const m = document.getElementById(id); const k = m && [...m.children].filter((c) => c.getClientRects().length).at(-1); return [id, !!k && k.matches('details.more')]; }),
+          last: ['w-todo', 'w-live', 'w-proj'].map((id) => { const m = document.getElementById(id); const k = m && [...m.children].filter((c) => c.getClientRects().length).at(-1); return [id, !!k && k.matches('details.more')]; }),
           done: document.getElementById('w-done')?.open ?? null,
         }));
         check(`${tag}：工作台的说明都默认折叠（没有 details.more[open]）`, more.open.length === 0, more.open);
-        check(`${tag}：全部待办、团队在做什么、项目概况、发音训练的最后一块是折叠的"说明和更多"（details.more）`, more.last.every(([, ok]) => ok), more.last.filter(([, ok]) => !ok).map(([id]) => id));
+        check(`${tag}：全部待办、团队在做什么、项目概况的最后一块是折叠的"说明和更多"（details.more）`, more.last.every(([, ok]) => ok), more.last.filter(([, ok]) => !ok).map(([id]) => id));
         check(`${tag}："做完的"默认收起（#w-done 没有 open）`, more.done === false, more.done);
         // ③ 字号只用阶梯里的几级（控件放宽到 14）
         const fo = await fontOutliers(p, ['#bars', '#v-work']);
@@ -1317,385 +1301,12 @@ try {
     await p.context().close();
   });
 
-  // ---------- 15. 发音训练：一组的四步循环 + 纠说（2026-11-11；第 1 步 2026-11-12 改成「跟我做」）----------
-  // Amos 2026-11-11 原话：「纠"说"也做出来，只不过我使用的慢一点儿罢了。工作台 英语练习和代练（带练）都没用了，
-  // 用你新做的东西彻底替换掉它们吧」。旧的听辨小测**只会量不会教**：放音 → 选 → 对错 → 下一题换一个完全不同的音，
-  // 他连跑七轮 56 题，正确率 75% → 71%，最后说「越听越乱，到最后纯靠猜」。新的按课程走四步。
-  // 守八件事：
-  // ① 第 1 步**跟我做**（2026-11-12 改；Amos：「完全不知道该怎么开口」「口型图撤掉，念给我听要，开始做」）：
-  //    **一屏上只有一步**，点「做好了，下一步」才前进；顶上是课程自己的四级练法轨；口型示意图整套撤掉了；
-  // ② 第 2 步**对照听**：这一组的最小对立对，两个词各一个大按钮，点得响（那 56 段已经预置进 pron_audio）；
-  //    **他自己点「我听出来了，开始考」才进第 3 步**；
-  // ③ 第 3 步**考**：一轮 10 题、**只考这一组**；每题揭晓前页面上找不到"放的是哪个词"（HTML 里没有编号）；
-  // ④ **答错当场把第 2 步的对照听塞回来**（两个词都能点），点「继续」才出下一题；
-  // ⑤ 第 4 步：10 题对 8 题（80%）过关，给**课件那句绕口令** + 三最法；服务器上真的记了一行；
-  // ⑥ **第 7 组（/ʒ/ vs /dʒ/）照实说只能跟读和纠说**，连「开始考」那个按钮都不给（不硬凑题）；
-  // ⑦ **纠说**：本地没绑 Workers AI，走的就是"当面说用不了"那条真路，而且**整块的其余部分照常能用**；
-  //    浏览器不支持录音时也当面说（用 addInitScript 把 mediaDevices 拿掉来量这一条）；
-  // ⑧ 手机 390 宽：不横滚、没有输入框。--shots 时另存几张 390 宽截图
-  //    （跟我做第 1 级 / 第 3 级带 🔊🎤 / 第 4 级绕口令 / 收尾屏 / 对照听 / 答错回到对照听 / 过关）。
-  await section('发音训练', async () => {
-    const p = await open({ width: 390, height: 844 });
-    const played = [];
-    p.on('request', (r) => { const m = /\/api\/pron\/audio\/(g\d-\d[ab])$/.exec(r.url()); if (m) played.push(m[1]); });
-    // 这一轮 10 题要**答成一个确定的分数**（第 1 题故意错、其余对）才量得了"80% 过关"，
-    // 所以把页面的 Math.random 钉死：放的永远是这一对的 a、左边那个按钮永远是 a。
-    // 随机本身（放哪个词、左右位置）由 test/pron.test.ts 守着（pCoin / pMix），这里钉死只是为了算得出分数。
-    await p.addInitScript(() => { Math.random = () => 0; });
-    await login(p, '/#/work/pron');
-    await waitFor(p, '#w-pron');
-    const tg = '390 宽';
-    // 内容从接口拿一份，后面每一步都和它逐条对（页面不自己造内容）
-    const ST = await p.evaluate(async () => await (await fetch('/api/pron/state')).json());
-    const G1 = (ST['组'] || [])[0];
-    const WORD = {}, PAIR = {};
-    (ST['组'] || []).forEach((z) => (z['对'] || []).forEach((q) => ['a', 'b'].forEach((k) => { WORD[q[k]['编号']] = q[k]['词']; PAIR[q[k]['编号']] = q; })));
-    check(`${tg}：接口给七组（第 7 组没有最小对立对，照实标出来）、56 个词的编号和发音是同一套`,
-      ST['一共几组'] === 7 && ST['一轮几题'] === 10 && ST['及格线'] === '10 题对 8 题（80%）'
-      && Object.keys(WORD).length === 56 && (ST['组'] || [])[6]['能听辨'] === false, { 组数: (ST['组'] || []).length, 词数: Object.keys(WORD).length });
-
-    // ---- 第 1 步：跟我做（一次只说一句话）----
-    // 「做好了，下一步」那个主按钮；走到收尾屏为止
-    const 下一步 = async (pg) => { await pg.click('#pn-cbtns .btn.go'); };
-    const 走完跟我做 = async (pg) => {
-      for (let k = 0; k < 80 && await pg.evaluate(() => document.getElementById('pn-fin').hidden); k++) await 下一步(pg);
-    };
-    /** 屏幕上现在显示的这一步（页面只会显示一步，所以这就是全部） */
-    const 这一步 = (pg) => pg.evaluate(() => ({
-      lv: document.getElementById('pn-clv').textContent,
-      say: document.getElementById('pn-csay').textContent,
-      big: document.getElementById('pn-cbig').hidden ? '' : document.getElementById('pn-cbig').textContent,
-      hint: document.getElementById('pn-chint').hidden ? '' : document.getElementById('pn-chint').textContent,
-      src: document.getElementById('pn-csrc').textContent,
-      num: document.getElementById('pn-cnum').textContent,
-      btns: [...document.querySelectorAll('#pn-cbtns .btn')].map((b) => b.textContent),
-      rail: [...document.querySelectorAll('#pn-rail .pn-lv')].map((e) => ({ t: e.textContent, c: e.className })),
-      finHidden: document.getElementById('pn-fin').hidden,
-      coachHidden: document.getElementById('pn-coach').hidden,
-    }));
-    await p.waitForFunction(() => document.querySelectorAll('#pn-cbtns .btn').length > 0, null, { timeout: WAIT });
-    const st1 = await 这一步(p);
-    const pick = await p.evaluate(() => [...document.querySelectorAll('#pn-pick .btn')].map((b) => ({ t: b.textContent, on: b.getAttribute('aria-pressed') })));
-    check(`${tg}：七组都能选，默认停在第 1 组（${(G1 || {})['名字']}，他实测最弱的那一组）`,
-      pick.length === 7 && pick[0].on === 'true' && pick[0].t.includes(G1['名字']), pick.map((x) => x.t.slice(0, 12)));
-    check(`${tg}：顶上是**课程自己的四级练法轨**（单音 → 音素拼合 → 单词拼读 → 句子和绕口令），当前停在第 1 级`,
-      st1.rail.map((x) => x.t).join('|') === '1. 单音|2. 音素拼合|3. 单词拼读|4. 句子和绕口令' && st1.rail[0].c.includes('on'), st1.rail);
-    check(`${tg}：**一屏上只有一步**：第几级 + 一句指令 + 依据 + 第 n / 共 m 步，都不是空的`,
-      /^第 1 级 · 单音$/.test(st1.lv) && st1.say.length > 0 && st1.src.length > 0 && /^第 1 \/ 共 \d+ 步$/.test(st1.num), st1);
-    check(`${tg}：每一句底下写明依据是「课件原文」还是「课程练法」还是「机械拆分」（底线 3）`,
-      /^(课件原文|课程练法|机械拆分)/.test(st1.src), st1.src.slice(0, 40));
-    check(`${tg}：**四级轨四颗全看得见**（390 宽换行，不横滑把第 4 级藏到屏幕外）`,
-      await p.evaluate(() => { const r = document.getElementById('pn-rail'); const b = r.getBoundingClientRect();
-        return r.scrollWidth - r.clientWidth <= 1 && [...r.children].every((e) => e.getBoundingClientRect().right <= b.right + 1); }), null);
-    check(`${tg}：第 1 步只有「做好了，下一步」和「🔈 念给我听」，**没有「上一步」**（退无可退就不画灰按钮）`,
-      st1.btns.some((t) => t.includes('做好了')) && st1.btns.some((t) => t.includes('念给我听')) && !st1.btns.some((t) => t.includes('上一步')), st1.btns);
-    check(`${tg}：**口型示意图整套撤掉了**（Amos 2026-11-12：「口型图撤掉」）`,
-      await p.evaluate(() => !document.getElementById('pn-draw') && !document.getElementById('pn-anim') && document.querySelectorAll('#w-pron svg').length === 0), null);
-    check(`${tg}：跟我做这一屏没有横向滚动`, await noHScroll(p), await p.evaluate(() => [document.documentElement.scrollWidth, innerWidth]));
-    if (SHOTS) { mkdirSync(SHOTS, { recursive: true }); await p.locator('#w-pron').screenshot({ path: path.join(SHOTS, '发音训练-跟我做-第1级第一步-390.png') }); }
-
-    // 点一下真的前进一步，「上一步」真的退回来（一次一句，不会自己往前跑）
-    await 下一步(p);
-    const st2 = await 这一步(p);
-    check(`${tg}：点「做好了，下一步」真的翻到下一句（第 2 / 共 n 步，而且话换了）`,
-      /^第 2 \//.test(st2.num) && st2.say !== st1.say && st2.btns.some((t) => t.includes('上一步')), { num: st2.num, say: st2.say.slice(0, 20) });
-    await p.click('#pn-cbtns .btn >> text=上一步');
-    const st3 = await 这一步(p);
-    check(`${tg}：「上一步」真的退回刚才那一句`, st3.num === st1.num && st3.say === st1.say, { num: st3.num });
-
-    // 镜子左边就是这一步的那句话（口型图撤掉之后它改显示文字）
-    const mir = await p.evaluate(() => ({ cap: document.getElementById('pn-mircap').textContent, t: document.getElementById('pn-mirtarget').textContent,
-      say: document.getElementById('pn-csay').textContent, svg: document.getElementById('pn-mirtarget').querySelectorAll('svg').length }));
-    check(`${tg}：镜子左边显示的就是**这一步要做的那句话**（不是图）`, mir.t === mir.say && mir.t.length > 0 && mir.svg === 0 && mir.cap.includes('这一步要做的'), mir);
-
-    // 走到第 3 级（单词拼读）：这一步才有 🔊 听标准音 和 🎤 我念一遍。
-    // 再往后两步，落在**第 2 对**（pet）上：第 1 对（bed / bad）留给下面"第 2 步对照听"那条检查，
-    // 不然这里先把它的发音取回来缓存住，那边就量不到请求了。
-    for (let k = 0; k < 80 && !/第 3 级/.test((await 这一步(p)).lv); k++) await 下一步(p);
-    await 下一步(p); await 下一步(p);
-    const lv3 = await 这一步(p);
-    check(`${tg}：第 3 级（单词拼读）这一步给 **🔊 听标准音** 和 **🎤 我念一遍**（别的级没有这两个按钮）`,
-      /第 3 级 · 单词拼读/.test(lv3.lv) && lv3.btns.some((t) => t.includes('🔊 听标准音')) && lv3.btns.some((t) => t.includes('🎤 我念一遍'))
-      && lv3.rail[2].c.includes('on') && lv3.rail[0].c.includes('ok'), { lv: lv3.lv, btns: lv3.btns });
-    check(`${tg}：大字就是要拼的那一串（课件给的音标按符号切开，或者照着整串拼）`, lv3.big.length > 0, lv3.big);
-    const 响前 = played.length;
-    await p.click('#pn-cbtns .btn >> text=🔊 听标准音');
-    await p.waitForTimeout(400);
-    check(`${tg}：第 3 级的 🔊 真的点得响（那 56 段已经预置进 pron_audio）`, played.length > 响前, { 响前, 响后: played.length });
-    if (SHOTS) await p.locator('#w-pron').screenshot({ path: path.join(SHOTS, '发音训练-跟我做-第3级带听和念-390.png') });
-
-    // 走到第 4 级（句子和绕口令）：大字就是**课件那句绕口令**（页面不自己造内容）
-    for (let k = 0; k < 80 && !/第 4 级/.test((await 这一步(p)).lv); k++) await 下一步(p);
-    const lv4 = await 这一步(p);
-    check(`${tg}：第 4 级第一步的大字**就是接口给的那句绕口令**，依据写明是三最法（页面不自己造内容）`,
-      lv4.big === G1['绕口令'] && lv4.src.includes('三最法') && lv4.src.includes('课程练法'), { big: lv4.big, src: lv4.src.slice(0, 50) });
-    check(`${tg}：绕口令这一屏没有横向滚动（整句话很长，必须换行不是横滚）`, await noHScroll(p), await p.evaluate(() => [document.documentElement.scrollWidth, innerWidth]));
-    if (SHOTS) await p.locator('#w-pron').screenshot({ path: path.join(SHOTS, '发音训练-跟我做-第4级绕口令-390.png') });
-
-    // 走完 → 收尾屏
-    await 走完跟我做(p);
-    const fin = await p.evaluate(() => ({ t: document.getElementById('pn-fin').innerText, coachHidden: document.getElementById('pn-coach').hidden,
-      rail: [...document.querySelectorAll('#pn-rail .pn-lv')].map((e) => e.className), num: document.getElementById('pn-cnum').textContent }));
-    check(`${tg}：走完最后一步给一屏收尾：照实写课程的作业标准「直到没有任何发音错误」，并说明课程没给自查方法（这正是 🎤 要补的那一处）`,
-      fin.coachHidden && fin.t.includes('直到没有任何发音错误') && fin.t.includes('没有给自查的办法') && fin.t.includes('机器听成了哪个词')
-      && fin.rail.every((c) => c.includes('ok')), fin);
-    if (SHOTS) await p.locator('#w-pron').screenshot({ path: path.join(SHOTS, '发音训练-跟我做-收尾屏-390.png') });
-
-    // ---- 第 2 步：对照听（+ 纠说）----
-    await p.click('#pn-go2');
-    await p.waitForFunction(() => !document.getElementById('pn-s2').hidden, null, { timeout: WAIT });
-    const s2 = await p.evaluate(() => ({
-      rows: [...document.querySelectorAll('#pn-cmp .pn-pair')].map((d) => [...d.querySelectorAll('button')].map((b) => b.textContent)),
-      go3: !!document.getElementById('pn-go3').getClientRects().length,
-      s3Hidden: document.getElementById('pn-s3').hidden,
-      say: [...document.querySelectorAll('#pn-saywords button')].map((b) => b.textContent),
-    }));
-    const minimal = (G1['对'] || []).filter((q) => q['最小对立对']);
-    check(`${tg}：第 2 步把这一组的 ${minimal.length} 对最小对立对都摆出来，两个词各一个 🔊 大按钮`,
-      s2.rows.length === minimal.length && JSON.stringify(s2.rows[0]) === JSON.stringify(['🔊 ' + minimal[0].a['词'], '🔊 ' + minimal[0].b['词']]), s2.rows);
-    check(`${tg}：**他自己点「我听出来了，开始考」才进第 3 步**（第 2 步不会自己跳过去）`, s2.go3 && s2.s3Hidden, s2);
-    check(`${tg}：纠说只给**能纠说的词**（ketch 这种不是现代常用词的不给，拿它判对错是冤枉人）`,
-      s2.say.length === G1['能纠说的词'].length && G1['能纠说的词'].every((w, i) => s2.say[i] === '🎤 念 ' + w) && !s2.say.join('|').includes('ketch'), s2.say);
-    // 两个词都真的点得响（那 56 段已经预置进 pron_audio，这是他第二次之后看到的常态）
-    const mark0 = played.length;
-    await p.click('#pn-cmp .pn-pair:first-child button:first-child');
-    await p.click('#pn-cmp .pn-pair:first-child button:last-child');
-    await p.waitForTimeout(300);
-    const auMsg = await p.evaluate(() => ({ hidden: document.getElementById('pn-msg').hidden, t: document.getElementById('pn-msg').innerText }));
-    check(`${tg}：第 2 步两个词都点得响（不报错），请求的就是这一对的两个编号`,
-      auMsg.hidden && played.slice(mark0).join(',') === [minimal[0].a['编号'], minimal[0].b['编号']].join(','), { msg: auMsg, played: played.slice(mark0) });
-    if (SHOTS) await p.locator('#w-pron').screenshot({ path: path.join(SHOTS, '发音训练-对照听-390.png') });
-
-    // ⑦ 纠说：本地没绑 Workers AI → 走"当面说用不了"那条真路，**其余部分照常能用**
-    const sayOff = await p.evaluate(async () => {
-      const r = await fetch('/api/pron/say', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ 组: 'g1', 词: 'g1-1b', audio: 'AQIDBA==', seconds: 1 }) });
-      return { status: r.status, body: await r.json() };
-    });
-    check(`${tg}：纠说在没绑 Workers AI 的环境里**当面说**（两句话：出错 + 怎么办），并说明其余部分照常能用`,
-      sayOff.status === 503 && String(sayOff.body['出错']).includes('没有绑 Workers AI') && String(sayOff.body['怎么办']).includes('照常能用'), sayOff);
-    const sayBad = await p.evaluate(async () => {
-      const r = await fetch('/api/pron/say', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ 组: 'g1', 词: 'g1-3a', audio: 'AQIDBA==', seconds: 1 }) });
-      return { status: r.status, body: await r.json() };
-    });
-    check(`${tg}：ketch 这类词连试都不试（400 + 说清楚为什么），不拿它冤枉人`,
-      sayBad.status === 400 && String(sayBad.body['出错']).includes('不能拿来纠说'), sayBad);
-
-    // ---- 第 3 步：考 10 题（只考这一组）----
-    await p.click('#pn-go3');
-    await p.waitForFunction(() => !document.getElementById('pn-s3').hidden && document.getElementById('pn-l').textContent !== '—', null, { timeout: WAIT });
-    const ALL_IDS = Object.keys(WORD);
-    const PAIRS1 = (G1['对'] || []).filter((q) => q['最小对立对']);
-    let 对 = 0, 第一题答错 = null;
-    played.length = 0;
-    for (let k = 0; k < 10; k++) {
-      if (k > 0) await p.waitForFunction((n) => /^第 /.test(document.getElementById('pn-where').textContent) && document.getElementById('pn-where').textContent.indexOf('第 ' + n + ' 题') === 0, k + 1, { timeout: WAIT });
-      await p.waitForFunction(() => document.getElementById('pn-res').hidden && document.getElementById('pn-l').textContent !== '—', null, { timeout: WAIT });
-      const st = await p.evaluate(() => ({ where: document.getElementById('pn-where').textContent, l: document.getElementById('pn-l').textContent, r: document.getElementById('pn-r').textContent,
-        html: document.getElementById('pn-s3').outerHTML, body: document.getElementById('pn-s3').innerText, say: document.getElementById('pn-again1').textContent }));
-      // Math.random 钉死以后：放的永远是这一对的 a，左边那个按钮也永远是 a
-      const q = PAIRS1.find((x) => x.a['词'] === st.l && x.b['词'] === st.r);
-      const word = st.l;
-      const 出现 = (t, w) => (t.match(new RegExp('(^|[^A-Za-z])' + w + '([^A-Za-z]|$)', 'g')) ?? []).length;
-      check(`${tg}：第 ${k + 1} 题揭晓前找不到"放的是哪个词"（HTML 里没有编号、🔊 上只有「再听一次」、那个词只作为两个选项之一出现一次）`,
-        ALL_IDS.every((x) => !st.html.includes(x)) && st.say === '🔊 再听一次' && 出现(st.body, word) === 1,
-        { where: st.where, 有编号: ALL_IDS.filter((x) => st.html.includes(x)), 出现几次: 出现(st.body, word) });
-      check(`${tg}：第 ${k + 1} 题**还在这一组里**（10 题只考 ${G1['名字']} 的最小对立对，不换别的音）`, !!q, { l: st.l, r: st.r });
-      // 进这一题会自动放一次。**点过的那一段页面存着复用**（不再跑一趟接口、不再花一次钱），
-      // 所以这里不数请求数，只要求"没有报错"——取不回来时报错框会当面显示（上面第 2 步那条已经量过真的取得回来）。
-      if (k === 0) check(`${tg}：进这一题自动放音，没有报错（取过的那一段直接复用，不重复花钱）`,
-        await p.evaluate(() => document.getElementById('pn-msg').hidden), await p.evaluate(() => document.getElementById('pn-msg').innerText));
-      // 第 1 题故意答错（要量"答错当场把对照听塞回来"），其余答对
-      if (k === 0) 第一题答错 = { word, pair: q }; else 对++;
-      await p.click(k === 0 ? '#pn-r' : '#pn-l');
-      await p.waitForFunction(() => !document.getElementById('pn-res').hidden, null, { timeout: WAIT });
-      const rs = await p.evaluate(() => ({ ver: document.getElementById('pn-ver').textContent, backHidden: document.getElementById('pn-back').hidden, back: document.getElementById('pn-back').textContent,
-        wa: document.getElementById('pn-wa').textContent, wb: document.getElementById('pn-wb').textContent, ipa: document.getElementById('pn-ipa').textContent,
-        next: document.getElementById('pn-next').textContent, h: Math.round(document.getElementById('pn-wa').getBoundingClientRect().height) }));
-      check(`${tg}：第 ${k + 1} 题答完当场给对错，并**点名刚才放的是 ${word}**（${rs.ver.slice(0, 24)}）`,
-        rs.ver.includes(word) && (k === 0 ? rs.ver.startsWith('❌ 不对') : rs.ver.startsWith('✅ 对了')), rs.ver);
-      check(`${tg}：第 ${k + 1} 题答完，两个词各一个按钮能单独点来听（≥52px）+ 一行两个音标`,
-        rs.wa === '🔊 ' + q.a['词'] && rs.wb === '🔊 ' + q.b['词'] && rs.h >= 52 && rs.ipa.includes(q.a['音标']) && rs.ipa.includes(q.b['音标']), rs);
-      if (k === 0) {
-        // ④ 答错：当场把第 2 步的对照听塞回来，**他听完点「继续」才出下一题**
-        check(`${tg}：答错当场把第 2 步的对照听塞回来（一句话写明"先回到对照听"），两个词都能点`,
-          !rs.backHidden && rs.back.includes('对照听') && rs.next === '继续', { back: rs.back, next: rs.next });
-        const m0 = played.length;
-        await p.click('#pn-wa'); await p.click('#pn-wb');
-        await p.waitForTimeout(300);
-        const m = await p.evaluate(() => ({ hidden: document.getElementById('pn-msg').hidden }));
-        // 点过的那一段页面会存下来复用（不再跑一趟接口、不再花一次钱），所以这里只要求"不报错 + 至少有一段是现取的"
-        check(`${tg}：答错后那两个词真的点得响（学就发生在这一刻），而且取过的那一段不再重复取`, m.hidden && played.length - m0 <= 2, { msg: m, 新取: played.length - m0 });
-        check(`${tg}：答错这一态没有横向滚动`, await noHScroll(p), await p.evaluate(() => [document.documentElement.scrollWidth, innerWidth]));
-        if (SHOTS) await p.locator('#w-pron').screenshot({ path: path.join(SHOTS, '发音训练-答错回到对照听-390.png') });
-      } else {
-        check(`${tg}：第 ${k + 1} 题答对时不强塞对照听（只有答错 / 分不出来才塞）`, rs.backHidden, rs.back);
-      }
-      await p.click('#pn-next');
-    }
-
-    // ---- 第 4 步：过关 + 绕口令 ----
-    await p.waitForFunction(() => !document.getElementById('pn-s4').hidden, null, { timeout: WAIT });
-    const s4 = await p.evaluate(async () => {
-      const g = (i) => document.getElementById(i);
-      const j = await (await fetch('/api/pron/state')).json();
-      return { score: g('pn-score').textContent, line: g('pn-line').textContent, tw: g('pn-tw').textContent, how: g('pn-how').textContent,
-        twHidden: g('pn-twwrap').hidden, wrong: g('pn-wrong').innerText, wrongHidden: g('pn-wrongwrap').hidden,
-        again: g('pn-again2').textContent, h: Math.round(g('pn-again2').getBoundingClientRect().height), 记录: j['记录'] };
-    });
-    const rec = (s4.记录 || []).find((x) => x['组'] === 'g1') || {};
-    check(`${tg}：10 题对 ${对} 题 → **过关**（80% 的及格线），小结第一行写明分数`, s4.score.includes('过关了') && s4.score.includes('对 ' + 对 + ' 题'), s4.score);
-    check(`${tg}：过关才给**课件那句绕口令**，并写明用三最法读（最大声、最清晰、最慢速）`,
-      !s4.twHidden && s4.tw === G1['绕口令'] && s4.how.includes('最大声') && s4.how.includes('最清晰') && s4.how.includes('最慢速') && s4.how.includes('没有任何发音错误'), { tw: s4.tw, how: s4.how });
-    check(`${tg}：答错的那一对单独列出来（${(第一题答错 || {}).word}）`,
-      !s4.wrongHidden && s4.wrong.includes(第一题答错.pair.a['词']) && s4.wrong.includes(第一题答错.pair.b['词']), s4.wrong);
-    check(`${tg}：服务器上真的记了这一轮（考过 1 轮、对 ${对} 题、过关）`,
-      rec['考过几轮'] === 1 && rec['过关几轮'] === 1 && rec['最近一轮'] && rec['最近一轮']['对'] === 对 && rec['最近一轮']['过关'] === true, rec);
-    check(`${tg}：过关页有大按钮「再考一轮」（${s4.h}px ≥ 52）`, s4.again === '再考一轮' && s4.h >= 52, s4);
-    check(`${tg}：过关这一屏没有横向滚动`, await noHScroll(p), await p.evaluate(() => [document.documentElement.scrollWidth, innerWidth]));
-    if (SHOTS) { await p.evaluate(() => document.getElementById('w-pron').scrollIntoView({ block: 'start' })); await p.waitForTimeout(150); await p.locator('#w-pron').screenshot({ path: path.join(SHOTS, '发音训练-过关绕口令-390.png') }); }
-    // 刷新后记录还在（存在服务器上，不在浏览器里）
-    await p.reload();
-    await p.waitForSelector('#app:not([hidden])', { timeout: WAIT });
-    await waitFor(p, '#w-pron');
-    await p.waitForFunction(() => /过关过/.test(document.getElementById('pn-lead-t').textContent), null, { timeout: WAIT }).catch(() => {});
-    check(`${tg}：刷新后这一组的记录还在（一句话结论写"七组里过关过 1 组"）`, /过关过 1 组/.test(await txt(p, '#pn-lead')), await txt(p, '#pn-lead'));
-
-    // ⑥ 第 7 组：课件一条口型都没给 → 那一步不许说"保持这个口型"；照实说只能跟读和纠说，连「开始考」都不给
-    await p.click('#pn-pick .btn:nth-child(7)');
-    await p.waitForFunction(() => /^第 1 \//.test(document.getElementById('pn-cnum').textContent), null, { timeout: WAIT });
-    const g7a = await p.evaluate(() => {
-      const 话 = [];
-      for (let k = 0; k < 80; k++) {
-        话.push({ say: document.getElementById('pn-csay').textContent, hint: document.getElementById('pn-chint').hidden ? '' : document.getElementById('pn-chint').textContent });
-        if (!document.getElementById('pn-fin').hidden) break;
-        document.querySelector('#pn-cbtns .btn.go').click();
-      }
-      return 话;
-    });
-    check(`${tg}：第 7 组课件一条口型都没给 → **跟我做里一句"保持这个口型"都不许出现**，而且照实说没法对着镜子做（底线 3）`,
-      g7a.every((x) => !x.say.includes('保持这个口型')) && g7a.some((x) => x.hint.includes('没有口型定位') && x.hint.includes('没法对着镜子做')), g7a.slice(0, 3));
-    await p.click('#pn-go2');
-    await p.waitForFunction(() => !document.getElementById('pn-s2').hidden, null, { timeout: WAIT });
-    const g7b = await p.evaluate(() => ({ go3: !!document.getElementById('pn-go3').getClientRects().length, note: document.getElementById('pn-note2').textContent,
-      rows: document.querySelectorAll('#pn-cmp .pn-pair').length, say: [...document.querySelectorAll('#pn-saywords button')].map((b) => b.textContent) }));
-    check(`${tg}：第 7 组**不给「开始考」这个按钮**（不硬凑题），但跟读和纠说照常有`,
-      g7b.go3 === false && g7b.rows === 4 && g7b.say.length > 0, g7b);
-    check(`${tg}：第 7 组（/ʒ/ vs /dʒ/）照实说"一对最小对立对都没有、只能走「跟我做」跟读和纠说"`,
-      g7b.note.includes('一对最小对立对都没有') && g7b.note.includes('只能走「跟我做」、跟读和纠说'), g7b.note);
-
-    // ⑦ 浏览器不支持录音时也当面说（另开一个把 mediaDevices 拿掉的页面来量）
-    const p2 = await open({ width: 390, height: 844 });
-    await p2.addInitScript(() => { Object.defineProperty(navigator, 'mediaDevices', { value: undefined, configurable: true }); });
-    await login(p2, '/#/work/pron');
-    await waitFor(p2, '#w-pron');
-    await p2.waitForFunction(() => document.querySelectorAll('#pn-cbtns .btn').length > 0, null, { timeout: WAIT });
-    await 走完跟我做(p2);
-    await p2.click('#pn-go2');
-    await p2.waitForFunction(() => !document.getElementById('pn-s2').hidden, null, { timeout: WAIT });
-    await p2.click('#pn-saywords button');
-    await p2.waitForFunction(() => !document.getElementById('pn-saymsg').hidden, null, { timeout: WAIT }).catch(() => {});
-    const noMic = await p2.evaluate(() => ({ t: document.getElementById('pn-saymsg').innerText, hidden: document.getElementById('pn-saymsg').hidden,
-      cmp: document.querySelectorAll('#pn-cmp .pn-pair button').length, go3: !!document.getElementById('pn-go3').getClientRects().length }));
-    check(`${tg}：浏览器录不了音时**当面说**，而且跟我做、对照听、考题照常能用（纠说是加分项，不是前置条件）`,
-      !noMic.hidden && noMic.t.includes('不支持录音') && noMic.t.includes('怎么办：') && noMic.cmp === 8 && noMic.go3, noMic);
-    await p2.context().close();
-    await p.context().close();
-  });
-
-  // ---------- 16. 照镜子 + 慢速对照和录音回放（2026-11-11）----------
-  // Amos 原话：「有些发音我很难理解　你要给我做成教学视频」。真人视频拍不了、AI 生成的"会动的嘴"是编的不能做，
-  // 改提三样，他回「都要，按这个顺序做」：①口型示意图 + 动画（**2026-11-12 整套撤掉**，他说「口型图撤掉」）
-  // ②**前置摄像头当镜子**（留着，左边改成显示当前这一步的那句指令）③慢速对照 + 他自己的录音回放。
-  // ⚠️ 摄像头和麦克风在无头环境里只能用**假的媒体流**（Chromium 的 --use-fake-device-for-media-stream）：
-  //    这一段量的是**界面、流程、画面有没有被送出去、关掉时摄像头有没有真的灭**；
-  //    "他自己的脸在屏幕上好不好对着做"只有他本人第一次用才算验过（报告里照实写，底线 9）。
-  await section('发音训练·照镜子和录音回放', async () => {
-    const cam = await chromium.launch({ args: ['--use-fake-device-for-media-stream', '--use-fake-ui-for-media-stream', '--autoplay-policy=no-user-gesture-required'] });
-    try {
-      const ctx = await cam.newContext({ viewport: { width: 390, height: 844 } });
-      await ctx.grantPermissions(['camera', 'microphone'], { origin: BASE });
-      const q = await ctx.newPage();
-      q.on('pageerror', (e) => errors.push(e.message));
-      const net = [];
-      q.on('request', (r) => net.push(r.method() + ' ' + new URL(r.url()).pathname));
-      // 把摄像头拿到的轨道记下来：关掉镜子之后它们必须是 ended（= 指示灯灭）
-      await q.addInitScript(() => {
-        window.__tracks = [];
-        const md = navigator.mediaDevices;
-        const o = md.getUserMedia.bind(md);
-        md.getUserMedia = (c) => o(c).then((s) => { s.getTracks().forEach((t) => window.__tracks.push(t)); return s; });
-      });
-      await login(q, '/#/work/pron');
-      await waitFor(q, '#w-pron');
-      await q.waitForFunction(() => document.querySelectorAll('#pn-cbtns .btn').length > 0, null, { timeout: WAIT });
-      const tg = '390 宽·假媒体流';
-
-      // ---- ② 照镜子 ----
-      const n0 = net.length;
-      await q.click('#pn-mir');
-      await q.waitForFunction(() => !document.getElementById('pn-mirwrap').hidden, null, { timeout: 8000 });
-      await q.waitForFunction(() => { const v = document.getElementById('pn-cam'); return !!v && v.videoWidth > 0; }, null, { timeout: 8000 });
-      const m = await q.evaluate(() => {
-        const v = document.getElementById('pn-cam'), t = document.getElementById('pn-mirtarget');
-        // 并排看的是**两个格子**（图和视频下面的说明行数不一样，所以不比图和视频自己的顶端）
-        const a = t.closest('.pn-mircell').getBoundingClientRect(), b = v.closest('.pn-mircell').getBoundingClientRect();
-        return { 有流: !!v.srcObject, w: v.videoWidth, 轨道: (window.__tracks || []).map((x) => x.readyState),
-          这一句: t.textContent, 屏上那句: document.getElementById('pn-csay').textContent, 图: t.querySelectorAll('svg').length,
-          cap: document.getElementById('pn-mircap').textContent,
-          左: Math.round(a.left), 右: Math.round(b.left), 同一行: Math.abs(Math.round(a.top) - Math.round(b.top)) <= 2,
-          隐私: document.querySelector('#pn-mirwrap .pn-privacy').textContent };
-      });
-      check(`${tg}：照镜子 —— 摄像头画面真的出来了，**左边是这一步要做的那句话、右边是他自己的嘴**（并排）`,
-        m.有流 && m.w > 0 && m.图 === 0 && m.这一句.length > 0 && m.这一句 === m.屏上那句 && m.右 > m.左 && m.同一行 && m.轨道.every((x) => x === 'live'), m);
-      check(`${tg}：**镜子开着这段时间一个请求都没往外发**（画面不上传、不保存、不录）`, net.slice(n0).length === 0, net.slice(n0));
-      check(`${tg}：界面上当面写明"这个画面不会离开你的手机"`,
-        m.隐私.includes('不会离开你的手机') && m.隐私.includes('不上传') && m.隐私.includes('不保存'), m.隐私);
-      check(`${tg}：镜子左边标着这是第几步要做的`, m.cap.includes('这一步要做的'), m.cap);
-      if (SHOTS) { mkdirSync(SHOTS, { recursive: true }); await q.locator('#w-pron').screenshot({ path: path.join(SHOTS, '发音训练-镜子开着-390.png') }); }
-      const n1 = net.length;
-      await q.click('#pn-miroff');
-      const off = await q.evaluate(() => ({ 没流: document.getElementById('pn-cam').srcObject === null,
-        轨道: (window.__tracks || []).map((x) => x.readyState), hidden: document.getElementById('pn-mirwrap').hidden }));
-      check(`${tg}：「关掉镜子」真的把摄像头关了（轨道 ended，手机上的指示灯才会灭）`,
-        off.没流 && off.轨道.length > 0 && off.轨道.every((x) => x === 'ended') && off.hidden, off);
-      check(`${tg}：关镜子也没往外发任何东西`, net.slice(n1).length === 0, net.slice(n1));
-
-      // ---- ③ 慢速对照 + 他自己的录音回放 ----
-      // 「去对照听」现在在跟我做走完那一屏上，先把这一组走完
-      for (let k = 0; k < 80 && await q.evaluate(() => document.getElementById('pn-fin').hidden); k++) await q.click('#pn-cbtns .btn.go');
-      await q.click('#pn-go2');
-      await q.waitForFunction(() => !document.getElementById('pn-s2').hidden, null, { timeout: WAIT });
-      check(`${tg}：**没录过就不显示**那几个按钮（不画占位、不画灰按钮）`, await q.evaluate(() => document.getElementById('pn-my').hidden), null);
-      const mic = q.locator('#pn-saywords button').first();
-      await mic.click();
-      await q.waitForFunction(() => /停止/.test(document.querySelector('#pn-saywords button').textContent), null, { timeout: 8000 });
-      await q.waitForTimeout(900); // 真的录一段（假麦克风）
-      await mic.click();
-      await q.waitForFunction(() => !document.getElementById('pn-my').hidden, null, { timeout: 8000 });
-      const my = await q.evaluate(() => ({ std: document.getElementById('pn-std').textContent, mine: document.getElementById('pn-mine').textContent,
-        slow: document.getElementById('pn-slow').textContent, chain: document.getElementById('pn-chain').textContent,
-        t: document.getElementById('pn-my-t').textContent, note: document.querySelector('#pn-my .pn-saynote').textContent,
-        h: Math.round(document.getElementById('pn-chain').getBoundingClientRect().height),
-        say: document.getElementById('pn-saymsg').innerText }));
-      check(`${tg}：录完之后才出现四个大按钮：标准音 / 我刚才念的 / 慢速 0.7 倍 / 连着放（${my.h}px ≥ 52）`,
-        my.std === '🔊 标准音' && my.mine === '🎧 我刚才念的' && my.slow.includes('慢速 0.7 倍') && my.chain === '▶ 连着放' && my.h >= 52, my);
-      check(`${tg}：**纠说这一次失败了（本地没绑 Workers AI），录音照样留着能回放**`, my.say.includes('没有绑 Workers AI') && my.t.includes('你刚才念的'), { say: my.say.slice(0, 40), t: my.t });
-      check(`${tg}：页面上照实说这段录音不另外上传、刷新就没了`, my.note.includes('不另外上传') && my.note.includes('刷新页面就没了'), my.note.slice(0, 60));
-      await q.click('#pn-slow');
-      await q.click('#pn-chain');
-      await q.waitForTimeout(900);
-      const 放 = await q.evaluate(() => ({ 慢: document.getElementById('pn-slow').getAttribute('aria-pressed'),
-        字: document.getElementById('pn-slow').textContent, 错: document.getElementById('pn-msg').hidden, t: document.getElementById('pn-msg').innerText }));
-      check(`${tg}：慢速按下去是按着的状态，「连着放」点下去不报错（标准音 → 停 0.3 秒 → 他的录音）`,
-        放.慢 === 'true' && 放.字.includes('慢速开着') && 放.错, 放);
-      check(`${tg}：这一屏没有横向滚动`, await noHScroll(q), await q.evaluate(() => [document.documentElement.scrollWidth, innerWidth]));
-      // 整块自己也不许横着溢出（按钮上的字长了会把 1fr 1fr 的格子撑开，页面级的横滚未必量得到）
-      const 溢 = await q.evaluate(() => ['w-pron', 'pn-my', 'pn-mirwrap', 'pn-coach', 'pn-rail'].map((id) => { const e = document.getElementById(id); return [id, e.scrollWidth - e.clientWidth]; }));
-      check(`${tg}：发音训练这一块里没有任何一行横着溢出（跟我做那张卡、四级轨、镜子、回放都量过）`, 溢.every(([, d]) => d <= 1), 溢);
-      if (SHOTS) await q.locator('#pn-say').screenshot({ path: path.join(SHOTS, '发音训练-对照听连着放-390.png') });
-      await ctx.close();
-    } finally { await cam.close(); }
-  });
+  // ---------- 第 15、16 段（发音训练的四步循环 + 纠说、照镜子和录音回放）2026-11-13 **跟着功能一起下线** ----------
+  // Amos：「工作台 发音训练 这个模块不需要再出现在 工作台 发音训练这个位置了」。这一块整套搬去了 Practical 仓库
+  //（practical.jeff-zhaifei.workers.dev/pron，2026-11-13 已上生产），那边有它自己的 e2e。
+  // **不是为了让测试变绿删测试（底线 6）**：它们守的页面和接口在这个仓库里整段不存在了。
+  // 只删代码不删数据：pron_round / pron_say / pron_audio 三张表和 migrations/0019_pron.sql 一个字没动，
+  // 「代码下线了、数据留着」这一条由 test/retired-routes.test.ts 守着。
 
   check('全程没有脚本错误', errors.length === 0, errors.slice(0, 5));
 } catch (e) {

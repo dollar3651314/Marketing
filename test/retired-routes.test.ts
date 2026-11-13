@@ -20,6 +20,7 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { getPlatformProxy } from 'wrangler';
 import type { Env } from '../src/env';
 import { handle } from '../src/index';
+import { ADMIN_PAGE } from '../src/admin-page';
 import { ROOT, T0 } from './helpers';
 
 const HOST = 'https://marketing-staging.example.test';
@@ -161,7 +162,8 @@ describe('源码里删干净了（T-3：文件直接删，不留注释掉的代�
  * 整套删掉，换成「发音训练」（#w-pron、/api/pron/*，src/pron.ts）。
  *
  * **只删代码，不删数据**：`en_*`、`drill_item`、`drill_audio`、`drill_review`、`ear_pair` 这些表一张都没 DROP
- * （他的历史数据还在，谁都能查回去）——那一条由 test/pron.test.ts 第 7 组守着。
+ * （他的历史数据还在，谁都能查回去）——那一条原来由 test/pron.test.ts 第 7 组守着，
+ * 2026-11-13 发音训练也下线、那个文件跟着删了，这一条**搬到了本文件最后一组**（连同 pron_* 三张表一起守）。
  * 这里守的是"接口和文件删干净了"。
  */
 describe('英语练习、它记得住你、带练（含听辨小测）：整套下线（2026-11-11）', () => {
@@ -192,7 +194,135 @@ describe('英语练习、它记得住你、带练（含听辨小测）：整套�
     for (const f of ['english-page.ts', 'english-memory.ts', 'english-memory-page.ts', 'drill.ts', 'drill-content.ts', 'drill-page.ts',
       'drill-review.ts', 'drill-audio.ts', 'ear.ts', 'ear-content.ts', 'ear-page.ts'])
       expect([f, existsSync(path.join(ROOT, 'src', f))]).toEqual([f, false]);
-    // 接替它们的是发音训练（src/pron.ts）
-    for (const f of ['pron.ts', 'pron-audio.ts', 'pron-page.ts', 'pron-content.ts']) expect([f, existsSync(path.join(ROOT, 'src', f))]).toEqual([f, true]);
+    // 2026-11-11 接替它们的是工作台的「发音训练」（src/pron.ts）；那一块 2026-11-13 也整块下线了（搬去 Practical），
+    // 所以这里不再要求 pron*.ts 存在 —— 它们"不许存在"由本文件最后一组守着。
+  });
+});
+
+// ======================================================================
+/**
+ * 第三批下线（2026-11-13）：**工作台的「发音训练」整块搬去 Practical 仓库**。
+ *
+ * Amos 的原话，三句：
+ *   2026-11-12「把后续的所有内容包括发音训练整体挪到 practical 项目中吧，以后就在 practical 项目中更新」
+ *   2026-11-13「**工作台 发音训练 这个模块不需要再出现在 工作台 发音训练这个位置了**」
+ *   2026-11-13「**工作台 practical 用来存储和展示所有与我英语学习有关的内容**」
+ * 这一块已经整套搬进 dollar3651314/Practical 并上了生产（practical.jeff-zhaifei.workers.dev/pron，2026-11-13 验过能用），
+ * 工作台这一份是多余的。**这是功能下线，不是为了让测试变绿删东西（底线 6）**：
+ * 它守的页面（#w-pron）和接口（/api/pron/*）在这个仓库里整段不存在了，守它们的 test/pron.test.ts、test/pron-lesson.test.ts
+ * 跟着一起下线；别的测试一条没删、一条没放宽。
+ *
+ * **只删代码，绝对不删数据**：`migrations/0019_pron.sql` 和 `pron_round` / `pron_say` / `pron_audio` 三张表一个字都没动。
+ * 他在工作台练过好几轮，**历史成绩在 marketing 这个库里**，而 Practical 用的是另一个全新的空库（practical），成绩没跟过去；
+ * 删表 = 把他的记录销毁，不可恢复。要不要迁移是另一件事，由他决定。
+ *
+ * 这一组守五件事：
+ *   ① 接口没了：/api/pron/* 和 /api/pron/audio/* 没登录 401、登录以后一律 404，一次模型都不调；
+ *   ② 源文件删干净（T-3：文件直接删，不留注释掉的代码），而且 src/ 里**再也不许出现这一块的模块引用**
+ *      （`pron-page`、`PRON_MOD`、`w-pron`、`#/work/pron`）—— 这是防止以后谁把它加回来的那道门；
+ *   ③ 后台页面上找不到它了：二级菜单从 **7 项变 6 项**（6 项是什么逐个钉死），模块本体、脚本、接口前缀都没了；
+ *   ④ **数据留着**：迁移 0019 还在、还是只有三条 CREATE，任何一个迁移文件里都没有 DROP；三张表在库里建得出来；
+ *      迁移文件一个没删、编号连续（下线模块 ≠ 删迁移）。
+ *   ⑤（从 test/pron.test.ts 第 16 组搬过来，和发音训练无关、不能跟着丢）后台页面那几段 <script> 必须是能跑的纯 JS。
+ */
+describe('工作台「发音训练」：整块搬去 Practical，工作台这一份下线（2026-11-13）', () => {
+  const GONE3 = ['/api/pron/state', '/api/pron/answer', '/api/pron/round', '/api/pron/say', '/api/pron/audio/g1-1a'];
+
+  it('没登录：一律 401（和别的 /api/* 一样，不单独露馅）', async () => {
+    for (const p of GONE3) {
+      const r = await call(p, env());
+      expect([p, r.status]).toEqual([p, 401]);
+    }
+  });
+
+  it('登录以后：一律 404，一次模型都不调', async () => {
+    const f = fakeAi();
+    const e = env({ AI: f.ai });
+    const login = await call('/api/login', e, { method: 'POST', body: JSON.stringify({ password: PASS }), headers: { 'content-type': 'application/json' } });
+    const cookie = (login.headers.get('set-cookie') ?? '').split(';')[0];
+    for (const p of GONE3) {
+      const r = await call(p, e, { headers: { cookie } });
+      expect([p, r.status]).toEqual([p, 404]);
+      const post = await call(p, e, { method: 'POST', headers: { cookie, 'content-type': 'application/json' }, body: '{}' });
+      expect([p, 'POST', post.status]).toEqual([p, 'POST', 404]);
+    }
+    expect(f.calls).toEqual([]);
+  });
+
+  it('源文件删干净了：src/ 下五个 pron*.ts 一个都不剩', () => {
+    for (const f of ['pron.ts', 'pron-audio.ts', 'pron-content.ts', 'pron-lesson.ts', 'pron-page.ts'])
+      expect([f, existsSync(path.join(ROOT, 'src', f))]).toEqual([f, false]);
+    // 守它们的两个测试文件也跟着功能一起下线了（它们守的代码整段不存在）
+    for (const f of ['pron.test.ts', 'pron-lesson.test.ts'])
+      expect([f, existsSync(path.join(ROOT, 'test', f))]).toEqual([f, false]);
+  });
+
+  it('守门：src/ 里不许再出现这一块的模块引用（以后谁想加回来，这条先红）', () => {
+    // 只钉**模块引用**这四个记号，不钉 "pron" 两个字本身：
+    //   src/usage.ts 的 'pron-tts' / 'pron-asr' 两个用途要留着（库里还有当时记的账，去掉就只剩看不懂的代号，底线 3）；
+    //   src/projects.ts 里指向 Practical 生产站的 https://…workers.dev/pron 是**搬过去以后的新家**，更不能动。
+    const dir = path.join(ROOT, 'src');
+    for (const f of readdirSync(dir).filter((x) => x.endsWith('.ts'))) {
+      const t = readFileSync(path.join(dir, f), 'utf8');
+      for (const 记号 of ['pron-page', 'PRON_MOD', 'PRON_CSS', 'PRON_JS', 'w-pron', '#/work/pron', 'pronOpen', 'pronStop', '__pronBase'])
+        expect([f, 记号, t.includes(记号)]).toEqual([f, 记号, false]);
+    }
+  });
+
+  it('后台页面上找不到它了：二级菜单 7 项变 6 项，模块本体、脚本、接口前缀都没了', () => {
+    const SUB_WORK = ADMIN_PAGE.slice(ADMIN_PAGE.indexOf('id="sub-work"'), ADMIN_PAGE.indexOf('</nav>', ADMIN_PAGE.indexOf('id="sub-work"')));
+    const mods = [...SUB_WORK.matchAll(/data-s="(w-[a-z]+)"/g)].map((m) => m[1]);
+    // 2026-11-11～11-13 是 7 项（最后一项 w-pron = 发音训练）；发音训练下线后回到 6 项。
+    // **这不是放宽**：条数照样钉死，6 项是哪 6 项逐个写死，多一项少一项都红。
+    expect(mods).toEqual(['w-now', 'w-todo', 'w-live', 'w-proj', 'w-num', 'w-meet']);
+    // 上限还是 8（T-4：第 9 项会撑破手机菜单）
+    expect(mods.length).toBeLessThanOrEqual(8);
+    expect(SUB_WORK).not.toContain('发音训练');
+    // 公共工具那 8 项一个位子都没动（T-4）——另有 test/tts.test.ts 守着条数，这里守"发音训练没挪过去"
+    const SUB_TOOLS = ADMIN_PAGE.slice(ADMIN_PAGE.indexOf('id="sub-tools"'), ADMIN_PAGE.indexOf('</nav>', ADMIN_PAGE.indexOf('id="sub-tools"')));
+    expect(SUB_TOOLS.match(/data-s="t-/g) ?? []).toHaveLength(8);
+    expect(SUB_TOOLS).not.toContain('发音训练');
+    // 模块本体、三段插进来的东西、接口前缀、进出工作台时调的那两个函数，一个都不剩
+    for (const 记号 of ['id="w-pron"', '#/work/pron', '__pronBase', 'pronOpen', 'pronStop', '趁空练 10 分钟发音'])
+      expect([记号, ADMIN_PAGE.includes(记号)]).toEqual([记号, false]);
+    // 别的模块一个都没动：六项各自的模块本体还在页面上
+    const vwork = ADMIN_PAGE.slice(ADMIN_PAGE.indexOf('id="v-work"'), ADMIN_PAGE.indexOf('id="v-project"'));
+    for (const id of ['w-now', 'w-todo', 'w-live', 'w-proj', 'w-num', 'w-meet'])
+      expect([id, vwork.includes('id="' + id + '"')]).toEqual([id, true]);
+  });
+
+  it('**数据留着**：迁移 0019_pron.sql 还在、只有三条 CREATE，任何迁移里都没有 DROP', () => {
+    const all = readdirSync(MIG).filter((f) => f.endsWith('.sql')).sort();
+    expect(all.includes('0019_pron.sql')).toBe(true);
+    const code = readFileSync(path.join(MIG, '0019_pron.sql'), 'utf8').split('\n').map((l) => l.replace(/--.*$/, '')).join('\n');
+    expect((code.match(/CREATE TABLE/g) ?? []).length).toBe(3);
+    for (const t of ['pron_round', 'pron_say', 'pron_audio']) expect([t, code.includes('CREATE TABLE ' + t + ' (')]).toEqual([t, true]);
+    // 下线的是代码，不是数据：整个 migrations/ 里一句 DROP 都不许有
+    for (const f of all) {
+      const c = readFileSync(path.join(MIG, f), 'utf8').split('\n').map((l) => l.replace(/--.*$/, '')).join('\n').toUpperCase();
+      expect([f, c.includes('DROP ')]).toEqual([f, false]);
+    }
+    // 迁移文件一个都没删、编号连续（下线模块 ≠ 删迁移）
+    expect(all.map((f) => Number(f.slice(0, 4)))).toEqual(all.map((_, i) => i + 1));
+    expect(all[18]).toBe('0019_pron.sql');
+  });
+
+  it('**数据留着**：三张 pron_* 表在库里，下线的那几块的旧表也一张没少', async () => {
+    const want = ['events', 'queue', 'en_word', 'en_sentence', 'en_round', 'drill_item', 'drill_audio', 'drill_review', 'ear_pair',
+      'fund_snapshot', 'pron_round', 'pron_say', 'pron_audio'];
+    const r = await db.prepare(`SELECT name FROM sqlite_master WHERE type = 'table' AND name IN (${want.map((_, i) => '?' + (i + 1)).join(',')})`).bind(...want).all<{ name: string }>();
+    expect((r.results ?? []).map((x) => x.name).sort()).toEqual([...want].sort());
+  });
+
+  // 从 test/pron.test.ts 第 16 组搬过来的：这一条**和发音训练没关系**，守的是后台页面本身，不能跟着那个文件一起丢。
+  // 2026-11-11 真踩过：往 admin-page.ts 的 route() 里加了一行 `(window as any).pronStop()`。
+  // 那一段是**模板字符串装的纯 JS**，tsc 不看字符串里面，于是 `as any` 原样进了浏览器，
+  // **整个后台脚本当场崩**——登录框都填不进去，e2e 跑了十分钟才暴露。这条测试 10 毫秒就逮住。
+  it('后台页面里每一段 <script> 都是能跑的纯 JS（TypeScript 语法不许漏进模板字符串）', () => {
+    const m = [...ADMIN_PAGE.matchAll(/<script>([\s\S]*?)<\/script>/g)];
+    expect(m.length).toBeGreaterThan(0);
+    m.forEach((x, i) => {
+      expect([i, (() => { try { new Function(x[1]); return ''; } catch (e) { return (e as Error).message; } })()]).toEqual([i, '']);
+    });
   });
 });
