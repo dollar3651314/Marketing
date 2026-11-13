@@ -1,6 +1,7 @@
 import { ASSETS_CSS, ASSETS_JS, ASSETS_MOD } from './assets-page';
 import { TTS_CSS, TTS_JS, TTS_MOD } from './tts-page';
 import { VOICE_CSS, VOICE_JS } from './voice-page';
+import { PRON_CSS, PRON_JS, PRON_MOD } from './pron-page';
 import { FUNDS_CSS, FUNDS_JS, FUNDS_MOD } from './funds-page';
 import { EXTENSION_VERSION } from './extension-download';
 import { PWA_HEAD, PWA_JS } from './pwa';
@@ -19,10 +20,6 @@ import { MAX_PROJECT_PAGES, PLATFORM_CONFIG, PROJECT_APPS, PROJECT_PAGES_FALLBAC
  * 只改渲染，todo 块的数据结构（src/company.ts SCHEMA）没动。批 A 同时换了全站设计变量（:root）、外框菜单、工作台 7 个模块的结构。
  * 界面改版·批 B（2026-11-04，原型 prototype-tools.html）：项目页 8 个模块、公共工具 8 块也改成同样的卡片模块（标题行 → 一句话结论 → 主内容 → 默认收起的折叠说明）；
  * 公共工具子菜单顺序 = 页面顺序，"语音对话实测"并进"语音生成"的折叠；清单、用量、插件下载的接口和元素 id 都没改，只换排版。
- * 工作台「发音训练」2026-11-13 **整块下线**（Amos：「工作台 发音训练 这个模块不需要再出现在 工作台 发音训练这个位置了」）：
- * 这一块整套搬去了 Practical 仓库并已上生产（practical.jeff-zhaifei.workers.dev/pron），工作台这一份是多余的，所以二级菜单从 7 项变 **6 项**。
- * 这是**功能下线**，不是为了让测试变绿删东西（底线 6）。只删代码：D1 里的 pron_round / pron_say / pron_audio 三张表和 migrations/0019_pron.sql **一个字都没动**，
- * 他在工作台练过的历史成绩还在 marketing 这个库里（Practical 用的是另一个空库，成绩没跟过去，要迁移是另一件事）。守这件事的测试在 test/retired-routes.test.ts。
  * 注意：整页是一个模板字符串，页面脚本里不能用反引号和 ${（只有插件版本号和 src/projects.ts 的对照表是在这里插进去的）。
  */
 export const ADMIN_PAGE = `<!doctype html>
@@ -473,14 +470,14 @@ th{font-size:12px;color:var(--muted);font-weight:600}td.n{text-align:right}
 .plat details.recent>summary{border-top:1px solid var(--line)}
 @media (max-width:600px){.act-item{grid-template-columns:minmax(0,1fr)}.act-item .go{flex-direction:row;flex-wrap:wrap;align-items:flex-start}}
 /* 收编进来的工具的样式：素材生成器（选择器都带 .ag）、语音生成（都带 .tv）、语音对话实测（都带 .vc），不串到别的模块 */
-${ASSETS_CSS}${TTS_CSS}${VOICE_CSS}${FUNDS_CSS}
+${ASSETS_CSS}${TTS_CSS}${VOICE_CSS}${PRON_CSS}${FUNDS_CSS}
 </style></head><body>
 <div class="bars" id="bars"><header class="top" id="top"><span class="logo" aria-hidden="true"><i style="height:16px;background:#2DD4BF"></i><i style="height:10px;background:#FBBF24"></i></span><span class="brand">工作平台</span><b class="sr" id="title">工作台</b>
   <nav class="nav1" id="nav1" aria-label="一级菜单" hidden><a href="#/work" data-p="work">工作台<span class="cnt" id="c-work" hidden></span></a><span class="sep" id="nav1-sep0" aria-hidden="true" hidden></span><span class="grp-l" id="nav1-grp" hidden>项目</span><span class="sep" id="nav1-sep" aria-hidden="true"></span><a href="#/tools" data-p="tools" id="nav1-tools">公共工具</a><a href="#/funds" data-f="funds" id="nav1-funds">基金观察</a></nav>
   <span class="sp"></span><button id="pwa-refresh" type="button" aria-label="刷新页面" hidden>刷新</button><button id="nav" hidden>用量和限额 →</button><button id="extnav" hidden>插件下载</button><details class="more-menu" id="more-menu" hidden><summary aria-label="更多：公司总览、登出">···</summary><span class="tacts" id="tacts"><button id="pwa-refresh-m" type="button" hidden>刷新</button><button id="conav" hidden>公司总览</button><button id="logout" hidden>登出</button></span></details></header>
 <div id="subs" hidden>
 <nav class="sub" id="sub-work" aria-label="工作台模块" hidden><div class="in">
-  <a href="#/work/now" data-s="w-now">最该做的事</a><a href="#/work/todo" data-s="w-todo">全部待办<span class="n red" id="s-todo" hidden></span></a><a href="#/work/live" data-s="w-live">团队在做什么</a><a href="#/work/proj" data-s="w-proj">项目概况</a><a href="#/work/num" data-s="w-num">公司数字</a><a href="#/work/meet" data-s="w-meet">经营会</a>
+  <a href="#/work/now" data-s="w-now">最该做的事</a><a href="#/work/todo" data-s="w-todo">全部待办<span class="n red" id="s-todo" hidden></span></a><a href="#/work/live" data-s="w-live">团队在做什么</a><a href="#/work/proj" data-s="w-proj">项目概况</a><a href="#/work/num" data-s="w-num">公司数字</a><a href="#/work/meet" data-s="w-meet">经营会</a><a href="#/work/pron" data-s="w-pron">发音训练</a>
 </div></nav>
 <nav class="sub" id="sub-project" aria-label="项目模块" hidden><div class="in">
   <a href="#/forecast/next" data-s="f-next" data-m="next">下一步做什么<span class="n red" id="s-fnext" hidden></span></a><a href="#/forecast/guide" data-s="f-guide" data-m="guide">操作指引<span class="n" id="s-guide" hidden></span></a><a href="#/forecast/live" data-s="f-live" data-m="live">团队在做什么</a><a href="#/forecast/card" data-s="f-card" data-m="card">数字和决定</a><a href="#/forecast/pack" data-s="f-pack" data-m="pack">本周帖子</a><a href="#/forecast/match" data-s="f-match" data-m="match">焦点战</a><a href="#/forecast/tools" data-s="f-tools" data-m="tools">用到的工具</a><a href="#/forecast/handoff" data-s="f-handoff" data-m="handoff">交接记录</a>
@@ -557,6 +554,7 @@ ${ASSETS_CSS}${TTS_CSS}${VOICE_CSS}${FUNDS_CSS}
       <p class="lead" id="w-meet-lead"><span class="skel" style="width:50%"></span></p>
       <div class="mbody" id="w-meet-body"></div>
     </section>
+    ${PRON_MOD}
     <p class="foot">停在这一页时每 30 秒自动刷新；切到别的窗口时暂停，切回来马上刷新。</p>
   </section>
   <!-- 项目页（PR 2）：一套 DOM 轮流显示每个项目（#/<项目>/<模块>），模块 id 还是 f-* -->
@@ -812,6 +810,9 @@ function route(){if(!authed)return;let h=hashOf();
   // 批 A：工作台第一次读到数据之前显示占位骨架 #boot（在 #app 外面，#app 还是读到数据再显示，免得看到空模块）；项目页照旧
   $('app').hidden=(page==='work'||page==='project')&&!ready;$('boot').hidden=!(page==='work'&&!ready);
   ['work','project','tools','company','funds'].forEach(x=>{$('v-'+x).hidden=x!==page;const sb=$('sub-'+x);if(sb)sb.hidden=x!==page;});
+  // 离开工作台：通知「发音训练」把摄像头和动画关掉（2026-11-11 审查 🔴1）。
+  // 只把 #v-work 藏起来是不够的——藏起来的 DOM 里摄像头照亮，手机指示灯不灭。
+  if(page!=='work'&&typeof window.pronStop==='function')window.pronStop();
   document.querySelectorAll('#nav1 a[data-p]').forEach(a=>{const on=a.dataset.p===page&&(!a.dataset.proj||a.dataset.proj===proj);if(on)a.setAttribute('aria-current','page');else a.removeAttribute('aria-current');});
   // 基金观察：一级菜单上那一项用 data-f（不是 data-p：一级菜单的 data-p 只放 工作台 · 项目 · 公共工具 这三类页，e2e-platform 按 data-p 数）
   if(page==='funds')$('nav1-funds').setAttribute('aria-current','page');else $('nav1-funds').removeAttribute('aria-current');
@@ -828,6 +829,8 @@ function route(){if(!authed)return;let h=hashOf();
   if(page==='company'){try{companyOpen(prev==='company');}catch(e){$('co-at').textContent='这一页出错了：'+e.message;}}
   // 批 2：在公共工具、公司总览刷新时，一级菜单上的待办数量也马上读出来（以前要切到工作台才有）
   if(page==='work'||page==='project'){try{platformOpen(page,mod);}catch(e){}}else{try{platformStop();platformPeek();}catch(e){}}
+  // 工作台最下面的「发音训练」（七组易错音，pron-page.ts）：进工作台时读一次记录
+  if(page==='work'){try{window.pronOpen();}catch(e){}}
   // 批 B：语音对话实测台在"语音生成"的折叠 #tts-more 里：打开 #/tools/voice 先把折叠打开再滚过去
   if(page==='tools'&&view==='voice'){const f=$('tts-more');if(f)f.open=true;}
   // 批 C：公司总览的模块是读到数据才画出来的，这时还没有就记下 coMod，第二段脚本画完再滚过去（同样 subPin）
@@ -1495,7 +1498,7 @@ function renderWork(all,now){if(!PL.okAt){renderBlind();return;}
 /** ① 最该做的一件事：排第一的那条；一个主按钮 + "做完了，打勾" */
 function renderHero(open,now){const h=$('hero');h.removeAttribute('aria-busy');const l=pe('div');l.append(pe('p','k','你现在最该做的一件事'));const act=pe('div','act');
   if(!open.length){h.className='hero calm';const w=pe('div','when');w.append('下一件预计在 ',pe('b',null,dateL(nextMeet(now))+' 经营会后'),' 出现');l.append(pe('h2','one','现在没事要做'),w);
-    h.replaceChildren(l);return;}
+    act.append(link('趁空练 10 分钟发音 →','#/work/pron','btn big ghost'));h.replaceChildren(l,act);return;}
   const x=open[0];h.className='hero';const w=pe('div','when');w.append(badge(x,now));const dt=dueText(x);if(dt)w.append(pe('span',null,dt));w.append(pe('span','ptag',x.proj));
   l.append(pe('h2','one',x.title),w);if(x.why)l.append(pe('p','why',x.why));
   if(open.length>1){const n=pe('p','next');n.append('后面还有 '+(open.length-1)+' 件，',link('已经按截止时间排好 ↓','#/work/todo'));l.append(n);}
@@ -1678,10 +1681,11 @@ var platformPeek=function(){PL.peek=true;if(!PL.timer)tickTimer();if(!PL.data&&!
 var platformReady=function(){return !!PL.data;};
 }catch(e){var platformReady=function(){return true;};var platformOpen=function(){['w-err','f-err'].forEach((id)=>{const x=document.getElementById(id);if(x){x.hidden=false;x.textContent='这一页出错了：'+e.message;}});};var platformStop=function(){};var platformPeek=function(){};}
 </script>
-<script>window.__assetsBase='/api/assets/';window.__ttsBase='/api/tts/';window.__voiceBase='/api/voice/';window.__fundsBase='/api/funds';</script>
+<script>window.__assetsBase='/api/assets/';window.__ttsBase='/api/tts/';window.__voiceBase='/api/voice/';window.__pronBase='/api/pron/';window.__fundsBase='/api/funds';</script>
 <script>${ASSETS_JS}</script>
 <script>${TTS_JS}</script>
 <script>${VOICE_JS}</script>
+<script>${PRON_JS}</script>
 <script>${FUNDS_JS}</script>
 ${PWA_JS}
 </body></html>`;

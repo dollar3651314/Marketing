@@ -7,6 +7,8 @@
  *   GET /api/reply-cap、POST /api/reply-cap {caps:{项目: 1～50}}（每天回帖上限按项目，D-2，公司平台批 2）、
  *   POST /api/queue/delete {ids}（Amos 自己删；记录不自动删，D-4 选 B）、GET /api/usage、POST /api/usage {caps}（用量和限额 ＋ 用量监控：还剩多少 left、分别用到了哪里 byPurpose，usage.ts）、POST /api/login、POST /api/logout、
  *   /api/assets/*（素材生成器，assets.ts）、/api/tts/*（语音生成，tts.ts）、/api/voice/*（语音对话实测，voice.ts）、
+ *   /api/pron/*（工作台「发音训练」，pron.ts：七组易错音的四步循环 state / answer / round，和纠说 say；内容在 pron-content.ts），
+ *   /api/pron/audio/*（发音，pron-audio.ts：aura-2-en 生成一次存 D1 永久复用），
  *   GET /api/funds、POST /api/funds/refresh {cursor?}（基金观察，funds-api.ts：45 只基金的快照、分批去 Yahoo / 东方财富取数）。
  * 登录：密钥 COPILOT_PASSWORD（≥ 16 个字符，没填时后台 404）；同一 IP 15 分钟错 5 次锁 15 分钟，全站 1 小时错 20 次锁 1 小时；
  * 失败一律回答同一句（不透露锁定规则，C128）；会话 12 小时，签名密钥由密码派生，改密码旧会话全部失效。
@@ -21,6 +23,8 @@ import { activeApi } from './hooks';
 import { assetsApi } from './assets';
 import { ttsApi } from './tts';
 import { voiceApi } from './voice';
+import { pronApi } from './pron';
+import { pronAudioApi } from './pron-audio';
 import { fundsApi } from './funds-api';
 
 export const SESSION_MS = 12 * 3600_000;
@@ -162,9 +166,11 @@ export async function adminApi(env: Env, req: Request, now: number): Promise<Res
   // 语音生成（公共工具 → 语音生成，tts.ts）：跨项目可复用的单句配音，同样只看"用量和限额"里那个上限
   if (p.startsWith('/api/tts/')) return (await ttsApi(env, req, now, p.slice('/api/tts/'.length))) ?? new Response('Not found', { status: 404 });
   if (p.startsWith('/api/voice/')) return (await voiceApi(env, req, now, p.slice('/api/voice/'.length))) ?? new Response('Not found', { status: 404 });
-  // 工作台「发音训练」的 /api/pron/* 和 /api/pron/audio/* 2026-11-13 **整块下线**（搬去 Practical 仓库并已上生产）：
-  // 登录以后一律 404（和别的不存在的 /api/* 一样）。只删代码——pron_round / pron_say / pron_audio 三张表留着，历史成绩还在。
-  // 守这件事的测试在 test/retired-routes.test.ts。
+  // 发音训练的发音（pron-audio.ts）：aura-2-en 第一次需要时生成一次、存 D1 永久复用（56 个词全生成一遍约 820 neurons，底线 8 / C117）
+  if (p.startsWith('/api/pron/audio/')) return (await pronAudioApi(env, req, now, p.slice('/api/pron/audio/'.length))) ?? new Response('Not found', { status: 404 });
+  // 发音训练（工作台 → 发音训练，pron.ts）：四步循环的 state / answer / round 都不调 AI、不花钱；
+  // 只有「纠说」say 调一次 whisper（约 0.78 neurons），走已有的额度闸 + 自己的一天 200 次闸（C117）
+  if (p.startsWith('/api/pron/')) return (await pronApi(env, req, now, p.slice('/api/pron/'.length))) ?? new Response('Not found', { status: 404 });
   // 基金观察（一级菜单「基金观察」#/funds，funds-api.ts）：GET 读快照、POST refresh 分批去 Yahoo / 东方财富取（每次 ≤45 个对外请求）；公开免费接口，不花钱
   if (p === '/api/funds' || p.startsWith('/api/funds/')) return (await fundsApi(env, req, now, p === '/api/funds' ? '' : p.slice('/api/funds/'.length))) ?? new Response('Not found', { status: 404 });
   const company = await companyApi(env, req, now);
