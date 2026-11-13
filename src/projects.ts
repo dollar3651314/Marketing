@@ -74,10 +74,10 @@ export const PROJECT_SITE: Record<string, { text: string; url: string }> = {
  * 规矩：**只放真的上线了、点开就能用的**。还没上线的不许写进来（底线 3）。
  */
 export const PROJECT_APPS: Record<string, { 名: string; 说: string; url: string }[]> = {
+  // 盲听卡**不列**：Amos 2026-11-03 自己判了 no-go 封存，2026-11-13 说「删除盲听卡」。
   Practical: [
     { 名: '发音训练', 说: 'S1 · 七组易错音：跟我做 → 对照听 → 考 10 题', url: 'https://practical.jeff-zhaifei.workers.dev/pron' },
     { 名: '句子训练', 说: 'S2 · 13 课语法：一屏一步，每句话都标出处', url: 'https://practical.jeff-zhaifei.workers.dev/s2' },
-    { 名: '盲听卡', 说: '听 2 秒，从四张图里选一张', url: 'https://practical.jeff-zhaifei.workers.dev/' },
   ],
 };
 

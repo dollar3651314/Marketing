@@ -1127,7 +1127,9 @@ describe('项目页「现在能打开什么」', () => {
   it('Practical 的三块都在，而且地址都是真的（https + 同一个站）', async () => {
     const { PROJECT_APPS } = await import('../src/projects');
     const a = PROJECT_APPS.Practical;
-    expect(a.map((x) => x.名)).toEqual(['发音训练', '句子训练', '盲听卡']);
+    expect(a.map((x) => x.名)).toEqual(['发音训练', '句子训练']);
+    // 盲听卡不许回来：Amos 11/3 自己判的 no-go，11/13 说删除
+    expect(a.some((x) => x.名 === '盲听卡')).toBe(false);
     for (const x of a) {
       expect([x.名, /^https:\/\/practical\.[a-z0-9-]+\.workers\.dev(\/|\/pron|\/s2)$/.test(x.url)]).toEqual([x.名, true]);
       expect([x.名, x.说.length > 6]).toEqual([x.名, true]);
