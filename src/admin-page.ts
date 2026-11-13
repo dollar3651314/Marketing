@@ -524,7 +524,7 @@ ${ASSETS_CSS}${TTS_CSS}${VOICE_CSS}${PRON_CSS}${FUNDS_CSS}
       <div class="live-warn" id="w-live-warn"></div>
       <div class="mbody flush" id="w-live-body"><div class="skels"><span class="skel"></span><span class="skel" style="width:70%"></span></div></div>
       <details class="more recent" id="recent"><summary>最近结束的（7 天内，<span id="recent-n">0</span> 件）· 灰色是什么意思</summary><div class="in">
-        <p>每条是一个岗位正在做的一件事（一个分支）。<b>两小时没动静</b>会变灰；<b>一天没动静</b>、合并了或分支删了，收进下面的"最近结束"（只显示 7 天内的）。代码仓库（new-forecast、Marketing）只显示分支名、PR 标题和自动检查结果。</p>
+        <p>每条是一个岗位正在做的一件事（一个分支）。<b>两小时没动静</b>会变灰；<b>一天没动静</b>、合并了或分支删了，收进下面的"最近结束"（只显示 7 天内的）。代码仓库（new-forecast、Marketing、TopUP）只显示分支名、PR 标题和自动检查结果。</p>
         <p id="w-live-stamp"></p>
         <div id="recent-body"></div></div></details>
     </section>
@@ -1116,7 +1116,7 @@ boot();
 // "需要我的事"去掉了（和工作台"全部待办"重复、件数对不上）；项目、下周的事、摘要数字也不在这一页了（工作台有项目概况、公司数字）。
 try{
 const CO={data:null,latest:null};
-const SRCN={agents:'agents','new-forecast':'new-forecast',marketing:'Marketing'};
+const SRCN={agents:'agents','new-forecast':'new-forecast',marketing:'Marketing',topup:'TopUP'};
 const KINDN={projects:'项目版图',status:'状态卡',handoff:'交接记录',todo:'Amos 待办',weekly:'周报',learning:'岗位学习',prs:'要你决定的 PR',ci:'自动检查'};
 const ROLES=['产品','市场','研发','测试','运维安全','运维','安全','经营'];
 const el=(tag,cls,text)=>{const e=document.createElement(tag);if(cls)e.className=cls;if(text!=null)e.textContent=String(text);return e;};
@@ -1169,7 +1169,7 @@ function learnCard(){const ls=blocks('learning').slice().sort((a,b)=>roleIdx(a)-
   c.append(b,more('这一块从哪来',['来自 agents 仓库各岗位的学习记录（经验、案例），点标题看原文。整块变灰 = 超过 7 天没有新的学习送来。']));return c;}
 const CIP={success:['绿','p-ok'],failure:['红','p-err'],cancelled:['已取消','p-warn'],running:['运行中','p-warn'],none:['无 CI','p-mute'],off:['已关','p-warn']};
 /** ③ 做得怎么样（各仓库 main 的 CI、最近部署）。结论：几个红的、几个在跑、都绿；补充是周报里的规则版本、成本、重复犯错 */
-function healthCard(){const order=['marketing','new-forecast','agents'];const cs=blocks('ci').slice().sort((a,b)=>(a.key?1:0)-(b.key?1:0)||order.indexOf(a.source)-order.indexOf(b.source));
+function healthCard(){const order=['marketing','new-forecast','topup','agents'];const cs=blocks('ci').slice().sort((a,b)=>(a.key?1:0)-(b.key?1:0)||order.indexOf(a.source)-order.indexOf(b.source));
   const nameOf=(b)=>{const p=b.payload||{};return p.name||b.key||SRCN[b.source]||b.source;};
   const red=cs.filter(b=>b.payload&&b.payload.conclusion==='failure'),run=cs.filter(b=>b.payload&&b.payload.conclusion==='running'),old=cs.filter(b=>b.stale);
   const c=card('co-health','做得怎么样',cs,'',{badge:red.length?red.length+' 红':null,red:true});
@@ -1227,7 +1227,7 @@ function pagesFrom(data){const b=((data&&data.blocks)||[]).find((x)=>x.kind==='p
   its.forEach((x)=>{const n=x&&typeof x.name==='string'?x.name.trim():'';if(n&&CFG.NOT_PROJECTS.indexOf(n)<0&&out.indexOf(n)<0)out.push(n);});
   return out.length?out.slice(0,PCFG.MAX_PROJECT_PAGES):PCFG.PROJECT_PAGES_FALLBACK.slice();}
 const HR=3600e3,DY=864e5,WD='日一二三四五六';
-const SRC={agents:'agents','new-forecast':'new-forecast',marketing:'Marketing'};
+const SRC={agents:'agents','new-forecast':'new-forecast',marketing:'Marketing',topup:'TopUP'};
 const pe=(tag,cls,text)=>{const e=document.createElement(tag);if(cls)e.className=cls;if(text!=null)e.textContent=String(text);return e;};
 const link=(text,href,cls,ext)=>{const a=pe('a',cls||null,text);a.href=href;if(ext!==false&&/^https:/.test(href)){a.target='_blank';a.rel='noopener';}return a;};
 const p2=(n)=>String(n).padStart(2,'0');
@@ -1398,7 +1398,7 @@ const emptyP=(t)=>pe('p','empty',t);
 const stampOf=(b)=>b?'更新于 '+md(b.source_at)+' '+p2(tp(b.source_at).h)+':'+p2(tp(b.source_at).mi):'';
 // ---- 团队在做什么（工作平台批 3）：GET /api/active；变灰、最近结束服务端按读的时间算好；只用 textContent 显示 ----
 const ROLE={main:'主会话',pm:'产品',mkt:'市场',dev:'研发',qa:'测试',ops:'运维安全',review:'审查',amos:'Amos'};
-const PROJN={forecast:'forecast',platform:'工作平台',company:'公司'};
+const PROJN={forecast:'forecast',TopUP:'TopUP',platform:'工作平台',company:'公司'};
 const ENDN={merged:'已合并',closed:'没合并就关了',deleted:'分支已删',timeout:'一天没动静，收起来了'};
 let GRP='role';try{const g=localStorage.getItem('qc-live-grp');if(g==='proj'||g==='time')GRP=g;}catch(e){}
 const roleName=(x)=>x.external?'外部':x.role==='none'?'未标':(ROLE[x.role]||x.role);
