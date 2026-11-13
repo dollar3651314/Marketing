@@ -36,8 +36,8 @@ export const NOT_PROJECTS = ['工作平台', '公司平台', 'Marketing'];
 /** 这张状态卡是不是工具层的（新旧 key 都认） */
 export const isToolCard = (key: string): boolean => NOT_PROJECTS.includes(key);
 
-/** 推 PR / CI 的仓库属于哪个项目；没写的算"公司" */
-export const REPO_PROJECT: Record<string, string> = { 'new-forecast': 'forecast' };
+/** 推 PR / CI 的仓库属于哪个项目；没写的算"公司"。TopUP（2026-11-13 立项）：键认 GitHub 仓库名 TopUP 和上报来源名 topup，值和项目版图的项目名一字不差 */
+export const REPO_PROJECT: Record<string, string> = { 'new-forecast': 'forecast', TopUP: 'TopUP', topup: 'TopUP' };
 
 /**
  * 有项目页的项目：**不再写死**（2026-11-02，Amos"项目也只有 forecast 一个，新项目哪儿去了"）。

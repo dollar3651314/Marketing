@@ -1,6 +1,6 @@
 /**
  * 公司运营仪表盘（后台第四页"公司"；agents 公司平台/技术方案-运营仪表盘.md，Amos 2026-11-01 确认 B-3' B-5 B-7，B-6 不要定时兜底）。
- * 推送模型：agents、new-forecast、Marketing 各自的自动检查在合并到 main、开 / 关 PR 时把解析好的块推进来；这里不读 GitHub、没有定时任务。
+ * 推送模型：agents、new-forecast、Marketing、TopUP 各自的自动检查在合并到 main、开 / 关 PR 时把解析好的块推进来；这里不读 GitHub、没有定时任务。
  * - POST /api/company/ingest  Bearer <COMPANY_INGEST_TOKEN>（≥ 32 个字符，常数时间比较；没填时 404，C103）。不要会话、只依赖这个令牌，
  *   所以在 adminApi() 的 adminEnabled 判断之前处理。{source, blocks:[{kind, key, payload, status, error, source_at}]}；
  *   整体 ≤ 256 KB（413）；source、kind 白名单（400）；每个 source 每分钟 ≤ 6 次（429）；payload 只留白名单字段、按上限截断；
@@ -23,10 +23,10 @@ const DONE_KEEP_MS = 90 * 24 * 3600_000;
 const MAX_BYTES = 256 * 1024;
 const PER_MINUTE = 6;
 const MAX_BLOCKS = 100;
-const SOURCES = ['agents', 'new-forecast', 'marketing'] as const;
+const SOURCES = ['agents', 'new-forecast', 'marketing', 'topup'] as const;
 const KINDS = ['projects', 'status', 'handoff', 'todo', 'weekly', 'learning', 'prs', 'ci', 'pack'] as const;
-/** new-forecast、Marketing 只报自己仓库的 PR 和 CI（技术方案第二节） */
-const KINDS_OF: Record<string, readonly string[]> = { agents: KINDS, 'new-forecast': ['prs', 'ci'], marketing: ['prs', 'ci'] };
+/** new-forecast、Marketing、TopUP 只报自己仓库的 PR 和 CI（技术方案第二节） */
+const KINDS_OF: Record<string, readonly string[]> = { agents: KINDS, 'new-forecast': ['prs', 'ci'], marketing: ['prs', 'ci'], topup: ['prs', 'ci'] };
 
 function json(data: unknown, status = 200): Response {
   return new Response(JSON.stringify(data), { status, headers: { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store' } });
