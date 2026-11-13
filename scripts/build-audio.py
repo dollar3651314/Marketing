@@ -146,13 +146,26 @@ def 写进D1(env: str, 批: list[tuple[dict, bytes]]) -> None:
 # 三、生成（edge-tts）
 # ----------------------------------------------------------------------
 def 补根证书() -> str | None:
-    """把代理的根证书加进 edge-tts 用的那个 SSL 上下文。只在本进程里加，不改系统文件。"""
+    """把代理的根证书加进 edge-tts 用的那个 SSL 上下文。只在本进程里加，不改系统文件。
+
+    **读不到就当没有，不许让整个脚本崩。** 这张证书只有「HTTPS 走中间代理」的环境才需要
+    （开发容器）；GitHub Actions 的机器直连外网，根本没有这个文件，而且候选路径里有
+    /root/.ccr/ca-bundle.crt —— 跑 CI 的不是 root，连 stat 都会抛
+    `PermissionError: [Errno 13] Permission denied`（2026-11-13 线上第一次生成就是这么崩的）。
+    所以这里把**所有**读取异常都吞掉，拿不到就返回 None，让 edge-tts 用系统默认的证书走。
+    """
     import edge_tts.communicate as C
 
     for p in CA_CANDIDATES:
-        if p and Path(p).exists():
+        if not p:
+            continue
+        try:
+            if not Path(p).exists():
+                continue
             C._SSL_CTX.load_verify_locations(cafile=p)  # noqa: SLF001  上游没给公开入口，只能这样补
             return p
+        except OSError:
+            continue  # 没权限 / 读不了 / 不是证书 —— 都当没有这张证书
     return None
 
 

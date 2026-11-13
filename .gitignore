@@ -5,3 +5,7 @@ wrangler.deploy.toml
 *.zip
 src/generated/
 e2e-artifacts/
+
+# Python 跑脚本时生成的字节码缓存（scripts/build-audio.py）
+__pycache__/
+*.pyc
