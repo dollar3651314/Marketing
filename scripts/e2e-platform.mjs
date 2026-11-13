@@ -1524,10 +1524,20 @@ try {
       L0[0].事.map((x) => x.名.replace(/（.*/, '')).join('|') === '跟我做 19 步走完|对照听过|考 10 题过关|用 🎤 把这一组念过一遍'
       && L0[0].事.every((x) => x.勾 === '☐'), L0[0].事.map((x) => x.名));
     check(`${tg}：七组的步数各写各的（不是七个一样的数）`, new Set(L0.map((z) => z.事[0].名)).size > 1, L0.map((z) => z.事[0].名));
-    check(`${tg}：**算出来的那两条没有方框按钮**（不画点不动的按钮），旁边照实写"按你的成绩算的"`,
-      L0[0].事.map((x) => x.能点方框).join() === 'true,true,false,false'
-      && (await p.evaluate(() => [...document.querySelectorAll('#pn-list .pn-grp:first-child .pn-why')].map((e) => e.textContent))).every((t) => t.startsWith('按你的成绩算的')),
+    // 2026-11-13：原来每条旁边摆整句「按你的成绩算的：…不能手动改。」，七组 × 两条 = 同一句印 14 遍，
+    // 390 的手机上占掉近一半文字。改成：条目旁只留**它独有的那半句**（🎤 的进度），
+    // 「按你的成绩算的」搬进模块底下的折叠，**全页只说一次**。这里跟着量新位置，并钉死"只说一次"。
+    const why0 = await p.evaluate(() => ({
+      条目旁: [...document.querySelectorAll('#pn-list .pn-grp:first-child .pn-why')].map((e) => e.textContent || ''),
+      全块里出现几次: ((document.getElementById('f-pron')?.textContent || '').match(/按你的成绩算的/g) || []).length,
+      折叠里有没有: (document.getElementById('f-pron')?.textContent || '').includes('勾不上也取消不了'),
+    }));
+    check(`${tg}：**算出来的那两条没有方框按钮**（不画点不动的按钮）`,
+      L0[0].事.map((x) => x.能点方框).join() === 'true,true,false,false',
       L0[0].事.map((x) => [x.名.slice(0, 8), x.能点方框]));
+    check(`${tg}：条目旁只留 🎤 那条的进度；**「按你的成绩算的」整块里只说一次**（在折叠里），不是每条印一遍`,
+      why0.条目旁.length === 1 && /^现在 \d+ \/ \d+$/.test(why0.条目旁[0])
+      && why0.全块里出现几次 === 1 && why0.折叠里有没有, why0);
     // 方框里那个记号**必须真的看得见**：第一版把这个按钮叫 .tick，撞上工作台待办那个 color:transparent 的
     // 小圆点，页面上四个方框全是空的 —— 而 textContent 照样是「☐」，字符串断言一条都没红。所以这里量**算出来的颜色**。
     const 记号 = await p.evaluate(() => [...document.querySelectorAll('#pn-list .pn-tick, #pn-list .fix')].slice(0, 4).map((e) => {

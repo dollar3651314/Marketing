@@ -355,6 +355,10 @@ export const PRON_MOD = `<section class="card mod pn" id="f-pron"><header class=
   <div class="pn-err" id="pn-err" hidden></div>
 </div>
 <details class="more"><summary>这一块到底在做什么 · 内容和发音各从哪来</summary><div class="in">
+  <p><b>清单上哪些能自己勾、哪些不能</b>：「跟我做」和「对照听」做完会自动勾上，
+  你也可以手动勾或者取消（想重做就取消，<b>取消之后不会被自动勾回来</b>）。
+  <b>「考 10 题过关」和「🎤 念过一遍」是按你的成绩算的</b>，勾不上也取消不了 ——
+  画一个点不动的按钮等于骗你，所以那两条只给一个记号和进度。</p>
   <p>七组是你学过的那套课程 S1 <b>第 10 课（易错元音）和第 11 课（易错辅音）</b>的对立音，口型定位、对比词、绕口令都是<b>课件原文</b>，逐张抽出来录进内容文件的。</p>
   <p>一组四步：<b>跟我做</b>（一次只说一句话，你做完点一下才给下一句）→ <b>对照听</b>（两个词来回点，点多少次都行）→ <b>连考 10 题</b>（同一组，不换别的音；答错当场回到对照听）→ <b>10 题对 8 题过关</b>，给那一组的绕口令。</p>
   <p><b>「跟我做」的四级顺序不是我编的</b>：<b>单音 → 音素拼合 → 单词拼读 → 句子和绕口令</b>，是那套课程自己写的练法顺序；作业统一写「用某某方法朗读，直到没有任何发音错误」。每一步底下的小字写明了这句话出自<b>课件原文</b>、<b>课程练法</b>，还是<b>机械拆分</b>（把课件给的音标按符号切开）。课件没写的口型，就生不出那一步 —— 不会给你编一句。</p>
@@ -570,7 +574,16 @@ function pList(){
       go.addEventListener('click',function(){pOpen(z['组'],x['任务']);});
       row.appendChild(go);
       li.appendChild(row);
-      if(x['说明']){var w=document.createElement('p');w.className='pn-why';w.textContent=x['说明'];li.appendChild(w);}
+      /* 接口给的「说明」是整句（例：「按你的成绩算的：7 个能纠说的词每个都念过一次才算做完
+         （现在 0 / 7），不能手动改。」）。整句摆出来，七组 × 两条 = **同一句话印 14 遍**，
+         390 的手机上占掉近一半文字（2026-11-13 看截图发现的）。
+         所以这里只留**这一条独有的那半句**（括号里的进度），公共的那半句收进模块底下的折叠说明，
+         全页只说一次。**一个字都没改接口给的话，只是不重复印。** */
+      if(x['说明']){
+        var 进度=x['说明'].match(/（现在[^）]*）/);
+        var 文=进度?进度[0].replace(/^（|）$/g,''):'';
+        if(文){var w=document.createElement('p');w.className='pn-why';w.textContent=文;li.appendChild(w);}
+      }
       ul.appendChild(li);
     });
     d.appendChild(ul);

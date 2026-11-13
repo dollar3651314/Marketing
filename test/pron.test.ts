@@ -1683,9 +1683,15 @@ describe('18. 清单那一屏：打开先看见它；做完回来那一条自己
     try {
       const L = p.清单上();
       expect(L[0].事.map((x) => x.能点方框)).toEqual([true, true, false, false]);
+      // 这两条旁边只留**它自己独有的那半句**（进度），不整句照搬。
+      // 2026-11-13：整句摆出来是七组 × 两条 = 同一句话印 14 遍，390 的手机上占掉近一半文字。
       const why = [...p.w.document.querySelectorAll('#pn-list .pn-grp')[0].querySelectorAll('.pn-why')].map((e) => e.textContent!);
-      expect(why.length).toBe(2);
-      expect(why.every((t) => t.startsWith('按你的成绩算的'))).toBe(true);
+      expect(why.length).toBe(1);                       // 只有 🎤 那条带进度；考题那条没有独有信息
+      expect(why[0]).toMatch(/^现在 \d+ \/ \d+$/);
+      // **但「按你的成绩算的」这件事必须还在说** —— 搬到模块底下的折叠里，全页只说一次
+      const 全文 = p.w.document.getElementById('f-pron')!.textContent || '';
+      expect((全文.match(/按你的成绩算的/g) ?? []).length).toBe(1);
+      expect(全文).toContain('勾不上也取消不了');
     } finally { await p.close(); }
   });
 
