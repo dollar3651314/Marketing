@@ -64,6 +64,11 @@ export const PROJECT_SITE: Record<string, { text: string; url: string }> = {
   forecast: { text: 'Quick Come 官网', url: 'https://www.quickcome.online' },
 };
 
+/* 「现在能打开什么」（2026-11-13 加的 PROJECT_APPS）**2026-11-13 当天又删掉了**：
+   那一块里全是指向 practical.jeff-zhaifei.workers.dev 的外链，Amos 当天决定把 Practical 并进 Marketing
+   （「把它合并到 marketing 项目中吧（公用仓库、数据库、服务器、域名）」），那个站要关掉 —— 链接全成死链，留着就是骗人（底线 3）。
+   发音训练、句子训练现在就在工作平台自己的 Practical 项目页上（#/Practical/pron、#/Practical/s2，src/admin-page.ts）。 */
+
 export const PLATFORM_CONFIG = { REPORT_FIELDS, REPORT_FORMS, METRIC_FROM_REPORT, SEE_PLATFORM, NOT_PROJECTS, REPO_PROJECT, PROJECT_PAGES_FALLBACK };
 
 /** 填数字的一格：全角数字转半角、去掉所有空白；要非负整数（最多 9 位），有上限的不超过上限。返回规范化后的值或错在哪 */

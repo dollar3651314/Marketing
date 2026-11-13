@@ -78,7 +78,7 @@ async function readAudio(env: Env, item: string): Promise<Uint8Array | null> {
 }
 
 /**
- * `GET /api/pron/audio/<编号>` → `audio/mpeg`。鉴权在 queue.ts 的 adminApi 里已经过了（和 /api/pron/* 同一套后台登录）。
+ * `GET /api/en/pron/audio/<编号>` → `audio/mpeg`。鉴权在 queue.ts 的 adminApi 里已经过了（和 /api/en/pron/* 同一套后台登录）。
  * 不是 GET 回 null（由调用方给 404）。
  */
 export async function pronAudioApi(env: Env, req: Request, now: number, item: string): Promise<Response | null> {

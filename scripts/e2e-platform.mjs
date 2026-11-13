@@ -10,7 +10,10 @@
  * 页面约定（照原型 v2 的元素；研发要改名就同一个 PR 改这里并在 PR 描述写明）：
  *   一级菜单 nav.nav1 a[data-p="work" | "project" | "tools"]（项目链接另带 data-proj="<项目名>"，有几个项目出几个）；
  *   二级菜单 #sub-work、#sub-project、#sub-tools 里的 a[data-s="<模块 id>"]，地址 #/work/todo、#/<项目>/guide 这类锚点
- *   页面 #v-work、#v-project（一套 DOM 轮流显示每个项目）、#v-tools；工作台模块 #w-now（#hero）、#w-todo（#w-todos li.todo、#w-donelist）、#w-live、#w-proj、#w-num、#w-meet、#w-pron（发音训练：跟我做（一次一句）→ 对照听 → 连考 10 题 → 过关，第 15 段）
+ *   页面 #v-work、#v-project（一套 DOM 轮流显示每个项目）、#v-tools；工作台模块 #w-now（#hero）、#w-todo（#w-todos li.todo、#w-donelist）、#w-live、#w-proj、#w-num、#w-meet（**6 个**）
+ *   英语学习两块 2026-11-13 从工作台挪进 **Practical 项目页**（Amos「工作台 practical 用来存储和展示所有与我英语学习有关的内容」）：
+ *     #f-pron（发音训练：跟我做（一次一句）→ 对照听 → 连考 10 题 → 过关，第 15 段）、#f-s2（句子训练：13 课，一屏一步，每句标出处）；
+ *     地址 #/Practical/pron、#/Practical/s2，**别的项目上这两块和它们的菜单项整块 hidden**（第 8.5 段）；接口前缀 /api/en/pron/*
  *   待办 li.todo 带颜色类 over（红，超时）/ soon（橙，24 小时内）/ later / none（没定截止时间）；打勾按钮 .tick；撤销 [data-undo]
  *   全部待办按时间段分组（改版批 A，2026-11-04；取代 2026-11-02 的按项目分组 .over-grp / details.tgrp[data-proj] / #w-todo-all）：
  *     #w-todos 下按页面顺序是 [data-bucket="over" | "soon" | "later" | "none"]（已超时 / 24 小时内到期 / 之后到期 / 没定截止时间，空的组不出），
@@ -350,9 +353,10 @@ try {
   await section('二级菜单', async () => {
     // 页名（#sub-<页>、#v-<页>）和地址段分开：项目页的页名一律是 project，地址段是项目名
     const SUB = [
-      { nav: 'work', page: 'work', seg: 'work', mods: ['w-now', 'w-todo', 'w-live', 'w-proj', 'w-num', 'w-meet', 'w-pron'] },
+      { nav: 'work', page: 'work', seg: 'work', mods: ['w-now', 'w-todo', 'w-live', 'w-proj', 'w-num', 'w-meet'] },
       { nav: 'forecast', page: 'project', seg: 'forecast', mods: ['f-next', 'f-guide', 'f-live', 'f-card', 'f-pack', 'f-match', 'f-tools', 'f-handoff'] },
-      { nav: 'Practical', page: 'project', seg: 'Practical', mods: ['f-next', 'f-card', 'f-handoff'] },
+      // 英语学习那两块 2026-11-13 挪到这里（别的项目上不出现，由第 8.5 段守）
+      { nav: 'Practical', page: 'project', seg: 'Practical', mods: ['f-next', 'f-card', 'f-handoff', 'f-pron', 'f-s2'] },
       { nav: 'tools', page: 'tools', seg: 'tools', mods: ['t-queue'] },
     ];
     for (const { nav, page: pg, seg, mods } of SUB) {
@@ -582,36 +586,90 @@ try {
   });
 
 
-  // ---------- 8.5 发音训练：位置和手机排版（2026-11-11 换掉「英语练习」和「带练」）----------
-  // Amos 2026-11-11 原话：「工作台 英语练习和代练（带练）都没用了，用你新做的东西彻底替换掉它们吧」。
-  // 守四件事：① 工作台二级菜单从 8 项变 **7 项**（去掉「英语练习」「带练」，加「发音训练」）；
-  //    **上限还是 8、公共工具那 8 项一个都没动**（T-4：第 9 项会撑破手机菜单）；
-  // ② 点菜单滚得到「发音训练」，地址是 #/work/pron；③ 整块里**一个输入框都没有**、按钮 ≥52px；
-  // ④ 手机 390 宽不横向滚动、子菜单一行（可以横滑）、选中项完整看得见且不在右侧渐隐区、两层菜单 ≤25%。
-  await section('发音训练·位置', async () => {
+  // ---------- 8.5 英语学习两块的位置和手机排版（2026-11-13 从工作台挪进 Practical 项目页）----------
+  // Amos 2026-11-13 原话：「工作台 发音训练 这个模块不需要再出现在 工作台 发音训练这个位置了」
+  // 「工作台 practical 用来存储和展示所有与我英语学习有关的内容」。
+  // 守六件事：① 工作台二级菜单回到 **6 项**，里面**再也没有** w-pron（上限还是 8、公共工具那 8 项一个没动，T-4）；
+  // ② Practical 项目页的子菜单里有 f-pron、f-s2，点一下滚得到，地址是 #/Practical/pron、#/Practical/s2；
+  // ③ **别的项目（forecast）上这两块整块不出现**，子菜单上那两项也不出现；
+  // ④ 两块里**一个输入框都没有**、看得见的按钮 ≥52px（句子训练的"上一步"是次动作，≥44px）；
+  // ⑤ 两块都能**真的走一步**（发音训练点「做好了，下一步」换一句；句子训练点主按钮进下一步）；
+  // ⑥ 手机 390 宽不横向滚动、子菜单一行（可以横滑）、选中项完整看得见且不在右侧渐隐区、两层菜单 ≤25%。
+  await section('英语学习两块·位置', async () => {
     for (const width of [390, 1280]) {
       const p = await open({ width, height: 900 });
       await login(p, '/#/work');
-      // ① 菜单第 7 项
+      // ① 工作台二级菜单 6 项，没有发音训练
       const mods = await p.locator('#sub-work a[data-s]').evaluateAll((a) => a.map((x) => x.dataset.s));
       const tools = await p.locator('#sub-tools a[data-s]').evaluateAll((a) => a.map((x) => x.dataset.s));
-      check(`${width} 宽：工作台二级菜单 7 项、第 7 项是 w-pron（上限还是 8；公共工具还是 8 项，T-4）`,
-        mods.length === 7 && mods[6] === 'w-pron' && mods.length <= 8 && tools.length === 8, { mods, tools });
-      check(`${width} 宽：下线的「英语练习」「带练」都不在菜单里了`, !mods.includes('w-english') && !mods.includes('w-drill'), mods);
-      await p.click('#sub-work a[data-s="w-pron"]', { timeout: WAIT });
+      check(`${width} 宽：工作台二级菜单正好 6 项（上限还是 8；公共工具还是 8 项，T-4）`,
+        mods.length === 6 && mods.length <= 8 && tools.length === 8, { mods, tools });
+      check(`${width} 宽：工作台二级菜单里**再也没有**「发音训练」；下线的「英语练习」「带练」也不在`,
+        !mods.includes('w-pron') && !mods.includes('w-english') && !mods.includes('w-drill')
+        && !(await p.locator('#sub-work').innerText()).includes('发音训练'), mods);
+      check(`${width} 宽：工作台页上也没有 #w-pron 这个模块了（不是两份并存）`, (await p.locator('#w-pron').count()) === 0, await p.locator('#w-pron').count());
+
+      // ③ 别的项目（forecast）上这两块不出现
+      await p.goto(BASE + '/#/forecast');
+      await waitFor(p, '#v-project');
       await p.waitForTimeout(400);
-      const seen = await p.evaluate(() => { const e = document.getElementById('w-pron'); if (!e) return null; const r = e.getBoundingClientRect(); return { top: r.top, h: innerHeight, hash: location.hash }; });
-      check(`${width} 宽：点菜单滚到「发音训练」，地址是 #/work/pron`, !!seen && seen.top >= -2 && seen.top < seen.h && seen.hash === '#/work/pron', seen);
-      // ③ 一个输入框都没有；看得见的按钮都 ≥52px
-      const inputs = await p.locator('#w-pron input, #w-pron textarea, #w-pron [contenteditable]').count();
-      check(`${width} 宽：整块里一个输入框都没有（不让他打字；录音按钮是 button）`, inputs === 0, inputs);
-      const small = await p.evaluate(() => [...document.querySelectorAll('#w-pron button')].filter((b) => b.getClientRects().length && !b.closest('summary') && b.tagName !== 'SUMMARY')
+      const 别的项目 = await p.evaluate(() => ({
+        模块: ['f-pron', 'f-s2'].map((id) => { const e = document.getElementById(id); return [id, !!e, !!e && !!e.getClientRects().length]; }),
+        菜单: [...document.querySelectorAll('#sub-project a[data-s]')].filter((a) => a.getClientRects().length).map((a) => a.dataset.s),
+      }));
+      check(`${width} 宽：forecast 项目页上「发音训练」「句子训练」整块都不出现（DOM 在、但 hidden）`,
+        别的项目.模块.every(([, 有, 看得见]) => 有 && !看得见), 别的项目.模块);
+      check(`${width} 宽：forecast 的子菜单里也没有这两项（菜单顺序 = 页面顺序，不留空项）`,
+        !别的项目.菜单.includes('f-pron') && !别的项目.菜单.includes('f-s2'), 别的项目.菜单);
+
+      // ② Practical 项目页上两块都在，点菜单滚得到
+      for (const [m, id, 名] of [['pron', 'f-pron', '发音训练'], ['s2', 'f-s2', '句子训练']]) {
+        await p.goto(BASE + '/#/Practical');
+        await waitFor(p, `#${id}`);
+        await p.click(`#sub-project a[data-s="${id}"]`, { timeout: WAIT });
+        await p.waitForTimeout(400);
+        const seen = await p.evaluate((i) => { const e = document.getElementById(i); if (!e) return null; const r = e.getBoundingClientRect(); return { top: r.top, h: innerHeight, hash: decodeURIComponent(location.hash) }; }, id);
+        check(`${width} 宽：Practical 项目页点菜单滚到「${名}」，地址是 #/Practical/${m}`,
+          !!seen && seen.top >= -2 && seen.top < seen.h && seen.hash === `#/Practical/${m}`, seen);
+        // ④ 一个输入框都没有
+        const inputs = await p.locator(`#${id} input, #${id} textarea, #${id} [contenteditable]`).count();
+        check(`${width} 宽：「${名}」整块里一个输入框都没有（不让他打字；录音按钮是 button）`, inputs === 0, inputs);
+      }
+
+      // ④ 发音训练的按钮 ≥52px（句子训练的主按钮也量，次动作"上一步"允许 44）
+      await p.goto(BASE + '/#/Practical/pron');
+      await waitFor(p, '#f-pron');
+      await p.waitForFunction(() => document.querySelectorAll('#f-pron #pn-cbtns .btn').length > 0, null, { timeout: WAIT }).catch(() => {});
+      const small = await p.evaluate(() => [...document.querySelectorAll('#f-pron button')].filter((b) => b.getClientRects().length && !b.closest('summary') && b.tagName !== 'SUMMARY')
         .map((b) => ({ t: b.textContent.slice(0, 10), h: Math.round(b.getBoundingClientRect().height) })).filter((x) => x.h < 52));
-      check(`${width} 宽：看得见的按钮都 ≥52px 高（手机单手够得着）`, small.length === 0, small);
-      // ④ 不横向滚动；子菜单一行、可以横滑，选中项完整看得见（和 T-4 / R9 同一个口径）
-      await p.waitForTimeout(400);
+      check(`${width} 宽：发音训练看得见的按钮都 ≥52px 高（手机单手够得着）`, small.length === 0, small);
+      const s2b = await p.evaluate(() => [...document.querySelectorAll('#f-s2 .s2-b')].filter((b) => b.getClientRects().length)
+        .map((b) => ({ t: b.textContent.slice(0, 10), g: b.classList.contains('g'), h: Math.round(b.getBoundingClientRect().height) })));
+      check(`${width} 宽：句子训练的主按钮 ≥52px、次动作「上一步」≥44px`,
+        s2b.length > 0 && s2b.every((x) => x.h >= (x.g ? 44 : 52)), s2b);
+
+      // ⑤ 两块都能真的走一步
+      const 第一句 = await txt(p, '#pn-csay');
+      await p.click('#f-pron #pn-cbtns .btn.go', { timeout: WAIT });
+      await p.waitForTimeout(300);
+      const 第二句 = await txt(p, '#pn-csay');
+      check(`${width} 宽：发音训练点「做好了，下一步」真的换了一句（一屏只有一步）`, !!第一句 && !!第二句 && 第一句 !== 第二句, { 第一句, 第二句 });
+      await p.goto(BASE + '/#/Practical/s2');
+      await waitFor(p, '#f-s2');
+      await p.waitForFunction(() => document.querySelectorAll('#f-s2 .s2-b').length > 0, null, { timeout: WAIT });
+      const 这一步 = await txt(p, '#s2-num');
+      await p.click('#f-s2 .s2-b.p', { timeout: WAIT });
+      await p.waitForTimeout(300);
+      const 下一步 = await txt(p, '#s2-num');
+      check(`${width} 宽：句子训练点主按钮真的进了下一步（第 n / 共 m 步变了）`, !!这一步 && !!下一步 && 这一步 !== 下一步, { 这一步, 下一步 });
+      check(`${width} 宽：句子训练每一步都标着出处（.s2-src 那一行在）`, (await p.locator('#f-s2 .s2-src').count()) >= 1, await p.locator('#f-s2 .s2-src').count());
+
+      // ⑥ 不横向滚动；子菜单一行、可以横滑，选中项完整看得见（和 T-4 / R9 同一个口径）
+      await p.goto(BASE + '/#/Practical/pron');
+      await waitFor(p, '#f-pron');
+      await p.waitForTimeout(500);
       const fit = await p.evaluate(() => {
-        const nav = document.querySelector('#sub-work .in');
+        const nav = document.querySelector('#sub-project .in');
         const as = [...nav.querySelectorAll('a')].filter((a) => a.getClientRects().length);
         const bars = document.getElementById('bars').getBoundingClientRect().height;
         const sel = nav.querySelector('a[data-s][aria-current="true"]');
@@ -625,10 +683,70 @@ try {
           barsPct: +(bars / innerHeight * 100).toFixed(1),
         };
       });
-      check(`${width} 宽：不横向滚动；子菜单一行（可以横滑）、选中的 w-pron 完整看得见且不在右侧渐隐区；两层菜单 ${fit.barsPct}% ≤ 25%（T-4 / R9 同一个口径）`,
-        (await noHScroll(p)) && fit.rows === 1 && fit.sel === 'w-pron' && fit.selIn && fit.barsPct <= 25, { h: await noHScroll(p), ...fit });
+      check(`${width} 宽：不横向滚动；子菜单一行（可以横滑）、选中的 f-pron 完整看得见且不在右侧渐隐区；两层菜单 ${fit.barsPct}% ≤ 25%（T-4 / R9 同一个口径）`,
+        (await noHScroll(p)) && fit.rows === 1 && fit.sel === 'f-pron' && fit.selIn && fit.barsPct <= 25, { h: await noHScroll(p), ...fit });
+      // 两块自己也不许横着溢出
+      const 溢 = await p.evaluate(() => ['f-pron', 'f-s2', 's2-step'].map((id) => { const e = document.getElementById(id); return [id, e ? e.scrollWidth - e.clientWidth : -1]; }));
+      check(`${width} 宽：这两块里没有任何一行横着溢出`, 溢.every(([, d]) => d <= 1), 溢);
+      if (SHOTS && width === 390) {
+        mkdirSync(SHOTS, { recursive: true });
+        await p.locator('#f-pron').screenshot({ path: path.join(SHOTS, 'Practical项目页-发音训练-390.png') });
+        await p.goto(BASE + '/#/Practical/s2');
+        await waitFor(p, '#f-s2');
+        await p.waitForTimeout(500);
+        await p.locator('#f-s2').screenshot({ path: path.join(SHOTS, 'Practical项目页-句子训练-390.png') });
+        await p.goto(BASE + '/#/Practical');
+        await waitFor(p, '#v-project');
+        await p.waitForTimeout(500);
+        await p.screenshot({ path: path.join(SHOTS, 'Practical项目页-整页-390.png'), fullPage: true });
+        // 别的项目（forecast）上这两块不出现 —— 截一张当证据
+        await p.goto(BASE + '/#/forecast');
+        await waitFor(p, '#v-project');
+        await p.waitForTimeout(500);
+        await p.screenshot({ path: path.join(SHOTS, 'forecast项目页-没有英语两块-390.png'), fullPage: true });
+      }
       await p.context().close();
     }
+  });
+
+  // ---------- 8.6 换走 / 换项目时摄像头必须灭（2026-11-13 挪位置以后多出来的一条出口）----------
+  // 原来只有"离开工作台"一条路；现在还多了"在项目页上换到别的项目"。
+  // 两条路都要关：藏起来的 DOM 里摄像头照亮，手机上的指示灯不灭，页面上那句「关掉镜子，指示灯就灭」就是假的。
+  await section('英语学习两块·换项目时摄像头灭', async () => {
+    const cam = await chromium.launch({ args: ['--use-fake-device-for-media-stream', '--use-fake-ui-for-media-stream', '--autoplay-policy=no-user-gesture-required'] });
+    try {
+      const ctx = await cam.newContext({ viewport: { width: 390, height: 844 } });
+      await ctx.grantPermissions(['camera', 'microphone'], { origin: BASE });
+      const q = await ctx.newPage();
+      q.on('pageerror', (e) => errors.push(e.message));
+      const net = [];
+      q.on('request', (r) => net.push(r.method() + ' ' + new URL(r.url()).pathname));
+      await q.addInitScript(() => {
+        window.__tracks = [];
+        const md = navigator.mediaDevices;
+        const o = md.getUserMedia.bind(md);
+        md.getUserMedia = (c) => o(c).then((s) => { s.getTracks().forEach((t) => window.__tracks.push(t)); return s; });
+      });
+      await login(q, '/#/Practical/pron');
+      await waitFor(q, '#f-pron');
+      await q.waitForFunction(() => document.querySelectorAll('#pn-cbtns .btn').length > 0, null, { timeout: WAIT });
+      const n0 = net.length;
+      await q.click('#pn-mir');
+      await q.waitForFunction(() => { const v = document.getElementById('pn-cam'); return !!v && v.videoWidth > 0; }, null, { timeout: 8000 });
+      check('390 宽·假媒体流：镜子开着时轨道是 live', await q.evaluate(() => (window.__tracks || []).every((t) => t.readyState === 'live')), null);
+      check('390 宽·假媒体流：**开镜子到这里一个请求都没往外发**（画面不上传、不保存、不录）', net.slice(n0).length === 0, net.slice(n0));
+      // 换到别的项目（forecast）：setProject() 里要叫 pronStop()
+      const n1 = net.length;
+      await q.goto(BASE + '/#/forecast');
+      await waitFor(q, '#v-project');
+      await q.waitForTimeout(500);
+      const off = await q.evaluate(() => ({ 没流: document.getElementById('pn-cam').srcObject === null,
+        轨道: (window.__tracks || []).map((t) => t.readyState), 藏了: document.getElementById('f-pron').hidden }));
+      check('390 宽·假媒体流：**换到别的项目**摄像头真的关了（轨道 ended，手机上的指示灯才会灭）',
+        off.没流 && off.轨道.length > 0 && off.轨道.every((x) => x === 'ended') && off.藏了, off);
+      check('390 宽·假媒体流：换项目这一步也没往外发任何画面', net.slice(n1).filter((x) => /pron/.test(x)).length === 0, net.slice(n1));
+      await ctx.close();
+    } finally { await cam.close(); }
   });
 
   // ---------- 8.5 子菜单跟着滚动选中（2026-11-04）：工作台、项目页；切换页面后重新算 ----------
@@ -727,7 +845,7 @@ try {
     const r = await srv.ingest('agents', [{ kind: 'todo', key: 'Practical', source_at: Date.now(), payload: { product: 'Practical', items: PA.map((x) => ({ type: 'action', ...x })) } }]);
     check('批 A：推送 Practical 的 5 条待办（已超时 1、24 小时内 1、之后 2、没定 1）收得下', r.status === 200, r);
   }
-  const W7 = ['w-now', 'w-todo', 'w-live', 'w-proj', 'w-num', 'w-meet', 'w-pron'];
+  const W6 = ['w-now', 'w-todo', 'w-live', 'w-proj', 'w-num', 'w-meet'];
   // 字号阶梯（设计规范）：页面标题 24 / 手机 22，模块标题 18 / 手机 17，正文 15，辅助 13，大数字 30 / 手机 26，12 只给角标标签；允许 ±0.5（亚像素取整）
   const FS = [12, 13, 15, 17, 18, 22, 24, 26, 30];
   // 放宽：按钮、输入框、菜单链接（nav 里的 a）、chip、summary 这类"能点、能填"的控件可以是 14——原型里 .btn、.nav1 a、.sub a 都是 14px，
@@ -794,7 +912,7 @@ try {
         await login(p, '/#/work');
         await waitFor(p, '#w-todos li.todo');
         await p.waitForTimeout(400);
-        // ① 7 个模块都有看得见的一句话结论（#w-now 的结论是 #hero；其余是 .lead，前面一个状态圆点）
+        // ① 6 个模块都有看得见的一句话结论（#w-now 的结论是 #hero；其余是 .lead，前面一个状态圆点）
         const leads = await p.evaluate((ids) => ids.map((id) => {
           const m = document.getElementById(id);
           if (!m) return { id, why: '没有这个模块' };
@@ -805,7 +923,7 @@ try {
           const dot = el.querySelector('.dot');
           const dotCls = dot ? ['red', 'amber', 'ok', 'gray'].find((c) => dot.classList.contains(c)) || '' : '';
           return { id, shown, text, dotCls };
-        }), W7);
+        }), W6);
         for (const L of leads) {
           if (L.why) { check(`${tag}：${L.id} 有一句话结论`, false, L.why); continue; }
           // "结论"不是空的说明文字：要带件数 / 数字，或者明说"没事、没有、不用、还没、都…了"；不能是"正在读取"；一句话 = 6～80 字
@@ -815,14 +933,15 @@ try {
           const dotOk = L.id === 'w-now' || !!L.dotCls;
           check(`${tag}：${L.id} 的一句话结论看得见、是结论（带件数或"没事"之类）${L.id === 'w-now' ? '' : '、前面有红/橙/绿/灰圆点'}、不超过 80 字`, L.shown && isConcl && lenOk && dotOk, { shown: L.shown, dot: L.dotCls, len: body.length, text: body.slice(0, 90) });
         }
-        // ② 说明默认折叠：#v-work 里每个 details.more 都没有 open；有说明的模块（原型：全部待办、团队在做什么、项目概况，加 2026-11-11 换上来的发音训练）说明是模块最后一块；"做完的"也收起
+        // ② 说明默认折叠：#v-work 里每个 details.more 都没有 open；有说明的模块（原型：全部待办、团队在做什么、项目概况）说明是模块最后一块；"做完的"也收起
+        //   发音训练 2026-11-13 挪去 Practical 项目页了，它的 details.more 由第 8.5 段在项目页上量
         const more = await p.evaluate(() => ({
           open: [...document.querySelectorAll('#v-work details.more[open]')].map((d) => d.closest('.mod')?.id || '?'),
-          last: ['w-todo', 'w-live', 'w-proj', 'w-pron'].map((id) => { const m = document.getElementById(id); const k = m && [...m.children].filter((c) => c.getClientRects().length).at(-1); return [id, !!k && k.matches('details.more')]; }),
+          last: ['w-todo', 'w-live', 'w-proj'].map((id) => { const m = document.getElementById(id); const k = m && [...m.children].filter((c) => c.getClientRects().length).at(-1); return [id, !!k && k.matches('details.more')]; }),
           done: document.getElementById('w-done')?.open ?? null,
         }));
         check(`${tag}：工作台的说明都默认折叠（没有 details.more[open]）`, more.open.length === 0, more.open);
-        check(`${tag}：全部待办、团队在做什么、项目概况、发音训练的最后一块是折叠的"说明和更多"（details.more）`, more.last.every(([, ok]) => ok), more.last.filter(([, ok]) => !ok).map(([id]) => id));
+        check(`${tag}：全部待办、团队在做什么、项目概况的最后一块是折叠的"说明和更多"（details.more）`, more.last.every(([, ok]) => ok), more.last.filter(([, ok]) => !ok).map(([id]) => id));
         check(`${tag}："做完的"默认收起（#w-done 没有 open）`, more.done === false, more.done);
         // ③ 字号只用阶梯里的几级（控件放宽到 14）
         const fo = await fontOutliers(p, ['#bars', '#v-work']);
@@ -1337,16 +1456,16 @@ try {
   await section('发音训练', async () => {
     const p = await open({ width: 390, height: 844 });
     const played = [];
-    p.on('request', (r) => { const m = /\/api\/pron\/audio\/(g\d-\d[ab])$/.exec(r.url()); if (m) played.push(m[1]); });
+    p.on('request', (r) => { const m = /\/api\/en\/pron\/audio\/(g\d-\d[ab])$/.exec(r.url()); if (m) played.push(m[1]); });
     // 这一轮 10 题要**答成一个确定的分数**（第 1 题故意错、其余对）才量得了"80% 过关"，
     // 所以把页面的 Math.random 钉死：放的永远是这一对的 a、左边那个按钮永远是 a。
     // 随机本身（放哪个词、左右位置）由 test/pron.test.ts 守着（pCoin / pMix），这里钉死只是为了算得出分数。
     await p.addInitScript(() => { Math.random = () => 0; });
-    await login(p, '/#/work/pron');
-    await waitFor(p, '#w-pron');
+    await login(p, '/#/Practical/pron');
+    await waitFor(p, '#f-pron');
     const tg = '390 宽';
     // 内容从接口拿一份，后面每一步都和它逐条对（页面不自己造内容）
-    const ST = await p.evaluate(async () => await (await fetch('/api/pron/state')).json());
+    const ST = await p.evaluate(async () => await (await fetch('/api/en/pron/state')).json());
     const G1 = (ST['组'] || [])[0];
     const WORD = {}, PAIR = {};
     (ST['组'] || []).forEach((z) => (z['对'] || []).forEach((q) => ['a', 'b'].forEach((k) => { WORD[q[k]['编号']] = q[k]['词']; PAIR[q[k]['编号']] = q; })));
@@ -1390,9 +1509,9 @@ try {
     check(`${tg}：第 1 步只有「做好了，下一步」和「🔈 念给我听」，**没有「上一步」**（退无可退就不画灰按钮）`,
       st1.btns.some((t) => t.includes('做好了')) && st1.btns.some((t) => t.includes('念给我听')) && !st1.btns.some((t) => t.includes('上一步')), st1.btns);
     check(`${tg}：**口型示意图整套撤掉了**（Amos 2026-11-12：「口型图撤掉」）`,
-      await p.evaluate(() => !document.getElementById('pn-draw') && !document.getElementById('pn-anim') && document.querySelectorAll('#w-pron svg').length === 0), null);
+      await p.evaluate(() => !document.getElementById('pn-draw') && !document.getElementById('pn-anim') && document.querySelectorAll('#f-pron svg').length === 0), null);
     check(`${tg}：跟我做这一屏没有横向滚动`, await noHScroll(p), await p.evaluate(() => [document.documentElement.scrollWidth, innerWidth]));
-    if (SHOTS) { mkdirSync(SHOTS, { recursive: true }); await p.locator('#w-pron').screenshot({ path: path.join(SHOTS, '发音训练-跟我做-第1级第一步-390.png') }); }
+    if (SHOTS) { mkdirSync(SHOTS, { recursive: true }); await p.locator('#f-pron').screenshot({ path: path.join(SHOTS, '发音训练-跟我做-第1级第一步-390.png') }); }
 
     // 点一下真的前进一步，「上一步」真的退回来（一次一句，不会自己往前跑）
     await 下一步(p);
@@ -1422,7 +1541,7 @@ try {
     await p.click('#pn-cbtns .btn >> text=🔊 听标准音');
     await p.waitForTimeout(400);
     check(`${tg}：第 3 级的 🔊 真的点得响（那 56 段已经预置进 pron_audio）`, played.length > 响前, { 响前, 响后: played.length });
-    if (SHOTS) await p.locator('#w-pron').screenshot({ path: path.join(SHOTS, '发音训练-跟我做-第3级带听和念-390.png') });
+    if (SHOTS) await p.locator('#f-pron').screenshot({ path: path.join(SHOTS, '发音训练-跟我做-第3级带听和念-390.png') });
 
     // 走到第 4 级（句子和绕口令）：大字就是**课件那句绕口令**（页面不自己造内容）
     for (let k = 0; k < 80 && !/第 4 级/.test((await 这一步(p)).lv); k++) await 下一步(p);
@@ -1430,7 +1549,7 @@ try {
     check(`${tg}：第 4 级第一步的大字**就是接口给的那句绕口令**，依据写明是三最法（页面不自己造内容）`,
       lv4.big === G1['绕口令'] && lv4.src.includes('三最法') && lv4.src.includes('课程练法'), { big: lv4.big, src: lv4.src.slice(0, 50) });
     check(`${tg}：绕口令这一屏没有横向滚动（整句话很长，必须换行不是横滚）`, await noHScroll(p), await p.evaluate(() => [document.documentElement.scrollWidth, innerWidth]));
-    if (SHOTS) await p.locator('#w-pron').screenshot({ path: path.join(SHOTS, '发音训练-跟我做-第4级绕口令-390.png') });
+    if (SHOTS) await p.locator('#f-pron').screenshot({ path: path.join(SHOTS, '发音训练-跟我做-第4级绕口令-390.png') });
 
     // 走完 → 收尾屏
     await 走完跟我做(p);
@@ -1439,7 +1558,7 @@ try {
     check(`${tg}：走完最后一步给一屏收尾：照实写课程的作业标准「直到没有任何发音错误」，并说明课程没给自查方法（这正是 🎤 要补的那一处）`,
       fin.coachHidden && fin.t.includes('直到没有任何发音错误') && fin.t.includes('没有给自查的办法') && fin.t.includes('机器听成了哪个词')
       && fin.rail.every((c) => c.includes('ok')), fin);
-    if (SHOTS) await p.locator('#w-pron').screenshot({ path: path.join(SHOTS, '发音训练-跟我做-收尾屏-390.png') });
+    if (SHOTS) await p.locator('#f-pron').screenshot({ path: path.join(SHOTS, '发音训练-跟我做-收尾屏-390.png') });
 
     // ---- 第 2 步：对照听（+ 纠说）----
     await p.click('#pn-go2');
@@ -1464,17 +1583,17 @@ try {
     const auMsg = await p.evaluate(() => ({ hidden: document.getElementById('pn-msg').hidden, t: document.getElementById('pn-msg').innerText }));
     check(`${tg}：第 2 步两个词都点得响（不报错），请求的就是这一对的两个编号`,
       auMsg.hidden && played.slice(mark0).join(',') === [minimal[0].a['编号'], minimal[0].b['编号']].join(','), { msg: auMsg, played: played.slice(mark0) });
-    if (SHOTS) await p.locator('#w-pron').screenshot({ path: path.join(SHOTS, '发音训练-对照听-390.png') });
+    if (SHOTS) await p.locator('#f-pron').screenshot({ path: path.join(SHOTS, '发音训练-对照听-390.png') });
 
     // ⑦ 纠说：本地没绑 Workers AI → 走"当面说用不了"那条真路，**其余部分照常能用**
     const sayOff = await p.evaluate(async () => {
-      const r = await fetch('/api/pron/say', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ 组: 'g1', 词: 'g1-1b', audio: 'AQIDBA==', seconds: 1 }) });
+      const r = await fetch('/api/en/pron/say', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ 组: 'g1', 词: 'g1-1b', audio: 'AQIDBA==', seconds: 1 }) });
       return { status: r.status, body: await r.json() };
     });
     check(`${tg}：纠说在没绑 Workers AI 的环境里**当面说**（两句话：出错 + 怎么办），并说明其余部分照常能用`,
       sayOff.status === 503 && String(sayOff.body['出错']).includes('没有绑 Workers AI') && String(sayOff.body['怎么办']).includes('照常能用'), sayOff);
     const sayBad = await p.evaluate(async () => {
-      const r = await fetch('/api/pron/say', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ 组: 'g1', 词: 'g1-3a', audio: 'AQIDBA==', seconds: 1 }) });
+      const r = await fetch('/api/en/pron/say', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ 组: 'g1', 词: 'g1-3a', audio: 'AQIDBA==', seconds: 1 }) });
       return { status: r.status, body: await r.json() };
     });
     check(`${tg}：ketch 这类词连试都不试（400 + 说清楚为什么），不拿它冤枉人`,
@@ -1526,7 +1645,7 @@ try {
         // 点过的那一段页面会存下来复用（不再跑一趟接口、不再花一次钱），所以这里只要求"不报错 + 至少有一段是现取的"
         check(`${tg}：答错后那两个词真的点得响（学就发生在这一刻），而且取过的那一段不再重复取`, m.hidden && played.length - m0 <= 2, { msg: m, 新取: played.length - m0 });
         check(`${tg}：答错这一态没有横向滚动`, await noHScroll(p), await p.evaluate(() => [document.documentElement.scrollWidth, innerWidth]));
-        if (SHOTS) await p.locator('#w-pron').screenshot({ path: path.join(SHOTS, '发音训练-答错回到对照听-390.png') });
+        if (SHOTS) await p.locator('#f-pron').screenshot({ path: path.join(SHOTS, '发音训练-答错回到对照听-390.png') });
       } else {
         check(`${tg}：第 ${k + 1} 题答对时不强塞对照听（只有答错 / 分不出来才塞）`, rs.backHidden, rs.back);
       }
@@ -1537,7 +1656,7 @@ try {
     await p.waitForFunction(() => !document.getElementById('pn-s4').hidden, null, { timeout: WAIT });
     const s4 = await p.evaluate(async () => {
       const g = (i) => document.getElementById(i);
-      const j = await (await fetch('/api/pron/state')).json();
+      const j = await (await fetch('/api/en/pron/state')).json();
       return { score: g('pn-score').textContent, line: g('pn-line').textContent, tw: g('pn-tw').textContent, how: g('pn-how').textContent,
         twHidden: g('pn-twwrap').hidden, wrong: g('pn-wrong').innerText, wrongHidden: g('pn-wrongwrap').hidden,
         again: g('pn-again2').textContent, h: Math.round(g('pn-again2').getBoundingClientRect().height), 记录: j['记录'] };
@@ -1552,11 +1671,11 @@ try {
       rec['考过几轮'] === 1 && rec['过关几轮'] === 1 && rec['最近一轮'] && rec['最近一轮']['对'] === 对 && rec['最近一轮']['过关'] === true, rec);
     check(`${tg}：过关页有大按钮「再考一轮」（${s4.h}px ≥ 52）`, s4.again === '再考一轮' && s4.h >= 52, s4);
     check(`${tg}：过关这一屏没有横向滚动`, await noHScroll(p), await p.evaluate(() => [document.documentElement.scrollWidth, innerWidth]));
-    if (SHOTS) { await p.evaluate(() => document.getElementById('w-pron').scrollIntoView({ block: 'start' })); await p.waitForTimeout(150); await p.locator('#w-pron').screenshot({ path: path.join(SHOTS, '发音训练-过关绕口令-390.png') }); }
+    if (SHOTS) { await p.evaluate(() => document.getElementById('f-pron').scrollIntoView({ block: 'start' })); await p.waitForTimeout(150); await p.locator('#f-pron').screenshot({ path: path.join(SHOTS, '发音训练-过关绕口令-390.png') }); }
     // 刷新后记录还在（存在服务器上，不在浏览器里）
     await p.reload();
     await p.waitForSelector('#app:not([hidden])', { timeout: WAIT });
-    await waitFor(p, '#w-pron');
+    await waitFor(p, '#f-pron');
     await p.waitForFunction(() => /过关过/.test(document.getElementById('pn-lead-t').textContent), null, { timeout: WAIT }).catch(() => {});
     check(`${tg}：刷新后这一组的记录还在（一句话结论写"七组里过关过 1 组"）`, /过关过 1 组/.test(await txt(p, '#pn-lead')), await txt(p, '#pn-lead'));
 
@@ -1586,8 +1705,8 @@ try {
     // ⑦ 浏览器不支持录音时也当面说（另开一个把 mediaDevices 拿掉的页面来量）
     const p2 = await open({ width: 390, height: 844 });
     await p2.addInitScript(() => { Object.defineProperty(navigator, 'mediaDevices', { value: undefined, configurable: true }); });
-    await login(p2, '/#/work/pron');
-    await waitFor(p2, '#w-pron');
+    await login(p2, '/#/Practical/pron');
+    await waitFor(p2, '#f-pron');
     await p2.waitForFunction(() => document.querySelectorAll('#pn-cbtns .btn').length > 0, null, { timeout: WAIT });
     await 走完跟我做(p2);
     await p2.click('#pn-go2');
@@ -1625,8 +1744,8 @@ try {
         const o = md.getUserMedia.bind(md);
         md.getUserMedia = (c) => o(c).then((s) => { s.getTracks().forEach((t) => window.__tracks.push(t)); return s; });
       });
-      await login(q, '/#/work/pron');
-      await waitFor(q, '#w-pron');
+      await login(q, '/#/Practical/pron');
+      await waitFor(q, '#f-pron');
       await q.waitForFunction(() => document.querySelectorAll('#pn-cbtns .btn').length > 0, null, { timeout: WAIT });
       const tg = '390 宽·假媒体流';
 
@@ -1651,7 +1770,7 @@ try {
       check(`${tg}：界面上当面写明"这个画面不会离开你的手机"`,
         m.隐私.includes('不会离开你的手机') && m.隐私.includes('不上传') && m.隐私.includes('不保存'), m.隐私);
       check(`${tg}：镜子左边标着这是第几步要做的`, m.cap.includes('这一步要做的'), m.cap);
-      if (SHOTS) { mkdirSync(SHOTS, { recursive: true }); await q.locator('#w-pron').screenshot({ path: path.join(SHOTS, '发音训练-镜子开着-390.png') }); }
+      if (SHOTS) { mkdirSync(SHOTS, { recursive: true }); await q.locator('#f-pron').screenshot({ path: path.join(SHOTS, '发音训练-镜子开着-390.png') }); }
       const n1 = net.length;
       await q.click('#pn-miroff');
       const off = await q.evaluate(() => ({ 没流: document.getElementById('pn-cam').srcObject === null,
@@ -1672,6 +1791,10 @@ try {
       await q.waitForTimeout(900); // 真的录一段（假麦克风）
       await mic.click();
       await q.waitForFunction(() => !document.getElementById('pn-my').hidden, null, { timeout: 8000 });
+      // 回放区出现 ≠ 纠说那一路已经回来：录音是本地就有的，而"没绑 Workers AI"那句是接口回来才写上去的。
+      // 不等这一句就读 #pn-saymsg，大多数时候读到的是空字符串 —— 2026-11-13 这条就是这么随机红的。
+      // 本地一定没有 AI 绑定，所以这句必然出现，等它是确定的，不是靠 sleep 碰运气。
+      await q.waitForFunction(() => (document.getElementById('pn-saymsg').innerText || '').trim().length > 0, null, { timeout: 15000 });
       const my = await q.evaluate(() => ({ std: document.getElementById('pn-std').textContent, mine: document.getElementById('pn-mine').textContent,
         slow: document.getElementById('pn-slow').textContent, chain: document.getElementById('pn-chain').textContent,
         t: document.getElementById('pn-my-t').textContent, note: document.querySelector('#pn-my .pn-saynote').textContent,
@@ -1690,7 +1813,7 @@ try {
         放.慢 === 'true' && 放.字.includes('慢速开着') && 放.错, 放);
       check(`${tg}：这一屏没有横向滚动`, await noHScroll(q), await q.evaluate(() => [document.documentElement.scrollWidth, innerWidth]));
       // 整块自己也不许横着溢出（按钮上的字长了会把 1fr 1fr 的格子撑开，页面级的横滚未必量得到）
-      const 溢 = await q.evaluate(() => ['w-pron', 'pn-my', 'pn-mirwrap', 'pn-coach', 'pn-rail'].map((id) => { const e = document.getElementById(id); return [id, e.scrollWidth - e.clientWidth]; }));
+      const 溢 = await q.evaluate(() => ['f-pron', 'pn-my', 'pn-mirwrap', 'pn-coach', 'pn-rail'].map((id) => { const e = document.getElementById(id); return [id, e.scrollWidth - e.clientWidth]; }));
       check(`${tg}：发音训练这一块里没有任何一行横着溢出（跟我做那张卡、四级轨、镜子、回放都量过）`, 溢.every(([, d]) => d <= 1), 溢);
       if (SHOTS) await q.locator('#pn-say').screenshot({ path: path.join(SHOTS, '发音训练-对照听连着放-390.png') });
       await ctx.close();
