@@ -38,7 +38,7 @@
  * 一次纠说约 0.78 neurons（46.63 / 音频分钟 × 1 秒），很便宜，但闸照样要有。
  * **不碰密钥**（底线 1）：whisper 走 `env.AI` 绑定，不新增任何环境变量；这里存的只有组号、词、听成了什么和几个数。
  *
- * 入口 `/api/en/pron/*`（state / answer / round / say；语音在 `/api/en/audio/<键>`，由 queue.ts 直接分给 src/en-audio.ts，**只读不生成**），
+ * 入口 `/api/en/pron/*`（state / answer / round / say / done；`done` 是清单上打勾和取消打勾，见第三节；语音在 `/api/en/audio/<键>`，由 queue.ts 直接分给 src/en-audio.ts，**只读不生成**），
  * 走的是后台登录（queue.ts 的 sessionOk）。
  */
 import type { Env } from './env';
@@ -184,7 +184,121 @@ export function readAsr(r: unknown): { text: string; 真实秒数: number | null
 }
 
 // ======================================================================
-// 三、接口
+// 三、清单：打开先看见要做的事（2026-11-13）
+// ======================================================================
+/**
+ * Amos 的原话：「学习进度模块 **将我要做的事情 做成一个 checklist 让我照着做 并在完成后一个一个的勾选确认**」
+ * 「发音训练 不是要改成 发音的待办事项吗？」「点某一条才进去做那件事，做完回来自动打上勾」。
+ * 所以「发音训练」打开**默认是一张清单**，不是第 1 步。七组，每组最多四条。
+ *
+ * **四条里有两条存库、两条算出来**（底线 3：同一件事只能有一个真相）：
+ *  - `follow`（跟我做 N 步走完）、`listen`（对照听过）→ 在这之前**库里一条记录都没有**，所以新加一张 `en_done`
+ *    （迁移 0024）。机器勾的那一下**只在那件事刚发生的那一刻写一次**，他取消掉就不会被勾回来。
+ *  - `quiz`（考 10 题过关）、`say`（用 🎤 把这一组念过一遍）→ `pron_round` / `pron_say` 里**本来就有**这两件事的答案，
+ *    现算就是了，**不写 `en_done`**。代价是这两条**没法手动勾、也没法取消**，页面上照实说明「按你的成绩算的」。
+ *
+ * **照实说，不硬凑**：第 7 组（/ʒ/ vs /dʒ/）一对最小对立对都没有 → 它的清单里**没有**「对照听过」和
+ * 「考 10 题过关」这两条，并把 `earNote()` 那句**原样**摆在那一组下面说明为什么；第 4 组只有 1 对，同样照实说。
+ *
+ * **任务名（「跟我做 19 步走完」那种）不在这里写**：每组的步数由 `src/pron-lesson.ts` 的阶梯算，
+ * 而 `pron-lesson.ts` 要从这里取 `wordId`，反过来 import 会成环（文件头说过）。所以步数由页面从阶梯数到，
+ * 这里只说**这一组有哪几条、勾上了没有**。
+ */
+
+/** 一条待办是哪一件事 */
+export type 任务名 = 'follow' | 'listen' | 'quiz' | 'say';
+/** 存在 `en_done` 里的那两条：机器勾得上、他也取消得掉 */
+export const 勾在库里的: readonly 任务名[] = ['follow', 'listen'];
+/** 按现成成绩算出来的那两条：不写 `en_done`，所以**不给手动勾、也不给取消** */
+export const 算出来的: readonly 任务名[] = ['quiz', 'say'];
+/** 任务键：`s1:<组>:<任务>`（`s1` = 课程 S1，句子训练将来用 `s2:`，同一张表装得下） */
+export const 任务键 = (组: string, 任务: 任务名): string => `s1:${组}:${任务}`;
+
+/** 这一组有哪几条待办（第 7 组没有听辨题 → 没有「对照听过」和「考 10 题过关」，不硬凑） */
+export function 任务们(g: PronGroup): 任务名[] {
+  const out: 任务名[] = ['follow'];
+  if (canEar(g)) out.push('listen', 'quiz');
+  if (asrWordsOf(g).length) out.push('say');
+  return out;
+}
+
+/** 任务键 → 哪一组的哪一条；不认识、或者这一组根本没有这一条，都回 null */
+export function 解析任务键(k: unknown): { g: PronGroup; 任务: 任务名; 键: string } | null {
+  const m = /^s1:([a-z0-9]+):([a-z]+)$/.exec(typeof k === 'string' ? k.trim() : '');
+  if (!m) return null;
+  const g = groupOf(m[1]);
+  const 任务 = m[2] as 任务名;
+  if (!g || !任务们(g).includes(任务)) return null;
+  return { g, 任务, 键: 任务键(g.id, 任务) };
+}
+
+/** 库里一行（en_done） */
+export interface DoneRow { k: string; at: number; by: string }
+/** 清单上的一条 */
+export interface 待办 {
+  键: string;
+  任务: 任务名;
+  勾上了: boolean;
+  /** 'auto' 机器记的 / 'me' 他自己点的 / '成绩' 算出来的（算出来的那两条没有"谁勾的"可言，就写成绩） */
+  谁勾的: string | null;
+  什么时候: number | null;
+  /** 算出来的那两条：不给手动勾、不给取消 */
+  算出来的: boolean;
+  /** 算出来的那两条才有：现在到哪一步了（例如 3 / 7 个词念过） */
+  进度: string | null;
+  /** 算出来的那两条才有：为什么不给手动改（页面原样显示） */
+  说明: string;
+}
+export interface 清单组 { 组: string; 名字: string; 第几课: number; 说明: string; 事: 待办[] }
+
+/** 这一组能纠说的词里，有几个**至少用 🎤 念过一次**（`pron_say` 现成数据，不另外记） */
+export function 念过几个(g: PronGroup, says: SayRow[]): { 一共: number; 念过: number } {
+  const 词 = asrWordsOf(g).map((w) => w.word);
+  return { 一共: 词.length, 念过: 词.filter((w) => says.some((s) => s.grp === g.id && s.target === w)).length };
+}
+
+/** 整张清单：两条查 `en_done`，两条按成绩算 */
+export function 清单(rounds: RoundRow[], says: SayRow[], done: DoneRow[]): 清单组[] {
+  const 记 = new Map(done.map((r) => [r.k, r]));
+  return GROUPS.map((g) => ({
+    组: g.id,
+    名字: `${g.a.ipa} vs ${g.b.ipa}`,
+    第几课: g.lesson,
+    // 这一组的清单为什么短一截（第 7 组没有听辨题）、或者为什么题会重复（第 4 组只有 1 对）：
+    // **原样用 earNote()**，不另写一句（底线 3）。四对齐全、没什么特别的那几组就不啰嗦。
+    说明: canEar(g) && minimalPairsOf(g).length > 1 ? '' : earNote(g),
+    事: 任务们(g).map((t): 待办 => {
+      if (t === 'quiz') {
+        const 过 = rounds.filter((r) => r.grp === g.id && r.passed === 1).sort((a, b) => a.at - b.at);
+        return {
+          键: 任务键(g.id, t), 任务: t, 勾上了: 过.length > 0, 谁勾的: 过.length ? '成绩' : null,
+          什么时候: 过.length ? 过[0].at : null, 算出来的: true, 进度: `${过.length} 轮过关`,
+          说明: `按你的成绩算的：这一组有一轮 ${ROUND_N} 题过关就算做完，不能手动改。`,
+        };
+      }
+      if (t === 'say') {
+        const { 一共, 念过 } = 念过几个(g, says);
+        return {
+          键: 任务键(g.id, t), 任务: t, 勾上了: 一共 > 0 && 念过 >= 一共, 谁勾的: 一共 > 0 && 念过 >= 一共 ? '成绩' : null,
+          什么时候: null, 算出来的: true, 进度: `${念过} / ${一共}`,
+          说明: `按你的成绩算的：${一共} 个能纠说的词每个都念过一次才算做完（现在 ${念过} / ${一共}），不能手动改。`,
+        };
+      }
+      const r = 记.get(任务键(g.id, t));
+      return { 键: 任务键(g.id, t), 任务: t, 勾上了: !!r, 谁勾的: r ? r.by : null, 什么时候: r ? r.at : null, 算出来的: false, 进度: null, 说明: '' };
+    }),
+  }));
+}
+
+/** 一句话结论要的三个数：**还剩几件事**（页面顶上那句就写这个，不写"正在读取"） */
+export function 清单小结(L: 清单组[]): { 一共: number; 做完了: number; 还剩: number } {
+  const 事 = L.flatMap((z) => z.事);
+  const 做完了 = 事.filter((x) => x.勾上了).length;
+  return { 一共: 事.length, 做完了, 还剩: 事.length - 做完了 };
+}
+
+// ======================================================================
+// 四、接口
 // ======================================================================
 
 const json = (data: unknown, status = 200) =>
@@ -201,6 +315,16 @@ async function readRounds(env: Env): Promise<RoundRow[]> {
 async function readSays(env: Env): Promise<SayRow[]> {
   const r = await env.DB.prepare('SELECT grp, target, heard, hit, at FROM pron_say ORDER BY at').all<SayRow>();
   return r.results ?? [];
+}
+async function readDone(env: Env): Promise<DoneRow[]> {
+  const r = await env.DB.prepare('SELECT k, at, by FROM en_done').all<DoneRow>();
+  return r.results ?? [];
+}
+/** 清单和它的一句话结论：做完一件事（考完一轮、纠说一次、打上一个勾）就顺手回一份新的，页面不用再跑一趟 */
+async function 这份清单(env: Env): Promise<{ 清单: 清单组[]; 小结: { 一共: number; 做完了: number; 还剩: number } }> {
+  const [rounds, says, done] = await Promise.all([readRounds(env), readSays(env), readDone(env)]);
+  const L = 清单(rounds, says, done);
+  return { 清单: L, 小结: 清单小结(L) };
 }
 
 /** 今天纠说了几次（这一块自己的闸，存 settings，照 src/voice.ts 的做法） */
@@ -219,9 +343,15 @@ async function bumpSays(env: Env, now: number): Promise<void> {
 }
 
 async function state(env: Env, now: number): Promise<Response> {
-  const [rounds, says, 今天纠说, cap, used] = await Promise.all([readRounds(env), readSays(env), saysToday(env, now), dailyCap(env), usedToday(env, now)]);
+  const [rounds, says, done, 今天纠说, cap, used] = await Promise.all([
+    readRounds(env), readSays(env), readDone(env), saysToday(env, now), dailyCap(env), usedToday(env, now),
+  ]);
+  const L = 清单(rounds, says, done);
   return json({
     一共几组: GROUPS.length,
+    // 打开先看见的那一屏就是它（页面默认视图 = 清单，不是第 1 步）
+    清单: L,
+    小结: 清单小结(L),
     一轮几题: ROUND_N,
     及格线: `${ROUND_N} 题对 ${Math.ceil(ROUND_N * PASS_RATE)} 题（${Math.round(PASS_RATE * 100)}%）`,
     组: GROUPS.map(groupCard),
@@ -291,7 +421,49 @@ async function round(env: Env, now: number, body: Record<string, unknown>): Prom
     绕口令: 过 ? g.twister : null,
     怎么读: 过 ? '用三最法读 —— 最大声、最清晰、最慢速，直到没有任何发音错误。' : null,
     记录: groupStats(await readRounds(env)),
+    // 「考 10 题过关」那一条是**按成绩算的**：这一轮过了，清单上那个勾当场就有了（不另写一行）
+    ...(await 这份清单(env)),
   });
+}
+
+/**
+ * 清单上打一个勾、或者取消一个勾（`POST done`）。
+ *  - 只认 `follow` / `listen` 这两条：另外两条按成绩算，**手动勾不上、也取消不了**，当面说清楚。
+ *  - `谁`：`auto` 是机器在"那件事刚发生"的那一刻记的（**已经有一行就不动它**，不覆盖他自己点的那一下）；
+ *    `me` 是他自己点的。
+ *  - 取消 = 删那一行。机器**不会在下次打开时把它勾回来**（自动勾只在事情发生的那一刻写一次）。
+ */
+async function doneApi(env: Env, now: number, body: Record<string, unknown>): Promise<Response> {
+  const f = 解析任务键(body.键);
+  if (!f) {
+    const 原样 = String(body.键 ?? '').slice(0, 40) || '（空）';
+    const 算的 = /^s1:[a-z0-9]+:(quiz|say)$/.test(String(body.键 ?? '').trim());
+    if (算的)
+      return bad(
+        '这一条是按你的成绩算的，勾不上也取消不了。',
+        '「考 10 题过关」要这一组真考过一轮 80%；「用 🎤 把这一组念过一遍」要这一组每个能纠说的词都念过一次。去做那件事，勾会自己上。',
+        409,
+      );
+    return bad(`这条待办不在发音训练的清单里：${原样}`, '刷新一下页面，它会重新给你这份清单。', 400);
+  }
+  if (算出来的.includes(f.任务))
+    return bad(
+      '这一条是按你的成绩算的，勾不上也取消不了。',
+      '去做那件事，勾会自己上 —— 它只看库里的成绩，不看这里点没点。',
+      409,
+    );
+  if (typeof body.勾 !== 'boolean') return bad('没收到"是勾上还是取消"。', '刷新一下页面，再点一次那个方框。', 400);
+  const 谁 = body.谁 === 'auto' ? 'auto' : 'me';
+  if (body.勾 && 谁 === 'auto')
+    // 机器勾：**已经有一行就不动它**（不把他自己点的那一下改写成机器记的）
+    await env.DB.prepare('INSERT INTO en_done (k, at, by) VALUES (?1, ?2, ?3) ON CONFLICT (k) DO NOTHING').bind(f.键, now, 谁).run();
+  else if (body.勾)
+    await env.DB.prepare('INSERT INTO en_done (k, at, by) VALUES (?1, ?2, ?3) ON CONFLICT (k) DO UPDATE SET at = ?2, by = ?3').bind(f.键, now, 谁).run();
+  else await env.DB.prepare('DELETE FROM en_done WHERE k = ?1').bind(f.键).run();
+
+  const 这份 = await 这份清单(env);
+  const 这一条 = 这份.清单.find((z) => z.组 === f.g.id)?.事.find((x) => x.键 === f.键) ?? null;
+  return json({ 键: f.键, 组: f.g.id, 任务: f.任务, 这一条, ...这份 });
 }
 
 /** 纠说：他念，机器听，告诉他**机器听成了哪个词** */
@@ -377,6 +549,8 @@ async function say(env: Env, now: number, body: Record<string, unknown>): Promis
     今天已经纠了几次: 今天 + 1,
     一天最多: MAX_SAY_PER_DAY,
     纠说累计: sayStats(await readSays(env)),
+    // 「用 🎤 把这一组念过一遍」那一条也是**按成绩算的**：这个词刚念过，清单跟着变（不另写一行）
+    ...(await 这份清单(env)),
   });
 }
 
@@ -388,9 +562,10 @@ async function say(env: Env, now: number, body: Record<string, unknown>): Promis
 export async function pronApi(env: Env, req: Request, now: number, sub: string): Promise<Response | null> {
   if (sub === 'state' && req.method === 'GET') return state(env, now);
   if (req.method !== 'POST') return null;
-  if (sub !== 'answer' && sub !== 'round' && sub !== 'say') return null;
+  if (sub !== 'answer' && sub !== 'round' && sub !== 'say' && sub !== 'done') return null;
   const body = (await req.json().catch(() => ({}))) as Record<string, unknown>;
   if (sub === 'answer') return answer(body);
   if (sub === 'round') return round(env, now, body);
+  if (sub === 'done') return doneApi(env, now, body);
   return say(env, now, body);
 }

@@ -35,6 +35,7 @@ import { PRON_CSS, PRON_JS, PRON_MOD } from '../src/pron-page';
 import {
   ASR_MODEL, ASR_PER_MIN, asrNeurons, audioTextOf, canEar, earNote, groupCard, groupOf, groupStats, judgeSay, MAX_SAY_PER_DAY,
   normalize, PASS_RATE, passedRound, PRON_ASR_PURPOSE, PRON_PROJECT, PRON_WORD_IDS, ROUND_N, sayStats, wordId, wordOf, type RoundRow,
+  清单, 清单小结, 任务们, 任务键, 解析任务键, 算出来的, 勾在库里的, 念过几个, type SayRow,
 } from '../src/pron';
 import { audioKey, AUDIO_REV, 英文声音, 中文声音, 指令文本 } from '../src/en-audio';
 import { asrWordsOf, GROUPS, groupsForEar, minimalPairsOf } from '../src/pron-content';
@@ -61,7 +62,7 @@ beforeAll(async () => {
 });
 afterAll(async () => dispose());
 beforeEach(async () => {
-  await db.batch(['pron_round', 'pron_say', 'pron_audio', 'en_audio', 'en_audio_part', 'settings', 'ai_usage', 'model_usage', 'usage_by_project', 'usage_by_purpose', 'auth_fail', 'auth_lock'].map((t) => db.prepare(`DELETE FROM ${t}`)));
+  await db.batch(['pron_round', 'pron_say', 'pron_audio', 'en_audio', 'en_audio_part', 'en_done', 'settings', 'ai_usage', 'model_usage', 'usage_by_project', 'usage_by_purpose', 'auth_fail', 'auth_lock'].map((t) => db.prepare(`DELETE FROM ${t}`)));
 });
 
 const env = (): Env => ({ DB: db, ENVIRONMENT: 'test', COPILOT_PASSWORD: PASS });
@@ -171,12 +172,19 @@ describe('1. 位置：工作台二级菜单回到 6 项，发音训练挪进 Pra
 
 // ======================================================================
 describe('2. 四步循环：跟我做 → 对照听 → 同一组连考 10 题 → 80% 过关给绕口令', () => {
-  it('结构上就是四步，四块各一个，默认停在第 1 步（跟我做）', () => {
+  it('结构上就是四步，四块各一个；**默认停在第 0 屏（清单）**，四步全藏着（2026-11-13 改）', () => {
     for (const id of ['pn-s1', 'pn-s2', 'pn-s3', 'pn-s4']) expect([id, PRON_MOD.includes('id="' + id + '"')]).toEqual([id, true]);
     expect(PRON_MOD).toMatch(/<div id="pn-s2" hidden>/);
     expect(PRON_MOD).toMatch(/<div id="pn-s3" hidden>/);
     expect(PRON_MOD).toMatch(/<div id="pn-s4" hidden>/);
-    expect(PRON_MOD).not.toMatch(/<div id="pn-s1" hidden>/);
+    // 2026-11-13（Amos：「将我要做的事情 做成一个 checklist 让我照着做」）：**第 1 步也默认藏着** ——
+    // 打开先看见的是清单 #pn-s0（它是唯一一个不带 hidden 的屏），点了「跟我做」那一条才进第 1 步。
+    expect(PRON_MOD).toMatch(/<div id="pn-s1" hidden>/);
+    expect(PRON_MOD).toMatch(/<div id="pn-s0">/);
+    expect(PRON_MOD).not.toMatch(/<div id="pn-s0" hidden>/);
+    // 选一组那排和四步条也默认藏着（清单那一屏上不该有半截练习界面）
+    expect(PRON_MOD).toContain('<div class="pn-pick" id="pn-pick" hidden>');
+    expect(PRON_MOD).toContain('id="pn-steps" aria-label="四步" hidden>');
     // 2026-11-12：第 1 步从「看口型」（一张参考卡）改成「跟我做」（一次一句），标题跟着改
     expect(PRON_MOD).toContain('1 跟我做');
     expect(PRON_MOD).not.toContain('1 看口型');
@@ -212,13 +220,14 @@ describe('2. 四步循环：跟我做 → 对照听 → 同一组连考 10 题 �
       expect([w, PRON_JS.includes(w)]).toEqual([w, false]);
     expect(existsSync(path.join(ROOT, 'src/pron-mouth.ts'))).toBe(false);
     // 第 1 步里没有判对错的东西
-    const s1 = PRON_MOD.slice(PRON_MOD.indexOf('<div id="pn-s1">'), PRON_MOD.indexOf('<div id="pn-s2"'));
+    const s1 = PRON_MOD.slice(PRON_MOD.indexOf('<div id="pn-s1" hidden>'), PRON_MOD.indexOf('<div id="pn-s2"'));
     for (const w of ['对了', '不对', '两个听着一样']) expect([w, s1.includes(w)]).toEqual([w, false]);
   });
 
   it('第 2 步不考，而且**他自己点「我听出来了，开始考」才进第 3 步**（不会自己跳过去）', () => {
     expect(PRON_MOD).toContain('id="pn-go3">我听出来了，开始考</button>');
-    expect(PRON_JS).toContain("var g3=pq('pn-go3');if(g3)g3.addEventListener('click',pRound);");
+    // 2026-11-13 多了一件事：点这个按钮**这一刻**顺手把清单上「对照听过」那一条勾上（见第 17 组）
+    expect(PRON_JS).toContain("var g3=pq('pn-go3');if(g3)g3.addEventListener('click',function(){if(PN.cur)pAuto(PN.cur['组'],'listen');pRound();});");
     // 第 2 步的对照听：两个词各一个按钮，**想点几次点几次**（没有次数限制、没有计数）
     expect(PRON_JS).toContain("b.textContent='🔊 '+p[k]['词'];");
     const cmp = PRON_JS.slice(PRON_JS.indexOf('function pCmp'), PRON_JS.indexOf('function pSayWords'));
@@ -736,7 +745,9 @@ describe('8. 不让他打字、按钮够大、不碰密钥', () => {
     const tables = new Set([...t.matchAll(/(?:FROM|INTO|UPDATE)\s+(\w+)/g)].map((m) => m[1]).filter((x) => x !== 'SET'));
     // 2026-11-13 第二次：语音的字节挪进分块表 en_audio_part（迁移 0023），en-audio.ts 那条 SELECT 查的是它。
     // 范围还是**没变宽**：多的那张是语音自己的表，照样在 src/english.ts 的清单里。
-    expect([...tables].sort()).toEqual(['en_audio_part', 'pron_round', 'pron_say', 'settings']);
+    // 第三次：清单打上的勾进 en_done（迁移 0024）。同样是英语自己的表，照样在清单里；
+    // 这一条是**封闭名单**——多碰一张别人的表就会红。
+    expect([...tables].sort()).toEqual(['en_audio_part', 'en_done', 'pron_round', 'pron_say', 'settings']);
   });
 
   it('不造占位词：没有「暂无」「待补」这类（底线 3）', () => {
@@ -799,22 +810,36 @@ const fakeStream = () => {
  * 开一个只有 #f-pron 的 jsdom 页面，跑真的 PRON_JS。
  * 网络一律走替身并**逐条记下来**（镜子那一段要证明"一次都没往外发"）。
  */
-async function pronPage(opt: { cam?: 'ok' | 'deny' | 'none'; camDelay?: number; 没有语音?: boolean; auto?: 'on' | 'off' } = {}) {
+async function pronPage(opt: { cam?: 'ok' | 'deny' | 'none'; camDelay?: number; 没有语音?: boolean; auto?: 'on' | 'off'; 留在清单?: boolean; done?: { k: string; at: number; by: string }[] } = {}) {
   const jsdomName = 'jsdom';
   const { JSDOM } = await import(jsdomName);
   // 给一个 url：about:blank 下 jsdom 没有 localStorage，而「自动念」的开关就存在那里
   const dom = new JSDOM(`<!doctype html><body><main id="app">${PRON_MOD}</main></body>`, { url: 'https://pron.test/', runScripts: 'outside-only', pretendToBeVisual: true });
   const w = dom.window as unknown as PWin;
   const net: string[] = [];
+  /** 每一次 POST 发出去的**原文**（打勾那条要证明"谁勾的"写的是 auto 还是 me） */
+  const posts: { url: string; body: Record<string, unknown> }[] = [];
   const plays: { src: string; rate: number }[] = [];
   let pauses = 0;
-  const state = { 一共几组: GROUPS.length, 一轮几题: ROUND_N, 组: GROUPS.map(groupCard), 记录: [], 纠说: {}, 旧的去哪了: '样例' };
+  /** 假后端里那张 en_done：打上的勾存这里，清单**用真的那个 清单() 算**（页面和服务端不许各算一套） */
+  const doneRows: { k: string; at: number; by: string }[] = [...(opt.done ?? [])];
+  const 这份清单 = () => { const L = 清单([], [], doneRows); return { 清单: L, 小结: 清单小结(L) }; };
+  const state = { 一共几组: GROUPS.length, 一轮几题: ROUND_N, 组: GROUPS.map(groupCard), 记录: [], 纠说: {}, 旧的去哪了: '样例', ...这份清单() };
   const anyW = w as any;
   let 关了 = false;
-  anyW.fetch = async (url: string, init?: { method?: string }) => {
+  anyW.fetch = async (url: string, init?: { method?: string; body?: string }) => {
     if (关了) return new Promise(() => {}); // 窗口关掉之后不再往回调（不然回调里 document 已经没了，冒一个假错误）
     net.push((init?.method ?? 'GET') + ' ' + url);
-    if (/state$/.test(url)) return { ok: true, status: 200, json: async () => JSON.parse(JSON.stringify(state)) };
+    if (init?.method === 'POST') posts.push({ url, body: JSON.parse(String(init.body ?? '{}')) });
+    if (/state$/.test(url)) return { ok: true, status: 200, json: async () => JSON.parse(JSON.stringify({ ...state, ...这份清单() })) };
+    // 打勾 / 取消打勾：照服务端那套做（勾上插一行、取消删那一行），回一份新清单
+    if (/done$/.test(url)) {
+      const b = JSON.parse(String((init as { body?: string } | undefined)?.body ?? '{}'));
+      const i = doneRows.findIndex((r) => r.k === b['键']);
+      if (b['勾'] && i < 0) doneRows.push({ k: b['键'], at: T0, by: b['谁'] === 'auto' ? 'auto' : 'me' });
+      if (!b['勾'] && i >= 0) doneRows.splice(i, 1);
+      return { ok: true, status: 200, json: async () => JSON.parse(JSON.stringify({ 键: b['键'], ...这份清单() })) };
+    }
     if (/\/api\/en\/audio\//.test(url)) {
       // 没有语音 = 库里还没生成这一条：服务端回 404 两句话（src/en-audio.ts 的「还没生成」）
       if (opt.没有语音)
@@ -876,7 +901,28 @@ async function pronPage(opt: { cam?: 'ok' | 'deny' | 'none'; camDelay?: number; 
   const click = (id: string) => ($(id) as HTMLButtonElement).click();
   const until = async (cond: () => boolean) => { for (let k = 0; k < 400 && !cond(); k++) await new Promise((ok) => setTimeout(ok, 5)); return cond(); };
   w.pronOpen();
-  await until(() => w.document.querySelectorAll('#pn-cbtns .btn').length > 0);
+  await until(() => w.document.querySelectorAll('#pn-list .pn-todo').length > 0);
+  /** 清单上现在的样子：一组一项，每项是 [这件事的名字, 勾上了没有, 点得动吗] */
+  const 清单上 = () => [...w.document.querySelectorAll('#pn-list .pn-grp')].map((d) => ({
+    标题: d.querySelector('.g-t')!.textContent!,
+    说明: d.querySelector('.g-note')?.textContent ?? '',
+    事: [...d.querySelectorAll('.pn-todo')].map((li) => ({
+      名: li.querySelector('.go')!.textContent!,
+      勾: (li.querySelector('.pn-tick') ?? li.querySelector('.fix'))!.textContent!,
+      能点方框: !!li.querySelector('button.pn-tick'),
+    })),
+  }));
+  /** 清单上那一行（第几组从 0 数） */
+  const 行 = (组: number, 第几条: number) => w.document.querySelectorAll('#pn-list .pn-grp')[组].querySelectorAll('.pn-todo')[第几条];
+  /** 点清单上那一条进去做 */
+  const 进 = (组: number, 第几条: number) => (行(组, 第几条).querySelector('.go') as HTMLButtonElement).click();
+  /** 自己点那个方框（勾上 / 取消） */
+  const 点方框 = (组: number, 第几条: number) => (行(组, 第几条).querySelector('button.pn-tick') as HTMLButtonElement).click();
+  // **像真人一样从清单进第 1 组的「跟我做」**：下面那些老检查量的都是进去以后的事
+  if (opt.留在清单 !== true) {
+    进(0, 0);
+    await until(() => w.document.querySelectorAll('#pn-cbtns .btn').length > 0 && !w.document.getElementById('pn-s1')!.hidden);
+  }
   const useGroup = (id: string) => {
     const b = [...w.document.querySelectorAll('#pn-pick .btn')].find((x) => x.textContent!.includes(id));
     (b as HTMLButtonElement).click();
@@ -892,7 +938,7 @@ async function pronPage(opt: { cam?: 'ok' | 'deny' | 'none'; camDelay?: number; 
   const next = () => cbtn('做好了')!.click();
   // 关之前先让在飞的那几个 promise 落地（取发音、FileReader、POST say），再关窗口
   const close = async () => { 关了 = true; await new Promise((ok) => setTimeout(ok, 80)); w.close(); };
-  return { w, $, click, until, net, plays, pauses: () => pauses, cams, useGroup, cbtn, shown, next, close };
+  return { w, $, click, until, net, posts, plays, pauses: () => pauses, cams, useGroup, cbtn, shown, next, close, 清单上, 进, 点方框, doneRows };
 }
 
 // ======================================================================
@@ -1426,5 +1472,374 @@ describe('13. 慢速对照 + 他自己的录音回放（录过才出现，刷新
   it('页面上照实说这段录音刷新就没了、不另外上传（底线 3、9）', () => {
     expect(PRON_MOD).toContain('留在这个页面里，不另外上传');
     expect(PRON_MOD).toContain('刷新页面就没了');
+  });
+});
+
+// ======================================================================
+// 17 组：**待办清单**（2026-11-13）
+// Amos 的原话：「学习进度模块 **将我要做的事情 做成一个 checklist 让我照着做 并在完成后一个一个的勾选确认**」
+// 「发音训练 不是要改成 发音的待办事项吗？」「点某一条才进去做那件事，做完回来自动打上勾」。
+// 守五件事：
+//   ① **打开默认就是清单**，不是第 1 步；七组，每组最多四条；步数 N **不写死**（从阶梯算）。
+//   ② 两条存库（follow / listen，表 en_done，迁移 0024）、两条按现成成绩算（quiz / say，不写库）。
+//   ③ 机器勾**只在那件事刚发生的那一刻写一次** —— 他取消掉的那一条，**下次打开不会被勾回来**。
+//   ④ 算出来的那两条**不给手动勾、也不给取消**，而且界面上照实写明"按你的成绩算的"（不画点不动的按钮）。
+//   ⑤ **第 7 组照实说**：它的清单里没有「对照听过」「考 10 题过关」，那句话原样来自 earNote()。
+// ======================================================================
+describe('17. 待办清单：打开先看见要做的事，点一条进去做，做完回来自动打勾', () => {
+  const G7 = GROUPS[6];
+  const 行 = (gid: string, t: string) => 清单([], [], []).find((z) => z.组 === gid)!.事.find((x) => x.任务 === t);
+
+  it('一组最多四条，顺序就是他定的那四条；**第 7 组只有两条**（没有听辨题，不硬凑）', () => {
+    expect(任务们(G1)).toEqual(['follow', 'listen', 'quiz', 'say']);
+    expect(任务们(GROUPS[3])).toEqual(['follow', 'listen', 'quiz', 'say']); // 第 4 组只有 1 对，但照样考得了
+    expect(任务们(G7)).toEqual(['follow', 'say']);
+    expect(canEar(G7)).toBe(false);
+    // 存库的两条和算出来的两条，加起来正好是全部四条，不重不漏
+    expect([...勾在库里的, ...算出来的].sort()).toEqual(['follow', 'listen', 'quiz', 'say']);
+  });
+
+  it('任务键是 s1:<组>:<任务>；不存在的组 / 不存在的任务 / 第 7 组没有的那两条，一律不认', () => {
+    expect(任务键('g1', 'follow')).toBe('s1:g1:follow');
+    expect(解析任务键('s1:g1:follow')).toMatchObject({ 任务: 'follow', 键: 's1:g1:follow' });
+    expect(解析任务键('s1:g1:follow')!.g.id).toBe('g1');
+    for (const 坏 of ['', ' ', 's1:g9:follow', 's1:g1:nope', 's2:g1:follow', 'g1:follow', 's1:g7:listen', 's1:g7:quiz', 42, null])
+      expect([坏, 解析任务键(坏)]).toEqual([坏, null]);
+  });
+
+  it('七组一共 26 件事（6 组 × 4 + 第 7 组 2），**一开始一件都没做**', () => {
+    const L = 清单([], [], []);
+    expect(L.length).toBe(7);
+    expect(L.flatMap((z) => z.事).length).toBe(26);
+    expect(清单小结(L)).toEqual({ 一共: 26, 做完了: 0, 还剩: 26 });
+    expect(L.every((z) => z.事.every((x) => !x.勾上了))).toBe(true);
+    // 键一个不重
+    const ks = L.flatMap((z) => z.事.map((x) => x.键));
+    expect(new Set(ks).size).toBe(ks.length);
+  });
+
+  it('「跟我做」「对照听过」查的是 en_done：谁勾的、什么时候，原样回给页面', () => {
+    const L = 清单([], [], [{ k: 's1:g1:follow', at: T0, by: 'auto' }, { k: 's1:g2:listen', at: T0 + 5, by: 'me' }]);
+    const g1 = L[0].事.find((x) => x.任务 === 'follow')!;
+    expect([g1.勾上了, g1.谁勾的, g1.什么时候, g1.算出来的]).toEqual([true, 'auto', T0, false]);
+    const g2 = L[1].事.find((x) => x.任务 === 'listen')!;
+    expect([g2.勾上了, g2.谁勾的, g2.什么时候]).toEqual([true, 'me', T0 + 5]);
+    expect(清单小结(L)).toEqual({ 一共: 26, 做完了: 2, 还剩: 24 });
+  });
+
+  it('「考 10 题过关」按 pron_round 算：**过关过一轮才算做完**，没过的那几轮不算；不写 en_done', () => {
+    const 一轮 = (grp: string, passed: number, at = T0): RoundRow => ({ grp, at, asked: 10, ok: passed ? 9 : 5, same: 0, passed });
+    expect(行('g1', 'quiz')!.勾上了).toBe(false);
+    const 没过 = 清单([一轮('g1', 0)], [], []);
+    expect(没过[0].事.find((x) => x.任务 === 'quiz')!.勾上了).toBe(false);
+    const 过了 = 清单([一轮('g1', 0), 一轮('g1', 1, T0 + 9)], [], []);
+    const q = 过了[0].事.find((x) => x.任务 === 'quiz')!;
+    expect([q.勾上了, q.谁勾的, q.什么时候, q.算出来的, q.进度]).toEqual([true, '成绩', T0 + 9, true, '1 轮过关']);
+    expect(q.说明).toContain('按你的成绩算的');
+  });
+
+  it('「用 🎤 把这一组念过一遍」按 pron_say 算：**每个能纠说的词都至少念过一次**才算做完（进度写 n / 共几个）', () => {
+    const 词 = asrWordsOf(G1).map((x) => x.word);
+    expect(词.length).toBe(7);
+    const 念 = (target: string): SayRow => ({ grp: 'g1', target, heard: target, hit: 1, at: T0 });
+    expect(念过几个(G1, [])).toEqual({ 一共: 7, 念过: 0 });
+    // 同一个词念十次还是只算一个（算的是"覆盖了几个词"，不是"按了几次"）
+    expect(念过几个(G1, [念(词[0]), 念(词[0]), 念(词[0])])).toEqual({ 一共: 7, 念过: 1 });
+    const 差一个 = 清单([], 词.slice(0, 6).map(念), [])[0].事.find((x) => x.任务 === 'say')!;
+    expect([差一个.勾上了, 差一个.进度]).toEqual([false, '6 / 7']);
+    const 齐了 = 清单([], 词.map(念), [])[0].事.find((x) => x.任务 === 'say')!;
+    expect([齐了.勾上了, 齐了.进度, 齐了.算出来的]).toEqual([true, '7 / 7', true]);
+    // 别的组念的不算在这一组头上
+    expect(清单([], 词.map((x) => ({ ...念(x), grp: 'g2' })), [])[0].事.find((x) => x.任务 === 'say')!.勾上了).toBe(false);
+  });
+
+  it('**第 7 组照实说为什么少两条**，那句话一个字都是 earNote() 的原文；第 4 组（只有 1 对）也照实说', () => {
+    const L = 清单([], [], []);
+    expect(L[6].说明).toBe(earNote(G7));
+    expect(L[6].说明).toContain('一对最小对立对都没有');
+    expect(L[6].事.map((x) => x.任务)).toEqual(['follow', 'say']);
+    expect(L[3].说明).toBe(earNote(GROUPS[3]));
+    expect(L[3].说明).toContain('只有 1 对');
+    // 四对齐全、没什么特别可说的那几组就不啰嗦（不编一句废话）
+    expect([L[0].说明, L[1].说明, L[2].说明]).toEqual(['', '', '']);
+  });
+
+  it('接口 state 里就带着这份清单和一句话结论（页面不用再跑一趟）', async () => {
+    const r = await api('state');
+    expect(r.status).toBe(200);
+    expect(r.body['清单']).toHaveLength(7);
+    expect(r.body['小结']).toEqual({ 一共: 26, 做完了: 0, 还剩: 26 });
+  });
+
+  it('打一个勾：en_done 里真的多一行（by=me），state 里那一条跟着变', async () => {
+    const r = await api('done', { 键: 's1:g1:follow', 勾: true, 谁: 'me' });
+    expect(r.status).toBe(200);
+    expect(r.body['这一条']).toMatchObject({ 键: 's1:g1:follow', 勾上了: true, 谁勾的: 'me' });
+    expect(r.body['小结']).toEqual({ 一共: 26, 做完了: 1, 还剩: 25 });
+    const row = await db.prepare('SELECT k, at, by FROM en_done').first<{ k: string; at: number; by: string }>();
+    expect(row).toEqual({ k: 's1:g1:follow', at: T0, by: 'me' });
+    const st = await api('state');
+    expect((st.body['清单'] as any[])[0].事[0]).toMatchObject({ 勾上了: true, 谁勾的: 'me' });
+  });
+
+  it('机器勾（谁=auto）记成 auto；**已经有一行就不动它**（不把他自己点的那一下改写成机器记的）', async () => {
+    await api('done', { 键: 's1:g1:listen', 勾: true, 谁: 'me' });
+    await api('done', { 键: 's1:g1:listen', 勾: true, 谁: 'auto' }, env(), T0 + 1000);
+    const row = await db.prepare("SELECT k, at, by FROM en_done WHERE k = 's1:g1:listen'").first<{ at: number; by: string }>();
+    expect(row).toEqual({ k: 's1:g1:listen', at: T0, by: 'me' });
+  });
+
+  // ------------------------------------------------------------------
+  // ③ 这是整张清单最要命的一条：**取消掉的勾，下次打开不许自己回来**
+  // 机器勾只在"那件事刚发生"的那一刻写一次（页面那一头见下面的 18 组），
+  // 服务端这一头就是：取消 = 删那一行，而 state **只照库里有什么说什么**，不重算、不补写。
+  // ------------------------------------------------------------------
+  it('取消一条机器勾上的：那一行真的删了，**再读 state 还是没勾**（不会被自动勾回来）', async () => {
+    await api('done', { 键: 's1:g1:follow', 勾: true, 谁: 'auto' });
+    expect(((await api('state')).body['清单'] as any[])[0].事[0]).toMatchObject({ 勾上了: true, 谁勾的: 'auto' });
+    const 取消 = await api('done', { 键: 's1:g1:follow', 勾: false, 谁: 'me' });
+    expect(取消.status).toBe(200);
+    expect(取消.body['这一条']).toMatchObject({ 勾上了: false, 谁勾的: null });
+    expect(await db.prepare('SELECT COUNT(*) AS n FROM en_done').first<{ n: number }>()).toEqual({ n: 0 });
+    // 再读三次（相当于他关掉页面、过一会儿、临睡前再打开；登录只活 12 小时，更久的那一头由 e2e 的"刷新"量）：
+    // 一次都不许自己变回勾上
+    for (const now of [T0 + 1, T0 + 3600_000, T0 + 11 * 3600_000]) {
+      const st = await api('state', undefined, env(), now);
+      expect([now, (st.body['清单'] as any[])[0].事[0]['勾上了']]).toEqual([now, false]);
+      expect([now, (st.body['小结'] as any)['做完了']]).toEqual([now, 0]);
+    }
+    expect(await db.prepare('SELECT COUNT(*) AS n FROM en_done').first<{ n: number }>()).toEqual({ n: 0 });
+  });
+
+  it('算出来的那两条**勾不上也取消不了**：当面说清楚（两句话），库里一行都不写', async () => {
+    for (const k of ['s1:g1:quiz', 's1:g1:say', 's1:g7:say']) {
+      for (const 勾 of [true, false]) {
+        const r = await api('done', { 键: k, 勾, 谁: 'me' });
+        expect([k, 勾, r.status]).toEqual([k, 勾, 409]);
+        expect(String(r.body['出错'])).toContain('按你的成绩算的');
+        expect(String(r.body['怎么办']).length).toBeGreaterThan(5);
+      }
+    }
+    expect(await db.prepare('SELECT COUNT(*) AS n FROM en_done').first<{ n: number }>()).toEqual({ n: 0 });
+  });
+
+  it('不认识的键、缺"勾上还是取消"：两句话说清楚，库里不写', async () => {
+    for (const 键 of ['s1:g9:follow', 's1:g7:listen', 'xxx', '', 's2:g1:follow']) {
+      const r = await api('done', { 键, 勾: true, 谁: 'me' });
+      expect([键, r.status]).toEqual([键, 400]);
+      expect(String(r.body['怎么办'])).toContain('刷新');
+    }
+    const 没说勾不勾 = await api('done', { 键: 's1:g1:follow', 谁: 'me' });
+    expect(没说勾不勾.status).toBe(400);
+    expect(String(没说勾不勾.body['出错'])).toContain('勾上还是取消');
+    expect(await db.prepare('SELECT COUNT(*) AS n FROM en_done').first<{ n: number }>()).toEqual({ n: 0 });
+  });
+
+  it('一轮考完 / 纠说一次，回的那份清单里**那一条当场就是新的**（页面不用再跑一趟 state）', async () => {
+    const 一轮 = await api('round', { 组: 'g1', 考了: 10, 对: 9, 两个听着一样: 0 });
+    expect(一轮.body['过关']).toBe(true);
+    expect((一轮.body['清单'] as any[])[0].事.find((x: any) => x.任务 === 'quiz')).toMatchObject({ 勾上了: true, 谁勾的: '成绩' });
+    // 考过一轮**不会**顺手把别的条也勾上（它只是它自己）
+    expect((一轮.body['清单'] as any[])[0].事.find((x: any) => x.任务 === 'follow')!['勾上了']).toBe(false);
+    expect(await db.prepare('SELECT COUNT(*) AS n FROM en_done').first<{ n: number }>()).toEqual({ n: 0 });
+    const ai = fakeAi();
+    const 纠 = await api('say', { 组: 'g1', 词: BED, audio: AUDIO_B64, seconds: 1 }, ai.env());
+    expect(纠.status).toBe(200);
+    const say = (纠.body['清单'] as any[])[0].事.find((x: any) => x.任务 === 'say');
+    expect(say).toMatchObject({ 勾上了: false, 进度: '1 / 7' });
+  });
+});
+
+// ======================================================================
+describe('18. 清单那一屏：打开先看见它；做完回来那一条自己勾上；取消了就不许再勾回来', () => {
+  it('**打开默认是清单**：四步整个藏着，选一组那排和四步条也藏着', async () => {
+    const p = await pronPage({ 留在清单: true });
+    try {
+      expect(p.$('pn-s0').hidden).toBe(false);
+      for (const id of ['pn-s1', 'pn-s2', 'pn-s3', 'pn-s4', 'pn-pick', 'pn-pick-h', 'pn-steps', 'pn-tolistwrap']) expect([id, p.$(id).hidden]).toEqual([id, true]);
+      const L = p.清单上();
+      expect(L.length).toBe(7);
+      expect(L.flatMap((z) => z.事).length).toBe(26);
+      // **N 不写死**：第 1 组的阶梯有几步，清单上就写几步
+      expect(L[0].事.map((x) => x.名)).toEqual([`跟我做 ${LESSON[0].步.length} 步走完`, '对照听过', `考 ${ROUND_N} 题过关`, '用 🎤 把这一组念过一遍（0 / 7）']);
+      expect(L[0].事.map((x) => x.勾)).toEqual(['☐', '☐', '☐', '☐']);
+      // 每一组的步数都是那一组自己的（七组不一样，没有一个写死的数）
+      expect(L.map((z) => z.事[0].名)).toEqual(LESSON.map((z) => `跟我做 ${z.步.length} 步走完`));
+    } finally { await p.close(); }
+  });
+
+  it('一句话结论写**还剩几件事**，不是"读取中"；打开时一个 done 都没发（不会自作主张先勾上几条）', async () => {
+    const p = await pronPage({ 留在清单: true });
+    try {
+      expect(p.$('pn-lead-t').textContent).toBe('还剩 26 件事没做（一共 26 件，做完了 0 件）。');
+      expect(p.$('pn-lead-t').textContent).not.toContain('读取');
+      expect(p.$('pn-dot').className).toBe('dot gray');
+      expect(p.posts.filter((x) => /done$/.test(x.url))).toEqual([]);
+    } finally { await p.close(); }
+  });
+
+  it('算出来的那两条：**没有方框按钮**（不画点不动的按钮），旁边照实写"按你的成绩算的"', async () => {
+    const p = await pronPage({ 留在清单: true });
+    try {
+      const L = p.清单上();
+      expect(L[0].事.map((x) => x.能点方框)).toEqual([true, true, false, false]);
+      const why = [...p.w.document.querySelectorAll('#pn-list .pn-grp')[0].querySelectorAll('.pn-why')].map((e) => e.textContent!);
+      expect(why.length).toBe(2);
+      expect(why.every((t) => t.startsWith('按你的成绩算的'))).toBe(true);
+    } finally { await p.close(); }
+  });
+
+  it('第 7 组的清单上**没有**「考 10 题过关」和「对照听过」，并照实说明为什么（earNote 原文）', async () => {
+    const p = await pronPage({ 留在清单: true });
+    try {
+      const g7 = p.清单上()[6];
+      expect(g7.事.map((x) => x.名)).toEqual([`跟我做 ${LESSON[6].步.length} 步走完`, '用 🎤 把这一组念过一遍（0 / 8）']);
+      expect(g7.事.map((x) => x.名).join('|')).not.toContain('考 ');
+      expect(g7.事.map((x) => x.名).join('|')).not.toContain('对照听');
+      expect(g7.说明).toBe(earNote(GROUPS[6]));
+    } finally { await p.close(); }
+  });
+
+  it('清单上只有界面用语：**一个对比词、一句绕口令、一条口型定位都没有**（教学内容只出自阶梯，底线 3）', async () => {
+    const p = await pronPage({ 留在清单: true });
+    try {
+      // 只量**任务名**那部分：每组底下那句说明是 earNote() 的原文（它本来就要点名那一对词，
+      // 「现成的话术原样用，不要自己写」），不在这条的管辖范围内
+      const 字 = [...p.w.document.querySelectorAll('#pn-list .go, #pn-list .g-t, #pn-list .pn-why')].map((e) => e.textContent!).join(' ');
+      for (const g of GROUPS) {
+        expect([g.id, 字.includes(g.twister)]).toEqual([g.id, false]);
+        for (const pr of g.pairs) for (const k of ['a', 'b'] as const)
+          expect([pr[k].word, new RegExp('(^|[^A-Za-z])' + pr[k].word + '([^A-Za-z]|$)').test(字)]).toEqual([pr[k].word, false]);
+        for (const m of [...g.a.mouth, ...g.b.mouth]) expect([m, 字.includes(m)]).toEqual([m, false]);
+      }
+    } finally { await p.close(); }
+  });
+
+  it('点「跟我做」那一条**才**进第 1 步；走完最后一步，那一条当场自己勾上（谁勾的写 auto）', async () => {
+    const p = await pronPage({ 留在清单: true });
+    try {
+      expect(p.$('pn-s1').hidden).toBe(true);
+      p.进(0, 0);
+      await p.until(() => !p.$('pn-s1').hidden);
+      expect(p.$('pn-s0').hidden).toBe(true);
+      expect(p.$('pn-tolistwrap').hidden).toBe(false);
+      expect(p.posts.filter((x) => /done$/.test(x.url))).toEqual([]); // 只是进去，还没做完 → 不许先勾
+      // 走完这一组的每一步
+      for (let k = 0; k < LESSON[0].步.length + 2 && p.$('pn-fin').hidden; k++) p.next();
+      expect(p.$('pn-fin').hidden).toBe(false);
+      await p.until(() => p.posts.some((x) => /done$/.test(x.url)));
+      const 发的 = p.posts.filter((x) => /done$/.test(x.url));
+      expect(发的.length).toBe(1);
+      expect(发的[0].body).toEqual({ 键: 's1:g1:follow', 勾: true, 谁: 'auto' });
+      expect(p.doneRows).toEqual([{ k: 's1:g1:follow', at: T0, by: 'auto' }]);
+      // 回清单：那一条真的变勾上了，一句话结论也跟着少一件
+      (p.$('pn-fin2list') as HTMLButtonElement).click();
+      expect(p.$('pn-s0').hidden).toBe(false);
+      expect(p.$('pn-s1').hidden).toBe(true);
+      await p.until(() => p.清单上()[0].事[0].勾 === '☑');
+      expect(p.清单上()[0].事[0]).toMatchObject({ 勾: '☑' });
+      expect(p.$('pn-lead-t').textContent).toBe('还剩 25 件事没做（一共 26 件，做完了 1 件）。');
+      expect(p.$('pn-dot').className).toBe('dot amber');
+      // 再走一遍**不会再发一次**（已经勾上了就不重复请求）
+      p.进(0, 0);
+      await p.until(() => !p.$('pn-s1').hidden);
+      for (let k = 0; k < LESSON[0].步.length + 2 && p.$('pn-fin').hidden; k++) p.next();
+      await new Promise((ok) => setTimeout(ok, 30));
+      expect(p.posts.filter((x) => /done$/.test(x.url)).length).toBe(1);
+    } finally { await p.close(); }
+  });
+
+  it('**他取消掉的那一条，打开和进出都不会被勾回来**（自动勾只在走完那一刻写一次）', async () => {
+    const p = await pronPage({ 留在清单: true });
+    try {
+      // 先让机器勾上
+      p.进(0, 0);
+      await p.until(() => !p.$('pn-s1').hidden);
+      for (let k = 0; k < LESSON[0].步.length + 2 && p.$('pn-fin').hidden; k++) p.next();
+      await p.until(() => p.doneRows.length === 1);
+      (p.$('pn-fin2list') as HTMLButtonElement).click();
+      await p.until(() => p.清单上()[0].事[0].勾 === '☑');
+      // 他自己把这个勾取消（想重做）
+      p.点方框(0, 0);
+      await p.until(() => p.doneRows.length === 0 && p.清单上()[0].事[0].勾 === '☐');
+      expect(p.posts.filter((x) => /done$/.test(x.url)).map((x) => x.body)).toEqual([
+        { 键: 's1:g1:follow', 勾: true, 谁: 'auto' },
+        { 键: 's1:g1:follow', 勾: false, 谁: 'me' },
+      ]);
+      expect(p.清单上()[0].事[0].勾).toBe('☐');
+      // 进去又出来（没走完）：一次都不许再勾回来
+      p.进(0, 0);
+      await p.until(() => !p.$('pn-s1').hidden);
+      p.next();
+      (p.$('pn-tolist') as HTMLButtonElement).click();
+      await new Promise((ok) => setTimeout(ok, 30));
+      expect(p.清单上()[0].事[0].勾).toBe('☐');
+      expect(p.doneRows).toEqual([]);
+      expect(p.posts.filter((x) => /done$/.test(x.url)).length).toBe(2);
+    } finally { await p.close(); }
+  });
+
+  it('**重新打开（刷新）也不会被勾回来**：库里没有那一行，这一屏就照实画成没勾，而且不发任何 done', async () => {
+    // 上一条测的是同一个页面里取消；这一条测的是"他取消完关掉页面，第二天再打开"——
+    // 库里那一行已经删了（done 传空），打开只画清单、不补写（页面一头的保证；服务端那一头在第 17 组）
+    const p = await pronPage({ 留在清单: true, done: [] });
+    try {
+      expect(p.清单上()[0].事[0].勾).toBe('☐');
+      p.进(0, 0);
+      await p.until(() => !p.$('pn-s1').hidden);
+      (p.$('pn-tolist') as HTMLButtonElement).click();
+      await new Promise((ok) => setTimeout(ok, 30));
+      expect(p.清单上()[0].事[0].勾).toBe('☐');
+      expect(p.posts.filter((x) => /done$/.test(x.url))).toEqual([]);
+      // 反过来：库里有那一行（他自己点的），打开就是勾上的
+      const q = await pronPage({ 留在清单: true, done: [{ k: 's1:g1:follow', at: T0, by: 'me' }] });
+      try {
+        expect(q.清单上()[0].事[0].勾).toBe('☑');
+        expect(q.$('pn-lead-t').textContent).toBe('还剩 25 件事没做（一共 26 件，做完了 1 件）。');
+      } finally { await q.close(); }
+    } finally { await p.close(); }
+  });
+
+  it('他自己点方框也能**直接勾上**（记 by=me），再点一下取消', async () => {
+    const p = await pronPage({ 留在清单: true });
+    try {
+      p.点方框(0, 1); // 第 1 组的「对照听过」
+      await p.until(() => p.清单上()[0].事[1].勾 === '☑');
+      expect(p.doneRows[0]).toMatchObject({ k: 's1:g1:listen', by: 'me' });
+      p.点方框(0, 1);
+      await p.until(() => p.清单上()[0].事[1].勾 === '☐');
+      expect(p.doneRows).toEqual([]);
+    } finally { await p.close(); }
+  });
+
+  it('点「对照听过」那一条进第 2 步；点「我听出来了，开始考」那一刻，这一条自己勾上', async () => {
+    const p = await pronPage({ 留在清单: true });
+    try {
+      p.进(0, 1);
+      await p.until(() => !p.$('pn-s2').hidden);
+      expect(p.$('pn-s0').hidden).toBe(true);
+      expect(p.posts.filter((x) => /done$/.test(x.url))).toEqual([]);
+      (p.$('pn-go3') as HTMLButtonElement).click();
+      await p.until(() => p.doneRows.length === 1 && p.清单上()[0].事[1].勾 === '☑');
+      expect(p.posts.filter((x) => /done$/.test(x.url))[0].body).toEqual({ 键: 's1:g1:listen', 勾: true, 谁: 'auto' });
+      expect(p.$('pn-s3').hidden).toBe(false); // 勾上的同时真的开考了
+      (p.$('pn-tolist') as HTMLButtonElement).click();
+      expect(p.清单上()[0].事[1].勾).toBe('☑');
+    } finally { await p.close(); }
+  });
+
+  it('点「用 🎤 把这一组念过一遍」进第 2 步（纠说和对照听同一屏）；「考 10 题过关」那一条直接开考', async () => {
+    const p = await pronPage({ 留在清单: true });
+    try {
+      p.进(0, 3);
+      await p.until(() => !p.$('pn-s2').hidden);
+      expect(p.w.document.querySelectorAll('#pn-saywords button').length).toBeGreaterThan(0);
+      (p.$('pn-tolist') as HTMLButtonElement).click();
+      p.进(0, 2);
+      await p.until(() => !p.$('pn-s3').hidden);
+      expect(p.$('pn-where').textContent).toContain('第 1 题');
+      // 进去做题这件事本身不勾任何条（勾要等成绩）
+      expect(p.posts.filter((x) => /done$/.test(x.url))).toEqual([]);
+    } finally { await p.close(); }
   });
 });

@@ -287,7 +287,10 @@ describe('4. 迁移 0022 / 0023 只 CREATE；旧的 pron_audio 一行都没动',
     expect(all.map((f) => Number(f.slice(0, 4)))).toEqual(all.map((_, i) => i + 1));
     expect(all[21]).toBe('0022_en_audio.sql');
     expect(all[22]).toBe('0023_en_audio_part.sql');
-    expect(all.length).toBe(23);   // 这次**只新增 0023**，一个旧文件都没改、没删
+    // 2026-11-13 再新增一个 0024（发音训练的待办清单打上的勾，表 en_done；见 test/pron.test.ts 第 17 组）。
+    // 这条守的事没变：**编号连续、旧文件一个都没删**。
+    expect(all[23]).toBe('0024_en_done.sql');
+    expect(all.length).toBe(24);
   });
 });
 
