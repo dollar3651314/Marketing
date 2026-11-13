@@ -5,7 +5,7 @@ import { PRON_CSS, PRON_JS, PRON_MOD } from './pron-page';
 import { FUNDS_CSS, FUNDS_JS, FUNDS_MOD } from './funds-page';
 import { EXTENSION_VERSION } from './extension-download';
 import { PWA_HEAD, PWA_JS } from './pwa';
-import { MAX_PROJECT_PAGES, PLATFORM_CONFIG, PROJECT_PAGES_FALLBACK, PROJECT_SITE } from './projects';
+import { MAX_PROJECT_PAGES, PLATFORM_CONFIG, PROJECT_APPS, PROJECT_PAGES_FALLBACK, PROJECT_SITE } from './projects';
 
 /**
  * 网页后台 = 工作平台（agents C136；工作平台批 1：原型 agents 工作平台/原型-工作平台-v2.html，技术方案 工作平台/技术方案-工作平台*.md，Amos 2026-11-01"都按建议"）。
@@ -164,6 +164,13 @@ th{font-size:12px;color:var(--muted);font-weight:600}td.n{text-align:right}
 .plat .todo::before{content:"";position:absolute;left:0;top:10px;bottom:10px;width:3px;border-radius:0 3px 3px 0;background:transparent}
 .plat .todo.over::before{background:var(--err)}.plat .todo.soon::before{background:var(--amber)}
 #v-project .todos>.todo:first-child{border-top:0}
+/* 「现在能打开什么」的卡片（2026-11-13）：手机上一行一个，宽屏并排 */
+#f-applist{display:flex;flex-wrap:wrap;gap:var(--s3)}
+#f-applist .appcard{flex:1 1 220px;min-width:0;display:block;text-decoration:none;color:inherit;
+  padding:var(--s4) var(--s5);border:1px solid var(--line);border-radius:12px;background:var(--surface-2);min-height:60px}
+#f-applist .appcard:hover,#f-applist .appcard:focus-visible{border-color:var(--teal);color:var(--teal-ink)}
+#f-applist .appcard b{display:block;font-size:var(--fs-body);font-weight:700}
+#f-applist .appcard span{display:block;font-size:var(--fs-aux);color:var(--muted);margin-top:3px;line-height:1.5}
 .plat .tick{width:24px;height:24px;border-radius:50%;border:2px solid var(--line);background:var(--surface);cursor:pointer;padding:0;display:grid;place-items:center;color:transparent;font-size:13px;font-weight:700;align-self:start;margin-top:1px}
 .plat .tick:hover{border-color:var(--teal);color:var(--teal)}.plat .tick:disabled{background:var(--ok);border-color:var(--ok);color:#fff}
 .plat .tick:focus-visible{outline:2px solid var(--amber);outline-offset:2px}
@@ -554,6 +561,12 @@ ${ASSETS_CSS}${TTS_CSS}${VOICE_CSS}${PRON_CSS}${FUNDS_CSS}
   <section class="page plat" id="v-project" hidden>
     <div class="crumb"><h1 id="f-title">项目</h1><span class="hint" id="f-site"></span></div>
     <p class="warnbar" id="f-err" role="status" hidden></p>
+    <!-- 现在能打开什么（2026-11-13）：这个项目已经上线、点一下就能用的东西。
+         没有就整块不出现。数据在 src/projects.ts PROJECT_APPS。 -->
+    <section class="card mod" id="f-apps" hidden>
+      <header class="mh"><h2>现在能打开什么</h2><span class="sp"></span><span class="aux">点一下直接用</span></header>
+      <div class="mbody"><div class="apps" id="f-applist"></div></div>
+    </section>
     <!-- 批 B：读取失败时（照工作台 #w-stale）：上面一条红色提示 + "再读一次"；还没读到过就各模块写"暂时读不到"，不冒充"没事要做" -->
     <div class="errbar" id="f-stale" role="alert" hidden><span id="f-stale-t"></span><span class="sp"></span><button class="btn small" type="button" id="f-retry">再读一次</button></div>
     <!-- 批 B：每个模块 = 标题行 → 一句话结论 .lead（数据算）→ 主内容 → 最后一块折叠说明 details.more（默认收起） -->
@@ -754,7 +767,7 @@ let page='', proj='';
 const FIXED={work:'w-',tools:'t-',company:'',funds:'fu-'};
 const PFX={work:'w-',project:'f-',tools:'t-',company:'co-',funds:'fu-'}, TOOLV={queue:'list',usage:'usage',ext:'ext',reply:'reply',byproj:'usage',hook:'hook',assets:'assets',tts:'tts',voice:'voice'};
 // 有项目页的项目：先用兜底名单（src/projects.ts PROJECT_PAGES_FALLBACK），读到 /api/company 后由第三段脚本调 setProjects() 换成真的
-const PCFG=${JSON.stringify({ PROJECT_PAGES_FALLBACK, MAX_PROJECT_PAGES, PROJECT_SITE })};
+const PCFG=${JSON.stringify({ PROJECT_PAGES_FALLBACK, MAX_PROJECT_PAGES, PROJECT_SITE, PROJECT_APPS })};
 let PROJS=PCFG.PROJECT_PAGES_FALLBACK.slice();
 // 批 B 走查：名单还没从服务器读到之前（projsReady=false），地址里的项目名先照着打开（刷新 #/Practical 不再被兜底名单踢回工作台、也不再拿第一个项目的数据冒充）；
 // 读到名单后 setProjects() 再判一次，不在名单里的才回工作台
@@ -773,6 +786,12 @@ function setProjects(list){const next=(list&&list.length?list:PCFG.PROJECT_PAGES
 /** 二级菜单、标题、副标题指向哪个项目 */
 function setProject(p){proj=p;$('f-title').textContent=p;
   document.querySelectorAll('#sub-project a[data-m]').forEach((a)=>{a.href='#/'+encodeURIComponent(p)+'/'+a.dataset.m;});
+  // 现在能打开什么：没有就整块不出现（不摆一个空壳）
+  const apps=PCFG.PROJECT_APPS[p]||[],ab=$('f-applist');ab.replaceChildren();
+  $('f-apps').hidden=!apps.length;
+  apps.forEach(function(x){const a=document.createElement('a');a.className='appcard';a.href=x.url;a.target='_blank';a.rel='noopener';
+    const b=document.createElement('b');b.textContent=x['名'];a.append(b);
+    const s2=document.createElement('span');s2.textContent=x['说'];a.append(s2);ab.append(a);});
   const site=PCFG.PROJECT_SITE[p],e=$('f-site');e.replaceChildren();
   if(site){e.append(site.text+' ');const a=document.createElement('a');a.href=site.url;a.target='_blank';a.rel='noopener';a.textContent=site.url.replace(/^https:\\/\\/(www\\.)?/,'');e.append(a);}}
 renderNav1();

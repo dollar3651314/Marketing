@@ -64,6 +64,23 @@ export const PROJECT_SITE: Record<string, { text: string; url: string }> = {
   forecast: { text: 'Quick Come 官网', url: 'https://www.quickcome.online' },
 };
 
+/**
+ * 项目页顶上的「现在能打开什么」：这个项目已经上线、Amos 点一下就能用的东西。
+ *
+ * 2026-11-13 加。那天 Practical 的发音训练和句子训练都上了生产，Amos 打开工作台的
+ * Practical 页签，上面一个都没有，当场问：「不是说上生产呢，practical 菜单下 为什么没有」。
+ * `PROJECT_SITE` 只是标题旁边一行小字，放不下，所以单给一块。
+ *
+ * 规矩：**只放真的上线了、点开就能用的**。还没上线的不许写进来（底线 3）。
+ */
+export const PROJECT_APPS: Record<string, { 名: string; 说: string; url: string }[]> = {
+  Practical: [
+    { 名: '发音训练', 说: 'S1 · 七组易错音：跟我做 → 对照听 → 考 10 题', url: 'https://practical.jeff-zhaifei.workers.dev/pron' },
+    { 名: '句子训练', 说: 'S2 · 13 课语法：一屏一步，每句话都标出处', url: 'https://practical.jeff-zhaifei.workers.dev/s2' },
+    { 名: '盲听卡', 说: '听 2 秒，从四张图里选一张', url: 'https://practical.jeff-zhaifei.workers.dev/' },
+  ],
+};
+
 export const PLATFORM_CONFIG = { REPORT_FIELDS, REPORT_FORMS, METRIC_FROM_REPORT, SEE_PLATFORM, NOT_PROJECTS, REPO_PROJECT, PROJECT_PAGES_FALLBACK };
 
 /** 填数字的一格：全角数字转半角、去掉所有空白；要非负整数（最多 9 位），有上限的不超过上限。返回规范化后的值或错在哪 */
