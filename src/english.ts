@@ -15,7 +15,7 @@
 
 /** 属于英语学习的源文件（相对仓库根）。拆出去 = 把这几个文件原样复制到新仓库。 */
 export const 源文件 = [
-  // 全部语音（S1 S2 共用一张表 en_audio：微软 Edge 的神经网络语音预先生成，运行时只读）
+  // 全部语音（S1 S2 共用：元数据在 en_audio、字节分块存在 en_audio_part；预先生成，运行时只读）
   'src/en-audio.ts',
   'src/en-audio-list.ts',
   // 发音训练（S1 七组易错音）
@@ -62,14 +62,18 @@ export const 允许的宿主 = ['src/admin-page.ts', 'src/queue.ts'] as const;
  */
 export const 共用底座 = ['./env', './usage', './workers-ai'] as const;
 
-/** 英语学习自己的表（迁移在 `迁移` 里）。**这几张里是 Amos 练出来的真实成绩，任何时候都不许 DROP。** */
-export const 表 = ['pron_round', 'pron_say', 'pron_audio', 'en_audio'] as const;
+/**
+ * 英语学习自己的表（迁移在 `迁移` 里）。**这几张里是 Amos 练出来的真实成绩，任何时候都不许 DROP。**
+ * 2026-11-13 多一张 `en_audio_part`（迁移 0023）：一条语音的字节**拆成多行存**，
+ * `en_audio` 还在、还存元数据（线上 `SQLITE_TOOBIG` 那次，详见 src/en-audio.ts）。
+ */
+export const 表 = ['pron_round', 'pron_say', 'pron_audio', 'en_audio', 'en_audio_part'] as const;
 
 /**
  * 建这几张表的迁移。拆出去 = 把这个文件照抄过去 + 从旧库 `.dump` 出这三张表的数据。
  * 句子训练这一批**不存进度、不加迁移**（学习进度模块是第二批，由 Amos 决定要不要做）。
  */
-export const 迁移 = ['migrations/0019_pron.sql', 'migrations/0022_en_audio.sql'] as const;
+export const 迁移 = ['migrations/0019_pron.sql', 'migrations/0022_en_audio.sql', 'migrations/0023_en_audio_part.sql'] as const;
 
 /**
  * 共用的 key-value 表 `settings` 里属于英语的 key 前缀（纠说的一天 200 次闸）。

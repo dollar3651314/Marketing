@@ -30,6 +30,12 @@ jobs:
         with:
           node-version: 22
           cache: npm
+      # 单元测试里有一条要跑仓库里那个 Python 生成脚本（语音分块那条「最大的一条逐字节原样读回来」）：
+      # 它只把 SQL 打印出来，**不连网、不装 edge-tts、不写任何库**。ubuntu-24.04 自带 python3，
+      # 这里固定一下版本，免得镜像换了没有。
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
       - name: 项目地图和项目索引（C53）
         run: node scripts/check-project-index.mjs
       - run: npm ci --no-audit --no-fund

@@ -1,5 +1,19 @@
 /**
- * 英语学习这一块的**语音**（表 `en_audio` / 迁移 0022；接口 `/api/en/audio/<键>`）。
+ * 英语学习这一块的**语音**（表 `en_audio` + `en_audio_part` / 迁移 0022、0023；接口 `/api/en/audio/<键>`）。
+ *
+ * ## 2026-11-13：一条音频**拆成多行存**（线上 `SQLITE_TOOBIG`）
+ *
+ * 线上 `scripts/build-audio.py --env production` 写第一条就挂，日志原文是
+ * `✘ [ERROR] statement too long: SQLITE_TOOBIG`。量过的大小分布：190 条，最小 11,232 字节 /
+ * 中位 14,544 / **最大 83,232**。mp3 进 D1 只能写成十六进制字面量 `X'…'`，**字符数是字节数的两倍**，
+ * 最大那条就是 166,464 个字符 ≈ 166 KB，超过 D1 **单条 SQL 100 KB** 的上限（不是批太大，`--batch` 本来就是 1）。
+ *
+ * 所以字节现在存在 `en_audio_part`（迁移 0023）：每块不超过 30,000 字节，`part` 从 0 开始，
+ * 读的时候按 `part` 顺序拼回去（`拼块()`）。`en_audio` 留着存元数据（念的是哪一句、多大、什么时候写的），
+ * 它的 `mp3` 列**不删**，新写入一律写空。**没有改成 base64**：base64 白白涨 33%，也和这套 BLOB 读法不兼容。
+ *
+ * **块缺号就当成还没生成**（底线 3）：不从 0 开始、或者中间断了（有 0、2 没有 1），一律走下面那套
+ * 「这一段语音还没生成」的 404 —— **绝不把残缺的音频当成完整的发出去**。
  *
  * ## 2026-11-13：换成微软 Edge 的神经网络语音，运行时只读不生成
  *
@@ -92,6 +106,28 @@ export function toBytes(v: unknown): Uint8Array {
   return new Uint8Array(0);
 }
 
+/**
+ * 把 `en_audio_part` 查出来的那些块**按 `part` 顺序拼成一整段 mp3**。
+ *
+ * 拼不出来就回 `null`（调用方照实说「还没生成」），有三种情况（底线 3）：
+ *  - **一块都没有** —— 这一条根本还没生成过；
+ *  - **缺号或不连续**（不从 0 开始、或者有 0、2 没有 1）—— 写了一半断了，
+ *    **绝不把残缺的音频当成完整的发出去**（少一块就是中间少一段声音，听的人根本发现不了）；
+ *  - **拼出来是 0 字节** —— 和空行一样，当成没有，不回一段放不出声的 mp3。
+ */
+export function 拼块(行: { part: unknown; mp3: unknown }[]): Uint8Array | null {
+  if (!行.length) return null;
+  const 块 = 行.map((r) => ({ 第几块: Number(r.part), 字节: toBytes(r.mp3) })).sort((a, b) => a.第几块 - b.第几块);
+  // 必须正好是 0、1、2…n（主键是 (k, part)，所以不会有重号；这里挡的是**缺号**和**不从 0 开始**）
+  for (let i = 0; i < 块.length; i++) if (块[i].第几块 !== i) return null;
+  const 总长 = 块.reduce((n, b) => n + b.字节.byteLength, 0);
+  if (!总长) return null;
+  const out = new Uint8Array(总长);
+  let p = 0;
+  for (const b of 块) { out.set(b.字节, p); p += b.字节.byteLength; }
+  return out;
+}
+
 /** 库里没有这一条时当面说的那两句话（页面原样显示；测试和页面都从这里取，不各写一套） */
 export const 还没生成 = (key: string) => ({
   出错: `这一段语音还没生成（库里没有 ${key} 这一条）。`,
@@ -101,14 +137,15 @@ export const 还没生成 = (key: string) => ({
 /**
  * `GET /api/en/audio/<键>` → `audio/mpeg`。鉴权在 queue.ts 的 adminApi 里已经过了（同一套后台登录）。
  * 不是 GET 回 null（由调用方给 404）。**整个函数只有一条 SELECT**：不写库、不调模型、不花钱。
+ * 那条 SELECT 查的是分块表（迁移 0023），`ORDER BY part` 取回来交给 `拼块()` 顺序拼回一整段。
  */
 export async function enAudioApi(env: Env, req: Request, key: string): Promise<Response | null> {
   if (req.method !== 'GET') return null;
   if (!键的样子.test(key)) return bad(`这不是一条语音的编号：${key.slice(0, 40) || '（空）'}`, '刷新一下页面，它会重新给你这一课的编号。', 400);
 
-  const r = await env.DB.prepare('SELECT mp3 FROM en_audio WHERE k = ?1').bind(key).first<{ mp3: unknown }>();
-  const bytes = r ? toBytes(r.mp3) : new Uint8Array(0);
-  if (!bytes.byteLength) {
+  const r = await env.DB.prepare('SELECT part, mp3 FROM en_audio_part WHERE k = ?1 ORDER BY part').bind(key).all<{ part: unknown; mp3: unknown }>();
+  const bytes = 拼块(r.results ?? []);
+  if (!bytes) {
     const m = 还没生成(key);
     return bad(m.出错, m.怎么办, 404);
   }

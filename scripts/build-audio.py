@@ -38,6 +38,12 @@
     python3 scripts/build-audio.py --env staging --only s2    # 只补一部分（按「来自」里的字）
     python3 scripts/build-audio.py --env staging --limit 10   # 这次最多补 10 条
 
+**一条音频拆成多行存**（2026-11-13，线上 `statement too long: SQLITE_TOOBIG`）：
+mp3 进 D1 只能写成十六进制字面量 X'…'，**字符数是字节数的两倍**，最大那条 83,232 字节
+→ 166,464 个字符 ≈ 166 KB，超过 D1 **单条 SQL 100 KB** 的上限（`--batch` 本来就是 1，
+不是批太大，是单条本身就超）。所以字节按 30,000 字节一块切开写进 `en_audio_part`（迁移 0023），
+`en_audio` 只留元数据、`mp3` 列写空；读的时候 src/en-audio.ts 按 part 顺序拼回去。
+
 **失败的那几句会逐条列出来，不会整个崩掉**（底线 9）：一句念不出来就记一笔接着念下一句，
 最后打印「成功 N 条 / 失败 K 条」并以非 0 退出，让 CI 红给你看，不许悄悄过去。
 
@@ -66,6 +72,11 @@ WRANGLER_ENV = {"staging": "staging", "production": ""}
 # 代理的根证书：这台机器放在这里；别的环境用 EXTRA_CA_BUNDLE 指过去
 CA_CANDIDATES = [os.environ.get("EXTRA_CA_BUNDLE", ""), "/root/.ccr/ca-bundle.crt"]
 KEY_RE = re.compile(r"^e\d+-[0-9a-f]{16}$")
+# 一条音频切成几块写（迁移 0023 的 en_audio_part）：每块最多这么多字节。
+# 十六进制字面量的字符数是字节数的两倍，所以 30,000 字节 = 60,000 个字符，离 D1 单条 100 KB 的上限很远。
+每块字节 = 30_000
+# D1 单条 SQL 的上限（超过就是线上那条 `statement too long: SQLITE_TOOBIG`）。只用来自检，不是配置。
+D1单条上限 = 100_000
 
 
 def 说(s: str) -> None:
@@ -122,19 +133,55 @@ def 库里已有的键(env: str) -> set[str]:
     return {r["k"] for r in 行 if r.get("k")}
 
 
+def 切块(mp3: bytes) -> list[bytes]:
+    """一条音频切成几块，每块不超过 每块字节（空的回空列表）。"""
+    return [mp3[i:i + 每块字节] for i in range(0, len(mp3), 每块字节)]
+
+
+def 一条的SQL(条: dict, mp3: bytes, 时刻: int) -> list[str]:
+    """一条音频 → 几条**各自独立**的 SQL（调用方一条一行写进文件，任何一条都远低于 100 KB）。
+
+    顺序是固定的三段：
+      ① 先把这个键的旧块全删掉 —— **重跑一遍结果一样**（上次写到一半断了也不会留下半截）；
+      ② 一条元数据进 en_audio（念的是哪一句、多大、什么时候写的）；**mp3 列写空 X''**，
+         字节在分块表里（那一列留着不删，见迁移 0023）；
+      ③ 每块一条 INSERT 进 en_audio_part，part 从 0 开始。
+    """
+    k, 声音 = 条["键"], 条["声音"]
+    文 = 条["文"].replace("'", "''")
+    # 「每条语句单独一行」是这套写法的前提（一行一条，谁都不会被别的语句带长）。
+    # 真有一句带换行的，**当场说出来**，不许悄悄写进去（底线 9）。这一版 190 条一条都没有。
+    if "\n" in 文 or "\r" in 文:
+        raise SystemExit(f"✗ 这一句里有换行，SQL 就不是一行一条了：{k}")
+    sql = [f"DELETE FROM en_audio_part WHERE k = '{k}';"]
+    sql.append(
+        "INSERT INTO en_audio (k, voice, txt, mp3, bytes, at) VALUES "
+        f"('{k}', '{声音}', '{文}', X'', {len(mp3)}, {时刻}) "
+        "ON CONFLICT (k) DO UPDATE SET voice = excluded.voice, txt = excluded.txt, "
+        "mp3 = excluded.mp3, bytes = excluded.bytes, at = excluded.at;"
+    )
+    for i, 块 in enumerate(切块(mp3)):
+        sql.append(f"INSERT INTO en_audio_part (k, part, mp3) VALUES ('{k}', {i}, X'{块.hex()}');")
+    for s in sql:
+        if len(s.encode()) > D1单条上限:
+            raise SystemExit(f"✗ 生成出来的这条 SQL 有 {len(s.encode())} 字节，超过 D1 的 {D1单条上限}（{k}）—— 把 每块字节 调小")
+    return sql
+
+
 def 写进D1(env: str, 批: list[tuple[dict, bytes]]) -> None:
-    """一批写一次。mp3 用 SQLite 的十六进制字面量 X'…' 传（D1 没有别的办法塞 BLOB）。"""
-    sql = []
+    """一批（几条音频）写一次。每条音频拆成多行，**每条 SQL 语句单独一行、互相独立**。
+
+    mp3 要进 D1 只能写成十六进制字面量 X'…'（没有别的办法塞 BLOB），而**字符数是字节数的两倍**：
+    2026-11-13 线上最大那条 83,232 字节 → 166,464 个字符 ≈ 166 KB，一条 INSERT 就超过 D1
+    **单条 SQL 100 KB** 的上限，报 `statement too long: SQLITE_TOOBIG`，生成任务写第一条就挂。
+    所以这里按 每块字节（30,000 字节 → 60,000 个字符）切开，一块一条 INSERT 进 en_audio_part。
+    """
+    sql: list[str] = []
+    时刻 = int(time.time() * 1000)
     for 条, mp3 in 批:
-        文 = 条["文"].replace("'", "''")
-        sql.append(
-            "INSERT INTO en_audio (k, voice, txt, mp3, bytes, at) VALUES "
-            f"('{条['键']}', '{条['声音']}', '{文}', X'{mp3.hex()}', {len(mp3)}, {int(time.time() * 1000)}) "
-            "ON CONFLICT (k) DO UPDATE SET voice = excluded.voice, txt = excluded.txt, "
-            "mp3 = excluded.mp3, bytes = excluded.bytes, at = excluded.at;"
-        )
+        sql += 一条的SQL(条, mp3, 时刻)
     with tempfile.NamedTemporaryFile("w", suffix=".sql", delete=False, encoding="utf-8") as f:
-        f.write("\n".join(sql))
+        f.write("\n".join(sql) + "\n")
         路径 = f.name
     try:
         wrangler_d1(env, ["--file", 路径])
@@ -190,9 +237,23 @@ def main() -> int:
     ap.add_argument("--check", action="store_true", help="只报还缺几条，不生成")
     ap.add_argument("--only", default="", help="只做「来自」里带这几个字的那些（例如 s2 / pron-content / g1）")
     ap.add_argument("--limit", type=int, default=0, help="这次最多做几条（0 = 不限）")
-    ap.add_argument("--batch", type=int, default=1, help="一次往 D1 写几条（默认 1，稳；条数多可以调大）")
+    ap.add_argument("--batch", type=int, default=1, help="一次提交几条音频（默认 1，稳；条数多可以调大。**和单条 SQL 多长无关**：每条音频本来就拆成多行写）")
+    ap.add_argument("--sql", help="【只给测试用】把这个 mp3 文件按真的那套切块规则生成 SQL 打印出来，不连网、不写库（配 --key）")
+    ap.add_argument("--key", default="", help="配合 --sql：这条音频的键（页面算出来的那个 e1-… ）")
+    ap.add_argument("--voice", default="en-GB-SoniaNeural", help="配合 --sql：哪个声音念的")
+    ap.add_argument("--txt", default="", help="配合 --sql：念的那一句")
     ap.add_argument("--rate", default="", help="覆盖语速（默认用清单里的 -5%%，别乱改：改了键全变）")
     a = ap.parse_args()
+
+    # --sql：只把 SQL 打出来（test/en-audio.test.ts 用它验「最大那条也能逐字节原样读回来」）。
+    # 切块的规则**只有上面那一处**，测试走的就是线上走的那段代码，不另抄一份。
+    if a.sql:
+        if not KEY_RE.match(a.key):
+            说("--sql 要配 --key <e1-…>（键由 src/en-audio.ts 的 audioKey 算，这边不自己算）")
+            return 2
+        for s in 一条的SQL({"键": a.key, "声音": a.voice, "文": a.txt}, Path(a.sql).read_bytes(), int(time.time() * 1000)):
+            print(s)
+        return 0
 
     if not a.env and not a.out and not a.check:
         说("要么 --env（写库），要么 --out（只生成到文件夹），要么 --check（只看差多少）。")
