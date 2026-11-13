@@ -465,6 +465,26 @@ describe('6. 拆成多行存：最大的那条也能原样读回来（线上 SQL
     expect(拼块([])).toBeNull();
   });
 
+  it('「只补缺的」问的是**分块表**：缺号的、只有元数据的都**不算已经生成**（上次写到一半断了，下次会重新生成）', async () => {
+    // 脚本里那条查询**原样拿出来**在本地库上跑一遍（不在测试里另写一份，免得两边不一样）
+    const 函数 = 读('scripts/build-audio.py').slice(读('scripts/build-audio.py').indexOf('def 库里已有的键'));
+    const sql = [...函数.slice(0, 函数.indexOf('def 切块')).matchAll(/"((?:SELECT|HAVING)[^"]*)"/g)].map((m) => m[1]).join('');
+    expect(sql).toContain('FROM en_audio_part');
+    expect(sql).toContain('COUNT(*) = MAX(part) + 1');     // 从 0 开始、没缺号 —— 和 拼块() 同一把尺子
+
+    const 完整 = audioKey('完整的那条', 中文声音);
+    await 放进库(完整, Uint8Array.from([1, 2, 3]), 中文声音, '完整的那条');
+    const 缺号 = audioKey('缺号的那条', 中文声音);
+    await 元数据(缺号, 6, 中文声音, '缺号的那条');
+    await 放块(缺号, 0, Uint8Array.from([1, 2, 3]));
+    await 放块(缺号, 2, Uint8Array.from([4, 5, 6]));
+    const 只有元数据 = audioKey('只有元数据的那条', 中文声音);
+    await 元数据(只有元数据, 3, 中文声音, '只有元数据的那条');
+
+    const 已有 = (await db.prepare(sql).all<{ k: string }>()).results.map((r) => r.k);
+    expect(已有).toEqual([完整]);                           // 另外两条下次会被重新生成
+  });
+
   it('生成脚本自己也拦一道：切出来的每条 SQL 都比 D1 的上限小（上限和每块大小都写在脚本里）', () => {
     const py = 读('scripts/build-audio.py');
     expect(py).toContain('SQLITE_TOOBIG');

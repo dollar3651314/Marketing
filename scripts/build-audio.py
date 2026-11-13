@@ -122,10 +122,18 @@ def wrangler_d1(env: str, args: list[str]) -> str:
 
 
 def 库里已有的键(env: str) -> set[str]:
-    out = wrangler_d1(env, ["--json", "--command", "SELECT k FROM en_audio"])
+    """已经**完整**生成过的那些键（所以 --只补缺的 不会漏、也不会重复）。
+
+    2026-11-13 起问的是**分块表**，不是 en_audio：字节在那边，而且上一次写到一半断了
+    （元数据写进去了、块没写全）时，**这一条就该重新生成**，不能因为元数据在就当它有了。
+    `COUNT(*) = MAX(part) + 1` 就是「从 0 开始没缺号」，和 src/en-audio.ts 的 拼块() 同一把尺子。
+    """
+    out = wrangler_d1(env, ["--json", "--command",
+                            "SELECT k FROM en_audio_part GROUP BY k "
+                            "HAVING COUNT(*) = MAX(part) + 1 AND SUM(LENGTH(mp3)) > 0"])
     i = out.find("[")
     if i < 0:
-        raise SystemExit("✗ 查 en_audio 没有返回 JSON（表还没建？部署一次就会跑迁移 0022）")
+        raise SystemExit("✗ 查 en_audio_part 没有返回 JSON（表还没建？部署一次就会跑迁移 0023）")
     data = json.loads(out[i:])
     行 = []
     for 块 in data if isinstance(data, list) else [data]:
