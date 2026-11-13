@@ -95,8 +95,13 @@ export const tailOf = (page, pageSel) => page.evaluate((ps) => {
   return { tail: Math.round(sh - bottom), sh, ih: innerHeight, last: mods.at(-1)?.id };
 }, pageSel);
 
+/**
+ * 子菜单顺序 vs 页面上模块的顺序。
+ * 2026-11-13 起菜单项本身也可能是 hidden（Practical 项目页才有的「发音训练」「句子训练」，
+ * 在 forecast 上连菜单项都藏起来）—— 所以**看不见的菜单项不算**，和下面"看不见的模块不算"同一个口径。
+ */
 export const orderOf = (page, sub) => page.evaluate((s) => {
-  const menu = [...document.querySelectorAll(s + ' a[data-s]')].map((a) => a.dataset.s);
+  const menu = [...document.querySelectorAll(s + ' a[data-s]')].filter((a) => a.getClientRects().length).map((a) => a.dataset.s);
   const mods = menu.map((id) => document.getElementById(id)).filter((e) => e && !e.closest('[hidden]') && e.getClientRects().length)
     .map((e) => { const r = e.getBoundingClientRect(); return { id: e.id, top: Math.round(r.top + scrollY), left: Math.round(r.left) }; })
     .sort((a, b) => (Math.abs(a.top - b.top) <= 4 ? a.left - b.left : a.top - b.top));

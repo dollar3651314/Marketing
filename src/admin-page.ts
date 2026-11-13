@@ -2,10 +2,11 @@ import { ASSETS_CSS, ASSETS_JS, ASSETS_MOD } from './assets-page';
 import { TTS_CSS, TTS_JS, TTS_MOD } from './tts-page';
 import { VOICE_CSS, VOICE_JS } from './voice-page';
 import { PRON_CSS, PRON_JS, PRON_MOD } from './pron-page';
+import { S2_JS, S2_MOD } from './s2-page';
 import { FUNDS_CSS, FUNDS_JS, FUNDS_MOD } from './funds-page';
 import { EXTENSION_VERSION } from './extension-download';
 import { PWA_HEAD, PWA_JS } from './pwa';
-import { MAX_PROJECT_PAGES, PLATFORM_CONFIG, PROJECT_APPS, PROJECT_PAGES_FALLBACK, PROJECT_SITE } from './projects';
+import { MAX_PROJECT_PAGES, PLATFORM_CONFIG, PROJECT_PAGES_FALLBACK, PROJECT_SITE } from './projects';
 
 /**
  * 网页后台 = 工作平台（agents C136；工作平台批 1：原型 agents 工作平台/原型-工作平台-v2.html，技术方案 工作平台/技术方案-工作平台*.md，Amos 2026-11-01"都按建议"）。
@@ -164,13 +165,6 @@ th{font-size:12px;color:var(--muted);font-weight:600}td.n{text-align:right}
 .plat .todo::before{content:"";position:absolute;left:0;top:10px;bottom:10px;width:3px;border-radius:0 3px 3px 0;background:transparent}
 .plat .todo.over::before{background:var(--err)}.plat .todo.soon::before{background:var(--amber)}
 #v-project .todos>.todo:first-child{border-top:0}
-/* 「现在能打开什么」的卡片（2026-11-13）：手机上一行一个，宽屏并排 */
-#f-applist{display:flex;flex-wrap:wrap;gap:var(--s3)}
-#f-applist .appcard{flex:1 1 220px;min-width:0;display:block;text-decoration:none;color:inherit;
-  padding:var(--s4) var(--s5);border:1px solid var(--line);border-radius:12px;background:var(--surface-2);min-height:60px}
-#f-applist .appcard:hover,#f-applist .appcard:focus-visible{border-color:var(--teal);color:var(--teal-ink)}
-#f-applist .appcard b{display:block;font-size:var(--fs-body);font-weight:700}
-#f-applist .appcard span{display:block;font-size:var(--fs-aux);color:var(--muted);margin-top:3px;line-height:1.5}
 .plat .tick{width:24px;height:24px;border-radius:50%;border:2px solid var(--line);background:var(--surface);cursor:pointer;padding:0;display:grid;place-items:center;color:transparent;font-size:13px;font-weight:700;align-self:start;margin-top:1px}
 .plat .tick:hover{border-color:var(--teal);color:var(--teal)}.plat .tick:disabled{background:var(--ok);border-color:var(--ok);color:#fff}
 .plat .tick:focus-visible{outline:2px solid var(--amber);outline-offset:2px}
@@ -477,10 +471,10 @@ ${ASSETS_CSS}${TTS_CSS}${VOICE_CSS}${PRON_CSS}${FUNDS_CSS}
   <span class="sp"></span><button id="pwa-refresh" type="button" aria-label="刷新页面" hidden>刷新</button><button id="nav" hidden>用量和限额 →</button><button id="extnav" hidden>插件下载</button><details class="more-menu" id="more-menu" hidden><summary aria-label="更多：公司总览、登出">···</summary><span class="tacts" id="tacts"><button id="pwa-refresh-m" type="button" hidden>刷新</button><button id="conav" hidden>公司总览</button><button id="logout" hidden>登出</button></span></details></header>
 <div id="subs" hidden>
 <nav class="sub" id="sub-work" aria-label="工作台模块" hidden><div class="in">
-  <a href="#/work/now" data-s="w-now">最该做的事</a><a href="#/work/todo" data-s="w-todo">全部待办<span class="n red" id="s-todo" hidden></span></a><a href="#/work/live" data-s="w-live">团队在做什么</a><a href="#/work/proj" data-s="w-proj">项目概况</a><a href="#/work/num" data-s="w-num">公司数字</a><a href="#/work/meet" data-s="w-meet">经营会</a><a href="#/work/pron" data-s="w-pron">发音训练</a>
+  <a href="#/work/now" data-s="w-now">最该做的事</a><a href="#/work/todo" data-s="w-todo">全部待办<span class="n red" id="s-todo" hidden></span></a><a href="#/work/live" data-s="w-live">团队在做什么</a><a href="#/work/proj" data-s="w-proj">项目概况</a><a href="#/work/num" data-s="w-num">公司数字</a><a href="#/work/meet" data-s="w-meet">经营会</a>
 </div></nav>
 <nav class="sub" id="sub-project" aria-label="项目模块" hidden><div class="in">
-  <a href="#/forecast/next" data-s="f-next" data-m="next">下一步做什么<span class="n red" id="s-fnext" hidden></span></a><a href="#/forecast/guide" data-s="f-guide" data-m="guide">操作指引<span class="n" id="s-guide" hidden></span></a><a href="#/forecast/live" data-s="f-live" data-m="live">团队在做什么</a><a href="#/forecast/card" data-s="f-card" data-m="card">数字和决定</a><a href="#/forecast/pack" data-s="f-pack" data-m="pack">本周帖子</a><a href="#/forecast/match" data-s="f-match" data-m="match">焦点战</a><a href="#/forecast/tools" data-s="f-tools" data-m="tools">用到的工具</a><a href="#/forecast/handoff" data-s="f-handoff" data-m="handoff">交接记录</a>
+  <a href="#/forecast/next" data-s="f-next" data-m="next">下一步做什么<span class="n red" id="s-fnext" hidden></span></a><a href="#/forecast/guide" data-s="f-guide" data-m="guide">操作指引<span class="n" id="s-guide" hidden></span></a><a href="#/forecast/live" data-s="f-live" data-m="live">团队在做什么</a><a href="#/forecast/card" data-s="f-card" data-m="card">数字和决定</a><a href="#/forecast/pack" data-s="f-pack" data-m="pack">本周帖子</a><a href="#/forecast/match" data-s="f-match" data-m="match">焦点战</a><a href="#/forecast/tools" data-s="f-tools" data-m="tools">用到的工具</a><a href="#/forecast/handoff" data-s="f-handoff" data-m="handoff">交接记录</a><a href="#/forecast/pron" data-s="f-pron" data-m="pron" hidden>发音训练</a><a href="#/forecast/s2" data-s="f-s2" data-m="s2" hidden>句子训练</a>
 </div></nav>
 <!-- 批 B：子菜单顺序 = 页面上模块的顺序（Webhook 开关挪到最后，和页面一致） -->
 <nav class="sub" id="sub-tools" aria-label="公共工具模块" hidden><div class="in">
@@ -554,19 +548,12 @@ ${ASSETS_CSS}${TTS_CSS}${VOICE_CSS}${PRON_CSS}${FUNDS_CSS}
       <p class="lead" id="w-meet-lead"><span class="skel" style="width:50%"></span></p>
       <div class="mbody" id="w-meet-body"></div>
     </section>
-    ${PRON_MOD}
     <p class="foot">停在这一页时每 30 秒自动刷新；切到别的窗口时暂停，切回来马上刷新。</p>
   </section>
   <!-- 项目页（PR 2）：一套 DOM 轮流显示每个项目（#/<项目>/<模块>），模块 id 还是 f-* -->
   <section class="page plat" id="v-project" hidden>
     <div class="crumb"><h1 id="f-title">项目</h1><span class="hint" id="f-site"></span></div>
     <p class="warnbar" id="f-err" role="status" hidden></p>
-    <!-- 现在能打开什么（2026-11-13）：这个项目已经上线、点一下就能用的东西。
-         没有就整块不出现。数据在 src/projects.ts PROJECT_APPS。 -->
-    <section class="card mod" id="f-apps" hidden>
-      <header class="mh"><h2>现在能打开什么</h2><span class="sp"></span><span class="aux">点一下直接用</span></header>
-      <div class="mbody"><div class="apps" id="f-applist"></div></div>
-    </section>
     <!-- 批 B：读取失败时（照工作台 #w-stale）：上面一条红色提示 + "再读一次"；还没读到过就各模块写"暂时读不到"，不冒充"没事要做" -->
     <div class="errbar" id="f-stale" role="alert" hidden><span id="f-stale-t"></span><span class="sp"></span><button class="btn small" type="button" id="f-retry">再读一次</button></div>
     <!-- 批 B：每个模块 = 标题行 → 一句话结论 .lead（数据算）→ 主内容 → 最后一块折叠说明 details.more（默认收起） -->
@@ -622,6 +609,11 @@ ${ASSETS_CSS}${TTS_CSS}${VOICE_CSS}${PRON_CSS}${FUNDS_CSS}
       <p class="lead" id="f-handoff-lead"><span class="skel" style="width:50%"></span></p>
       <div class="mbody flush" id="f-handoff-body"></div>
     </section>
+    <!-- 英语学习这两块（2026-11-13 从工作台挪过来）：Amos「工作台 practical 用来存储和展示所有与我英语学习有关的内容」。
+         **只在 Practical 这个项目上出现**，别的项目整块 hidden（setProject() 里按项目名开关，和子菜单上那两项一起）。
+         将来要把英语整块拆出去：清单在 src/english.ts，守界的测试在 test/english-boundary.test.ts。 -->
+    ${PRON_MOD}
+    ${S2_MOD}
   </section>
   <!-- 公共工具（界面改版·批 B，原型 prototype-tools.html）：每块一张卡片，"标题行 → 一句话结论 → 主内容 → 底部折叠说明"；
        页面顺序 = 二级菜单顺序（天天用 → 偶尔用 → 出事才用）。清单、用量、插件下载的脚本逻辑和接口不变，只换排版；元素 id 和 data-* 照旧 -->
@@ -767,7 +759,9 @@ let page='', proj='';
 const FIXED={work:'w-',tools:'t-',company:'',funds:'fu-'};
 const PFX={work:'w-',project:'f-',tools:'t-',company:'co-',funds:'fu-'}, TOOLV={queue:'list',usage:'usage',ext:'ext',reply:'reply',byproj:'usage',hook:'hook',assets:'assets',tts:'tts',voice:'voice'};
 // 有项目页的项目：先用兜底名单（src/projects.ts PROJECT_PAGES_FALLBACK），读到 /api/company 后由第三段脚本调 setProjects() 换成真的
-const PCFG=${JSON.stringify({ PROJECT_PAGES_FALLBACK, MAX_PROJECT_PAGES, PROJECT_SITE, PROJECT_APPS })};
+const PCFG=${JSON.stringify({ PROJECT_PAGES_FALLBACK, MAX_PROJECT_PAGES, PROJECT_SITE })};
+// 英语学习那两块（发音训练 #f-pron、句子训练 #f-s2）只挂在这个项目上；别的项目整块 hidden，子菜单那两项也 hidden
+const EN_PROJ='Practical',EN_MODS=['f-pron','f-s2'];
 let PROJS=PCFG.PROJECT_PAGES_FALLBACK.slice();
 // 批 B 走查：名单还没从服务器读到之前（projsReady=false），地址里的项目名先照着打开（刷新 #/Practical 不再被兜底名单踢回工作台、也不再拿第一个项目的数据冒充）；
 // 读到名单后 setProjects() 再判一次，不在名单里的才回工作台
@@ -786,12 +780,13 @@ function setProjects(list){const next=(list&&list.length?list:PCFG.PROJECT_PAGES
 /** 二级菜单、标题、副标题指向哪个项目 */
 function setProject(p){proj=p;$('f-title').textContent=p;
   document.querySelectorAll('#sub-project a[data-m]').forEach((a)=>{a.href='#/'+encodeURIComponent(p)+'/'+a.dataset.m;});
-  // 现在能打开什么：没有就整块不出现（不摆一个空壳）
-  const apps=PCFG.PROJECT_APPS[p]||[],ab=$('f-applist');ab.replaceChildren();
-  $('f-apps').hidden=!apps.length;
-  apps.forEach(function(x){const a=document.createElement('a');a.className='appcard';a.href=x.url;a.target='_blank';a.rel='noopener';
-    const b=document.createElement('b');b.textContent=x['名'];a.append(b);
-    const s2=document.createElement('span');s2.textContent=x['说'];a.append(s2);ab.append(a);});
+  // 英语学习那两块：只有 Practical 有，别的项目整块 hidden（模块本体和子菜单那两项一起）。
+  // **切走之前先叫 pronStop()**：只把 #f-pron 藏起来不够——藏起来的 DOM 里摄像头照亮，手机指示灯不灭，朗读也会一直念下去。
+  const en=p===EN_PROJ;
+  if(!en&&typeof window.pronStop==='function')window.pronStop();
+  EN_MODS.forEach(function(id){const m=$(id);if(m)m.hidden=!en;
+    document.querySelectorAll('#sub-project a[data-s="'+id+'"]').forEach(function(a){a.hidden=!en;});});
+  if(en){try{window.s2Draw&&window.s2Draw();}catch(e){}}
   const site=PCFG.PROJECT_SITE[p],e=$('f-site');e.replaceChildren();
   if(site){e.append(site.text+' ');const a=document.createElement('a');a.href=site.url;a.target='_blank';a.rel='noopener';a.textContent=site.url.replace(/^https:\\/\\/(www\\.)?/,'');e.append(a);}}
 renderNav1();
@@ -810,9 +805,9 @@ function route(){if(!authed)return;let h=hashOf();
   // 批 A：工作台第一次读到数据之前显示占位骨架 #boot（在 #app 外面，#app 还是读到数据再显示，免得看到空模块）；项目页照旧
   $('app').hidden=(page==='work'||page==='project')&&!ready;$('boot').hidden=!(page==='work'&&!ready);
   ['work','project','tools','company','funds'].forEach(x=>{$('v-'+x).hidden=x!==page;const sb=$('sub-'+x);if(sb)sb.hidden=x!==page;});
-  // 离开工作台：通知「发音训练」把摄像头和动画关掉（2026-11-11 审查 🔴1）。
-  // 只把 #v-work 藏起来是不够的——藏起来的 DOM 里摄像头照亮，手机指示灯不灭。
-  if(page!=='work'&&typeof window.pronStop==='function')window.pronStop();
+  // 离开项目页：通知「发音训练」把摄像头和动画关掉（2026-11-11 审查 🔴1；2026-11-13 这一块从工作台挪到了 Practical 项目页）。
+  // 只把 #v-project 藏起来是不够的——藏起来的 DOM 里摄像头照亮，手机指示灯不灭。换项目时在 setProject() 里也关一次。
+  if(page!=='project'&&typeof window.pronStop==='function')window.pronStop();
   document.querySelectorAll('#nav1 a[data-p]').forEach(a=>{const on=a.dataset.p===page&&(!a.dataset.proj||a.dataset.proj===proj);if(on)a.setAttribute('aria-current','page');else a.removeAttribute('aria-current');});
   // 基金观察：一级菜单上那一项用 data-f（不是 data-p：一级菜单的 data-p 只放 工作台 · 项目 · 公共工具 这三类页，e2e-platform 按 data-p 数）
   if(page==='funds')$('nav1-funds').setAttribute('aria-current','page');else $('nav1-funds').removeAttribute('aria-current');
@@ -829,8 +824,8 @@ function route(){if(!authed)return;let h=hashOf();
   if(page==='company'){try{companyOpen(prev==='company');}catch(e){$('co-at').textContent='这一页出错了：'+e.message;}}
   // 批 2：在公共工具、公司总览刷新时，一级菜单上的待办数量也马上读出来（以前要切到工作台才有）
   if(page==='work'||page==='project'){try{platformOpen(page,mod);}catch(e){}}else{try{platformStop();platformPeek();}catch(e){}}
-  // 工作台最下面的「发音训练」（七组易错音，pron-page.ts）：进工作台时读一次记录
-  if(page==='work'){try{window.pronOpen();}catch(e){}}
+  // Practical 项目页上的「发音训练」（七组易错音，pron-page.ts）：进这一页时读一次记录；「句子训练」是静态的，画一次就行
+  if(page==='project'&&proj===EN_PROJ){try{window.pronOpen();}catch(e){}try{window.s2Draw&&window.s2Draw();}catch(e){}}
   // 批 B：语音对话实测台在"语音生成"的折叠 #tts-more 里：打开 #/tools/voice 先把折叠打开再滚过去
   if(page==='tools'&&view==='voice'){const f=$('tts-more');if(f)f.open=true;}
   // 批 C：公司总览的模块是读到数据才画出来的，这时还没有就记下 coMod，第二段脚本画完再滚过去（同样 subPin）
@@ -1498,7 +1493,9 @@ function renderWork(all,now){if(!PL.okAt){renderBlind();return;}
 /** ① 最该做的一件事：排第一的那条；一个主按钮 + "做完了，打勾" */
 function renderHero(open,now){const h=$('hero');h.removeAttribute('aria-busy');const l=pe('div');l.append(pe('p','k','你现在最该做的一件事'));const act=pe('div','act');
   if(!open.length){h.className='hero calm';const w=pe('div','when');w.append('下一件预计在 ',pe('b',null,dateL(nextMeet(now))+' 经营会后'),' 出现');l.append(pe('h2','one','现在没事要做'),w);
-    act.append(link('趁空练 10 分钟发音 →','#/work/pron','btn big ghost'));h.replaceChildren(l,act);return;}
+    // 发音训练 2026-11-13 挪到了 Practical 项目页；这个项目不在名单里（agents 没推 projects 块）时就不给这个按钮，不留死链
+    if(typeof PROJS!=='undefined'&&PROJS.indexOf('Practical')>=0)act.append(link('趁空练 10 分钟发音 →','#/Practical/pron','btn big ghost'));
+    h.replaceChildren(l,act);return;}
   const x=open[0];h.className='hero';const w=pe('div','when');w.append(badge(x,now));const dt=dueText(x);if(dt)w.append(pe('span',null,dt));w.append(pe('span','ptag',x.proj));
   l.append(pe('h2','one',x.title),w);if(x.why)l.append(pe('p','why',x.why));
   if(open.length>1){const n=pe('p','next');n.append('后面还有 '+(open.length-1)+' 件，',link('已经按截止时间排好 ↓','#/work/todo'));l.append(n);}
@@ -1681,11 +1678,12 @@ var platformPeek=function(){PL.peek=true;if(!PL.timer)tickTimer();if(!PL.data&&!
 var platformReady=function(){return !!PL.data;};
 }catch(e){var platformReady=function(){return true;};var platformOpen=function(){['w-err','f-err'].forEach((id)=>{const x=document.getElementById(id);if(x){x.hidden=false;x.textContent='这一页出错了：'+e.message;}});};var platformStop=function(){};var platformPeek=function(){};}
 </script>
-<script>window.__assetsBase='/api/assets/';window.__ttsBase='/api/tts/';window.__voiceBase='/api/voice/';window.__pronBase='/api/pron/';window.__fundsBase='/api/funds';</script>
+<script>window.__assetsBase='/api/assets/';window.__ttsBase='/api/tts/';window.__voiceBase='/api/voice/';window.__pronBase='/api/en/pron/';window.__fundsBase='/api/funds';</script>
 <script>${ASSETS_JS}</script>
 <script>${TTS_JS}</script>
 <script>${VOICE_JS}</script>
 <script>${PRON_JS}</script>
+<script>${S2_JS}</script>
 <script>${FUNDS_JS}</script>
 ${PWA_JS}
 </body></html>`;

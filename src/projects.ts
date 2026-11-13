@@ -64,22 +64,10 @@ export const PROJECT_SITE: Record<string, { text: string; url: string }> = {
   forecast: { text: 'Quick Come 官网', url: 'https://www.quickcome.online' },
 };
 
-/**
- * 项目页顶上的「现在能打开什么」：这个项目已经上线、Amos 点一下就能用的东西。
- *
- * 2026-11-13 加。那天 Practical 的发音训练和句子训练都上了生产，Amos 打开工作台的
- * Practical 页签，上面一个都没有，当场问：「不是说上生产呢，practical 菜单下 为什么没有」。
- * `PROJECT_SITE` 只是标题旁边一行小字，放不下，所以单给一块。
- *
- * 规矩：**只放真的上线了、点开就能用的**。还没上线的不许写进来（底线 3）。
- */
-export const PROJECT_APPS: Record<string, { 名: string; 说: string; url: string }[]> = {
-  // 盲听卡**不列**：Amos 2026-11-03 自己判了 no-go 封存，2026-11-13 说「删除盲听卡」。
-  Practical: [
-    { 名: '发音训练', 说: 'S1 · 七组易错音：跟我做 → 对照听 → 考 10 题', url: 'https://practical.jeff-zhaifei.workers.dev/pron' },
-    { 名: '句子训练', 说: 'S2 · 13 课语法：一屏一步，每句话都标出处', url: 'https://practical.jeff-zhaifei.workers.dev/s2' },
-  ],
-};
+/* 「现在能打开什么」（2026-11-13 加的 PROJECT_APPS）**2026-11-13 当天又删掉了**：
+   那一块里全是指向 practical.jeff-zhaifei.workers.dev 的外链，Amos 当天决定把 Practical 并进 Marketing
+   （「把它合并到 marketing 项目中吧（公用仓库、数据库、服务器、域名）」），那个站要关掉 —— 链接全成死链，留着就是骗人（底线 3）。
+   发音训练、句子训练现在就在工作平台自己的 Practical 项目页上（#/Practical/pron、#/Practical/s2，src/admin-page.ts）。 */
 
 export const PLATFORM_CONFIG = { REPORT_FIELDS, REPORT_FORMS, METRIC_FROM_REPORT, SEE_PLATFORM, NOT_PROJECTS, REPO_PROJECT, PROJECT_PAGES_FALLBACK };
 

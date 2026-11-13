@@ -1,10 +1,14 @@
 /**
- * 工作台「跟我做」（原「发音训练」的第 1 步，工作台 → 发音训练 `#/work/pron`，模块 `#w-pron`；
- * 服务端 src/pron.ts、发音 src/pron-audio.ts、内容 src/pron-content.ts、教学阶梯 src/pron-lesson.ts）。
+ * 「跟我做」（「发音训练」的第 1 步）。**2026-11-13 从工作台挪进 Practical 项目页**：
+ * 地址 `#/Practical/pron`、模块 `#f-pron`（原来是工作台二级菜单第 7 项 `#/work/pron`、`#w-pron`）。
+ * Amos 的两句原话：「工作台 发音训练 这个模块不需要再出现在 工作台 发音训练这个位置了」
+ * 「工作台 practical 用来存储和展示所有与我英语学习有关的内容」。**挪位置，功能一条没减。**
+ * 服务端 src/pron.ts、发音 src/pron-audio.ts、内容 src/pron-content.ts、教学阶梯 src/pron-lesson.ts；
+ * 接口前缀 2026-11-13 起统一成 `/api/en/pron/*`（拆分清单 src/english.ts）。
  * 拆成样式 / 结构 / 脚本三段导出，`admin-page.ts` 插这三段。
  * 写法上的约定（和 admin-page.ts 一样）：这是模板字符串，里面**不能出现没转义的反引号或 ${**。
  *
- * **二级菜单还是 7 项**：公共工具那 8 项一个位子都没动（T-4：上限 8，第 9 项会撑破手机菜单）。
+ * **工作台二级菜单回到 6 项**（发音训练那一项挪去项目页了）；公共工具那 8 项一个位子都没动（T-4：上限 8，第 9 项会撑破手机菜单）。
  *
  * ## 2026-11-12：第 1 步从「一张参考卡」改成「跟我做」
  *
@@ -54,7 +58,7 @@ import { LESSON, 级 } from './pron-lesson';
 export const PRON_CSS = `
 /* 选一组：七个按钮（第 7 组没有听辨题，按钮上照实标出来） */
 .pn .pn-pick{display:flex;flex-wrap:wrap;gap:var(--s2);margin:0 0 var(--s4)}
-#w-pron .pn-pick .btn{display:block;min-height:56px;font-size:14px;font-weight:700;flex:1 1 calc(50% - var(--s2));min-width:0;white-space:normal;overflow-wrap:anywhere;line-height:1.3;padding:8px 10px;text-align:center}
+#f-pron .pn-pick .btn{display:block;min-height:56px;font-size:14px;font-weight:700;flex:1 1 calc(50% - var(--s2));min-width:0;white-space:normal;overflow-wrap:anywhere;line-height:1.3;padding:8px 10px;text-align:center}
 .pn .pn-pick .btn .p-s{display:block;font-size:12px;font-weight:500;color:var(--muted)}
 .pn .pn-pick .btn.primary .p-s{color:#fff}
 /* 四步条 */
@@ -78,8 +82,8 @@ export const PRON_CSS = `
 .pn .pn-coach .c-src .c-tag{display:inline-block;font-weight:700;color:var(--ink-2);margin-right:6px}
 /* 这一步的按钮：主按钮占满一行，别的两个一行；字长的（「🔈 念给我听」「这台设备读不了中文…」）允许换行 */
 .pn .pn-cbtns{display:flex;flex-wrap:wrap;gap:var(--s3);margin:var(--s4) 0 0}
-#w-pron .pn-cbtns .btn{min-height:56px;font-size:17px;font-weight:700;flex:1 1 calc(50% - var(--s3));min-width:0;white-space:normal;overflow-wrap:anywhere;line-height:1.3;padding:8px 12px}
-#w-pron .pn-cbtns .btn.go{flex:1 1 100%}
+#f-pron .pn-cbtns .btn{min-height:56px;font-size:17px;font-weight:700;flex:1 1 calc(50% - var(--s3));min-width:0;white-space:normal;overflow-wrap:anywhere;line-height:1.3;padding:8px 12px}
+#f-pron .pn-cbtns .btn.go{flex:1 1 100%}
 /* 第 n / 共 m 步 */
 .pn .pn-meter{display:flex;align-items:center;gap:var(--s3);margin:0 0 var(--s4)}
 .pn .pn-meter .c-num{flex:0 0 auto;font-size:12px;color:var(--muted)}
@@ -94,9 +98,9 @@ export const PRON_CSS = `
 /* 慢速对照 + 他自己的录音回放（**录过才出现**，没录过不画占位、不画灰按钮） */
 .pn .pn-my{border:1px solid var(--line);border-radius:12px;background:var(--surface);padding:var(--s3);margin:var(--s3) 0 0}
 .pn .pn-my .y-t{font-size:var(--fs-body);font-weight:700;color:var(--ink);margin:0 0 var(--s2)}
-#w-pron .pn-my .btn[aria-pressed="true"]{background:var(--teal-soft);border-color:var(--teal);font-weight:700}
+#f-pron .pn-my .btn[aria-pressed="true"]{background:var(--teal-soft);border-color:var(--teal);font-weight:700}
 /* 这几个按钮的字比别处长（「🐢 慢速开着（0.7 倍）」）：允许换行、min-width:0，否则格子被撑开、整块横着溢出 */
-#w-pron .pn-my .btn{font-size:15px;white-space:normal;overflow-wrap:anywhere;min-width:0;line-height:1.3;padding:8px 10px}
+#f-pron .pn-my .btn{font-size:15px;white-space:normal;overflow-wrap:anywhere;min-width:0;line-height:1.3;padding:8px 10px}
 /* 一句话说明（这一组有几对最小对立对、够不够 10 题）：照实说，不硬凑 */
 .pn .pn-note{border:1px solid var(--line);border-left:4px solid var(--teal);border-radius:10px;background:var(--surface-2);padding:var(--s3);margin:0 0 var(--s4);font-size:var(--fs-body);color:var(--ink);overflow-wrap:anywhere}
 .pn .pn-h{font-size:var(--fs-body);font-weight:700;color:var(--ink);margin:0 0 var(--s3)}
@@ -144,11 +148,11 @@ export const PRON_CSS = `
 .pn .pn-saynote{font-size:var(--fs-aux);color:var(--muted);margin:var(--s2) 0 0;overflow-wrap:anywhere}
 /* 大按钮：一律 ≥52px 高（这里全是 56px），手机单手够得着。
    **选择器必须压过 admin-page.ts 那条 :is(#v-work,…) .btn{min-height:38px}**（它带一个 id，算 1-1-0）：
-   所以这里写成 #w-pron + 两个类（1-2-0），只写 .pn .pn-one button（0-2-1）会被它盖掉，按钮就只有 38px 高。 */
-#w-pron .pn-one .btn{width:100%;min-height:56px;font-size:17px;font-weight:700}
+   所以这里写成 #f-pron + 两个类（1-2-0），只写 .pn .pn-one button（0-2-1）会被它盖掉，按钮就只有 38px 高。 */
+#f-pron .pn-one .btn{width:100%;min-height:56px;font-size:17px;font-weight:700}
 .pn .pn-one{margin:0 0 var(--s3)}
 .pn .pn-two{display:grid;grid-template-columns:1fr 1fr;gap:var(--s3)}
-#w-pron .pn-two .btn{min-height:56px;font-size:17px;font-weight:700;white-space:normal;overflow-wrap:anywhere;min-width:0;line-height:1.3;padding:8px 10px}
+#f-pron .pn-two .btn{min-height:56px;font-size:17px;font-weight:700;white-space:normal;overflow-wrap:anywhere;min-width:0;line-height:1.3;padding:8px 10px}
 .pn .pn-au{margin:var(--s4) 0 0}
 .pn .pn-aumsg{border:1px solid var(--err);background:var(--err-soft);color:var(--err);border-radius:8px;padding:var(--s3);margin:var(--s3) 0 0;font-size:var(--fs-aux);white-space:pre-wrap;text-align:left}
 .pn .pn-err{border:1px solid var(--err);background:var(--err-soft);color:var(--err);border-radius:8px;padding:var(--s3);margin:var(--s3) 0 0;font-size:var(--fs-aux);white-space:pre-wrap}
@@ -157,8 +161,8 @@ export const PRON_CSS = `
   .pn .pn-mirrow{grid-template-columns:1fr 1fr}}
 `;
 
-/** 工作台第 7 个模块：发音训练（二级菜单第 7 项「发音训练」，公共工具那 8 项一个没动） */
-export const PRON_MOD = `<section class="card mod pn" id="w-pron"><header class="mh"><h2>发音训练</h2><span class="sp"></span><span class="aux" id="pn-aux">七组易错音</span></header>
+/** Practical 项目页上的「发音训练」模块（`#f-pron`，子菜单 `#/Practical/pron`）：别的项目整块 hidden */
+export const PRON_MOD = `<section class="card mod pn" id="f-pron"><header class="mh"><h2>发音训练</h2><span class="sp"></span><span class="aux" id="pn-aux">七组易错音</span></header>
 <p class="lead" id="pn-lead"><span class="dot gray" id="pn-dot"></span><span id="pn-lead-t">读取中…</span><span class="soft" id="pn-soft">跟我做（一次一句）→ 对照听 → 同一组连考 10 题 → 对 8 题过关，给绕口令。</span></p>
 <div class="mbody">
   <!-- 旧的那两块去哪了（Amos 2026-11-11：「都没用了」）：照实说，并说明历史数据还在 -->
@@ -323,7 +327,7 @@ export const PRON_MOD = `<section class="card mod pn" id="w-pron"><header class=
   <p>每一轮的成绩（考了几题、对几题、点过几次"两个听着一样"、过没过）<b>存在服务器上</b>，换一台设备接着练就行。</p></div></details></section>`;
 
 /**
- * 发音训练那一块的脚本（整段 try/catch，出错只影响这一块）。宿主页面先设 window.__pronBase，例如 '/api/pron/'。
+ * 发音训练那一块的脚本（整段 try/catch，出错只影响这一块）。宿主页面先设 window.__pronBase，例如 '/api/en/pron/'。
  * `PRON_JS` = 头 + 教学阶梯的 JSON + 尾：阶梯是 `src/pron-lesson.ts` 生成的**静态课件内容**，
  * 打包时拼进来（不走接口的原因见文件头：`pron.ts` 去 import `pron-lesson.ts` 会成环）。
  */
@@ -335,7 +339,7 @@ try{
 var PNL=`;
 
 const PRON_JS_TAIL = `;
-var PN={base:(window.__pronBase||'/api/pron/'),zu:[],cur:null,ji:null,step:1,loaded:false,busy:false,
+var PN={base:(window.__pronBase||'/api/en/pron/'),zu:[],cur:null,ji:null,step:1,loaded:false,busy:false,
   q:[],i:0,ok:0,same:0,bad:[],au:{},auBusy:{},player:null,rec:null,recId:'',recT0:0,recBtn:null,
   /* 「跟我做」：bu = 这一组的那串步骤、si = 走到第几步、fin = 走完了没 */
   bu:[],si:0,fin:false,
@@ -1018,8 +1022,8 @@ var yc=pq('pn-chain');if(yc)yc.addEventListener('click',pMyChain);
 pAutoLoad();
 window.pronOpen=function(){if(PN.loaded)return;PN.loaded=true;pLoad();};
 /* **离开这一块时必须叫一次**（2026-11-11 审查 🔴1）。
-   admin-page.ts 的 route() 切走一级菜单时只把 #v-work 藏起来，
-   **不会通知这一块**——于是他点完「照镜子」随手切到「基金观察」，
+   admin-page.ts 的 route() 切走一级菜单时只把 #v-project 藏起来，
+   换到别的项目时也只是把 #f-pron 藏起来，**都不会通知这一块**——于是他点完「照镜子」随手切到「基金观察」，
    手机上的摄像头指示灯一直亮着，页面上却什么都看不见；朗读也会在后台一直念下去。
    页面上那句「关掉镜子，摄像头指示灯就灭」必须是真的，所以切走 = 关掉。 */
 window.pronStop=function(){
