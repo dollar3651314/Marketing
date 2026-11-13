@@ -1678,7 +1678,7 @@ var platformPeek=function(){PL.peek=true;if(!PL.timer)tickTimer();if(!PL.data&&!
 var platformReady=function(){return !!PL.data;};
 }catch(e){var platformReady=function(){return true;};var platformOpen=function(){['w-err','f-err'].forEach((id)=>{const x=document.getElementById(id);if(x){x.hidden=false;x.textContent='这一页出错了：'+e.message;}});};var platformStop=function(){};var platformPeek=function(){};}
 </script>
-<script>window.__assetsBase='/api/assets/';window.__ttsBase='/api/tts/';window.__voiceBase='/api/voice/';window.__pronBase='/api/en/pron/';window.__fundsBase='/api/funds';</script>
+<script>window.__assetsBase='/api/assets/';window.__ttsBase='/api/tts/';window.__voiceBase='/api/voice/';window.__pronBase='/api/en/pron/';window.__enAudioBase='/api/en/audio/';window.__fundsBase='/api/funds';</script>
 <script>${ASSETS_JS}</script>
 <script>${TTS_JS}</script>
 <script>${VOICE_JS}</script>
