@@ -1144,8 +1144,14 @@ try {
         if (SHOTS) { mkdirSync(SHOTS, { recursive: true }); await p.screenshot({ path: path.join(SHOTS, `forecast-B-${width}-${colorScheme}.png`), fullPage: true }); }
         // ⑥ Practical 项目页：没链接的"审《阶段计划》并过关卡 A"给一个明确的次动作；有链接的那条主按钮就是链接
         await p.goto(BASE + '/#/Practical');
-        await waitFor(p, '#f-todos li.todo');
-        await p.waitForTimeout(300);
+        // **项目页只有一套 DOM**（切项目换数据不换结构），所以 `#f-todos li.todo` 在切过去的
+        // 那一刻还是 forecast 的待办 —— 等这个选择器等于没等，后面那 300 毫秒纯属赌运气。
+        // 2026-11-13：项目页多了发音训练和句子训练两块，渲染多花一点时间，CI 上就读到了
+        // forecast 的待办、红了两条。改成**等它真的换成 Practical 的数据**：标题是 Practical，
+        // 并且待办里真的出现了 Practical 那一条。
+        await p.waitForFunction((want) => document.getElementById('f-title')?.textContent === 'Practical'
+          && [...document.querySelectorAll('#f-todos li.todo')].some((li) => (li.textContent || '').includes(want)),
+          T.prac.slice(0, 10), { timeout: WAIT });
         const PBb = await todoBtns(p, '#f-todos');
         const prac = PBb.find((b) => b.t.startsWith(T.prac.slice(0, 10)));
         check(`${tag}：Practical "${T.prac}"（没有链接）：不给主按钮，给正好一个明确的次动作`, !!prac && prac.prim === 0 && prac.sec.length === 1, prac ?? PBb);
