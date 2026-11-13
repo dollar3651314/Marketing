@@ -17,13 +17,14 @@
  *   7. **mp3 不进仓库**：git 跟踪的文件里一个 .mp3 都没有（两个仓库都是 public，念的是第三方课程材料）。
  */
 import { execFileSync } from 'node:child_process';
-import { existsSync, readFileSync, readdirSync } from 'node:fs';
+import { existsSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { getPlatformProxy } from 'wrangler';
 import type { Env } from '../src/env';
 import { handle } from '../src/index';
-import { AUDIO_REV, audioKey, enAudioApi, toBytes, 中文声音, 内容哈希, 是英文, 键的样子, 指令文本, 英文声音, 语速, 还没生成 } from '../src/en-audio';
+import { AUDIO_REV, audioKey, enAudioApi, toBytes, 中文声音, 内容哈希, 拼块, 是英文, 键的样子, 指令文本, 英文声音, 语速, 还没生成 } from '../src/en-audio';
 import { 语音清单 } from '../src/en-audio-list';
 import { groupCard, PRON_WORD_IDS, audioTextOf } from '../src/pron';
 import { GROUPS } from '../src/pron-content';
@@ -50,11 +51,23 @@ beforeAll(async () => {
   await db.batch(sql.map((s) => db.prepare(s)));
 });
 afterAll(async () => dispose());
-beforeEach(async () => { await db.batch([db.prepare('DELETE FROM en_audio'), db.prepare('DELETE FROM pron_audio')]); });
+beforeEach(async () => {
+  await db.batch([db.prepare('DELETE FROM en_audio'), db.prepare('DELETE FROM en_audio_part'), db.prepare('DELETE FROM pron_audio')]);
+});
 
 const env = (): Env => ({ DB: db, ENVIRONMENT: 'test', COPILOT_PASSWORD: PASS });
-const 放进库 = (key: string, mp3: Uint8Array, voice = 英文声音, txt = 'bed') =>
-  db.prepare('INSERT INTO en_audio (k, voice, txt, mp3, bytes, at) VALUES (?1, ?2, ?3, ?4, ?5, ?6)').bind(key, voice, txt, mp3, mp3.byteLength, T0).run();
+/** 元数据那一行（en_audio）：2026-11-13 起 `mp3` 列**写空**，字节在分块表里（那一列留着不删，见迁移 0023） */
+const 元数据 = (key: string, bytes: number, voice = 英文声音, txt = 'bed') =>
+  db.prepare('INSERT INTO en_audio (k, voice, txt, mp3, bytes, at) VALUES (?1, ?2, ?3, ?4, ?5, ?6)')
+    .bind(key, voice, txt, new Uint8Array(0), bytes, T0).run();
+/** 一块（en_audio_part）：part 从 0 开始 */
+const 放块 = (key: string, part: number, 字节: Uint8Array) =>
+  db.prepare('INSERT INTO en_audio_part (k, part, mp3) VALUES (?1, ?2, ?3)').bind(key, part, 字节).run();
+/** 放一条完整的（小的就一块；大的怎么切见下面第 6 组，那是 build-audio.py 真的切出来的） */
+const 放进库 = async (key: string, mp3: Uint8Array, voice = 英文声音, txt = 'bed') => {
+  await 元数据(key, mp3.byteLength, voice, txt);
+  if (mp3.byteLength) await 放块(key, 0, mp3);
+};
 const 取 = (key: string) => enAudioApi(env(), new Request(`${HOST}/api/en/audio/${key}`), key);
 
 // ======================================================================
@@ -229,8 +242,9 @@ describe('3. 运行时只读：取得到就放，取不到就照实说（底线 
 });
 
 // ======================================================================
-describe('4. 迁移 0022 只 CREATE；旧的 pron_audio 一行都没动', () => {
+describe('4. 迁移 0022 / 0023 只 CREATE；旧的 pron_audio 一行都没动', () => {
   const 码 = 读('migrations/0022_en_audio.sql').split('\n').map((l) => l.replace(/--.*$/, '')).join('\n');
+  const 码3 = 读('migrations/0023_en_audio_part.sql').split('\n').map((l) => l.replace(/--.*$/, '')).join('\n');
 
   it('一条 CREATE TABLE（en_audio），没有 ALTER / DROP / 回填', () => {
     expect((码.match(/CREATE TABLE/g) ?? []).length).toBe(1);
@@ -243,6 +257,26 @@ describe('4. 迁移 0022 只 CREATE；旧的 pron_audio 一行都没动', () => 
       .toEqual(['k', 'voice', 'txt', 'mp3', 'bytes', 'at']);
   });
 
+  it('0023 也是一条 CREATE TABLE（en_audio_part），没有 ALTER / DROP / 回填', () => {
+    expect((码3.match(/CREATE TABLE/g) ?? []).length).toBe(1);
+    expect(码3).toContain('CREATE TABLE en_audio_part (');
+    for (const w of ['ALTER ', 'DROP ', 'INSERT ', 'UPDATE ', 'DELETE ']) expect([w, 码3.toUpperCase().includes(w)]).toEqual([w, false]);
+  });
+
+  it('0023 的列就是 k / part / mp3，主键是 (k, part)（同一条音频的同一块不会有两行）', () => {
+    expect([...码3.slice(码3.indexOf('CREATE TABLE en_audio_part')).split(');')[0].matchAll(/^ {2}(\w+) /gm)].map((m) => m[1]).filter((x) => x !== 'PRIMARY'))
+      .toEqual(['k', 'part', 'mp3']);
+    expect(码3).toContain('PRIMARY KEY (k, part)');
+  });
+
+  it('**`en_audio` 那张表和它的 `mp3` 列一个都没动**（已有数据 0 条，但不许删表、不许删列）', async () => {
+    const 列 = (await db.prepare('SELECT * FROM pragma_table_info(?1)').bind('en_audio').all<{ name: string }>()).results.map((r) => r.name);
+    expect(列).toEqual(['k', 'voice', 'txt', 'mp3', 'bytes', 'at']);
+    // 全仓库的迁移里一句 DROP 都没有（english-boundary 也守着同一条，这里再钉一次：这次改的是语音这条路）
+    for (const f of readdirSync(path.join(ROOT, 'migrations')))
+      expect([f, /\bDROP\b/i.test(读('migrations/' + f).replace(/--.*$/gm, ''))]).toEqual([f, false]);
+  });
+
   it('`pron_audio` 还在、还能写进去（aura 时代的历史行一条都不删）', async () => {
     await db.prepare('INSERT INTO pron_audio (item, mp3, at) VALUES (?1, ?2, ?3)').bind('a2:g1-1a', MP3, T0).run();
     expect((await db.prepare('SELECT COUNT(*) AS n FROM pron_audio').first<{ n: number }>())?.n).toBe(1);
@@ -252,6 +286,8 @@ describe('4. 迁移 0022 只 CREATE；旧的 pron_audio 一行都没动', () => 
     const all = readdirSync(path.join(ROOT, 'migrations')).filter((f) => f.endsWith('.sql')).sort();
     expect(all.map((f) => Number(f.slice(0, 4)))).toEqual(all.map((_, i) => i + 1));
     expect(all[21]).toBe('0022_en_audio.sql');
+    expect(all[22]).toBe('0023_en_audio_part.sql');
+    expect(all.length).toBe(23);   // 这次**只新增 0023**，一个旧文件都没改、没删
   });
 });
 
@@ -292,5 +328,169 @@ describe('5. mp3 不进仓库、脚本不碰密钥', () => {
       .toEqual(['CLOUDFLARE_ACCOUNT_ID', 'CLOUDFLARE_API_TOKEN']);
     // 部署那条流水线（ci.yml）里**一个字都没有**它：edge-tts 挂了不该拖垮部署
     expect(读('.github/workflows/ci.yml')).not.toContain('build-audio');
+  });
+});
+
+// ======================================================================
+/**
+ * 第 6 组：**一条音频拆成多行存**（2026-11-13 线上 `statement too long: SQLITE_TOOBIG`）。
+ *
+ * 线上的事实：`scripts/build-audio.py --env production` 在 GitHub Actions 上**写第一条就挂**。
+ * 量过的大小分布是 190 条、最小 11,232 字节、中位 14,544、**最大 83,232**。mp3 进 D1 只能写成
+ * 十六进制字面量 `X'…'`，**字符数是字节数的两倍** —— 最大那条就是 166,464 个字符 ≈ 166 KB，
+ * 超过 D1 **单条 SQL 100 KB** 的上限（`--batch` 本来就是 1，不是批太大，是单条本身就超）。
+ *
+ * 所以这一组不是"看看代码对不对"，是**真的走一遍整条路**：
+ *   造一条最大的那种 → 交给 `scripts/build-audio.py` 按线上那套规则切块生成 SQL →
+ *   把这些 SQL 真的写进本地 D1 → 从接口读回来 → **和原始字节逐字节比**。
+ * 切块的规则**只有 build-audio.py 那一处**（测试不另抄一份），所以这里验的就是线上跑的那段代码。
+ */
+describe('6. 拆成多行存：最大的那条也能原样读回来（线上 SQLITE_TOOBIG）', () => {
+  /** 2026-11-13 量过的最大那条 */
+  const 最大那条 = 83_232;
+  /** 每块最多多少字节：**从脚本里读**，不在测试里另写一份 */
+  const 每块字节 = Number(/^每块字节 = ([\d_]+)/m.exec(读('scripts/build-audio.py'))![1].replace(/_/g, ''));
+  /**
+   * 造一条"最大的那种"假 mp3：定死的伪随机字节（同样的输入永远同样的输出）。
+   * **不是任何人的声音、也不是课程内容** —— 这里要验的只是"原样进、原样出"。
+   */
+  const 假mp3 = (n: number) => {
+    const b = new Uint8Array(n);
+    b[0] = 0xff; b[1] = 0xf3;                      // mp3 的帧头，只是为了像一条真的
+    let x = 0x12345678 >>> 0;
+    for (let i = 2; i < n; i++) { x = (Math.imul(x, 1664525) + 1013904223) >>> 0; b[i] = x >>> 24; }
+    return b;
+  };
+  /** 问 scripts/build-audio.py 要这条音频的 SQL（`--sql`：只打印，不连网、不写库） */
+  const 要SQL = (mp3: Uint8Array, k: string, 声音: string, 文: string) => {
+    const 临时 = mkdtempSync(path.join(tmpdir(), 'en-audio-'));
+    try {
+      const f = path.join(临时, 'one.mp3');
+      writeFileSync(f, mp3);
+      return execFileSync('python3', [path.join(ROOT, 'scripts/build-audio.py'), '--sql', f, '--key', k, '--voice', 声音, '--txt', 文],
+        { cwd: ROOT, encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 }).split('\n').filter(Boolean);
+    } finally { rmSync(临时, { recursive: true, force: true }); }
+  };
+
+  it('每块不超过 30,000 字节（十六进制 60,000 个字符，离 D1 单条 100 KB 的上限很远）', () => {
+    expect(每块字节).toBeGreaterThan(0);
+    expect(每块字节).toBeLessThanOrEqual(30_000);
+  });
+
+  it('**最大那条（83,232 字节）走完整条路**：脚本切块 → 写进本地 D1 → 接口读回来，**逐字节相同**', async () => {
+    const mp3 = 假mp3(最大那条);
+    const 文 = '最大的那一条';
+    const k = audioKey(文, 中文声音);
+    // 写成一条 INSERT 的话是这么多个字符 —— 这就是线上那条 SQLITE_TOOBIG（证明这条用例真的是"最大的那种"）
+    expect(mp3.byteLength * 2).toBeGreaterThan(100_000);
+
+    const 语句 = 要SQL(mp3, k, 中文声音, 文);
+
+    // ① 每条语句**单独一行、互相独立**，而且每一条都远低于 100 KB
+    expect(语句.length).toBe(2 + Math.ceil(最大那条 / 每块字节));     // 先删旧块 + 一条元数据 + 每块一条
+    expect(语句[0]).toBe(`DELETE FROM en_audio_part WHERE k = '${k}';`);
+    expect(语句[1]).toContain('INSERT INTO en_audio (k, voice, txt, mp3, bytes, at)');
+    expect(语句[1]).toContain("X''");                                 // 元数据那一行的 mp3 列写空
+    const 最长 = Math.max(...语句.map((s) => Buffer.byteLength(s)));
+    expect(最长).toBeLessThan(100_000);
+    expect(最长).toBeLessThan(每块字节 * 2 + 200);                    // 十六进制两倍 + 一点点头尾
+    for (const s of 语句.slice(2)) expect(s.startsWith('INSERT INTO en_audio_part (k, part, mp3)')).toBe(true);
+
+    // ② 这些 SQL 真的写进本地 D1（线上是 wrangler d1 execute --file 同一批语句，一条一行）
+    for (const s of 语句) await db.prepare(s.replace(/;$/, '')).run();
+    expect((await db.prepare('SELECT COUNT(*) AS n FROM en_audio_part WHERE k = ?1').bind(k).first<{ n: number }>())?.n)
+      .toBe(Math.ceil(最大那条 / 每块字节));
+    const 元 = await db.prepare('SELECT bytes, txt, mp3 FROM en_audio WHERE k = ?1').bind(k).first<{ bytes: number; txt: string; mp3: unknown }>();
+    expect(元?.bytes).toBe(最大那条);                                  // 元数据记的是真实大小
+    expect(元?.txt).toBe(文);
+    expect(toBytes(元?.mp3).byteLength).toBe(0);                       // 字节不在这一列（列还在，没删）
+
+    // ③ 从接口读回来，**逐字节相同**
+    const r = (await 取(k))!;
+    expect(r.status).toBe(200);
+    expect(r.headers.get('content-type')).toBe('audio/mpeg');
+    expect(r.headers.get('content-length')).toBe(String(最大那条));
+    const 回来的 = new Uint8Array(await r.arrayBuffer());
+    expect(回来的.byteLength).toBe(最大那条);
+    expect(Buffer.from(回来的).equals(Buffer.from(mp3))).toBe(true);   // 逐字节
+    expect(回来的).toEqual(mp3);
+  }, 120_000);
+
+  it('**重跑一遍结果一样**（先删旧块再写）：同一条写两次，还是那么多块、还是逐字节相同', async () => {
+    const mp3 = 假mp3(70_000);
+    const k = audioKey('重跑的那一条', 中文声音);
+    const 语句 = 要SQL(mp3, k, 中文声音, '重跑的那一条');
+    for (let 第几次 = 0; 第几次 < 2; 第几次++) for (const s of 语句) await db.prepare(s.replace(/;$/, '')).run();
+    expect((await db.prepare('SELECT COUNT(*) AS n FROM en_audio_part WHERE k = ?1').bind(k).first<{ n: number }>())?.n)
+      .toBe(Math.ceil(70_000 / 每块字节));
+    expect(new Uint8Array(await (await 取(k))!.arrayBuffer())).toEqual(mp3);
+  }, 120_000);
+
+  it('**块缺号就当成「还没生成」**：有 0、2 没有 1 → 404 原话，**绝不把残缺的音频当成完整的发出去**（底线 3）', async () => {
+    const k = audioKey('缺了中间一块的那条', 中文声音);
+    await 元数据(k, 9, 中文声音, '缺了中间一块的那条');   // 元数据在，看着像"已经生成过"
+    await 放块(k, 0, Uint8Array.from([1, 2, 3]));
+    await 放块(k, 2, Uint8Array.from([7, 8, 9]));
+    const r = (await 取(k))!;
+    expect(r.status).toBe(404);
+    expect(await r.json()).toEqual(还没生成(k));           // 话术一个字都没改
+    // 拼块() 自己也回 null —— **不是**把 0 和 2 接起来当成完整的
+    expect(拼块([{ part: 0, mp3: Uint8Array.from([1, 2, 3]) }, { part: 2, mp3: Uint8Array.from([7, 8, 9]) }])).toBeNull();
+  });
+
+  it('不从 0 开始（只有第 1 块）、一块都没有、块是空的 —— 三种都当成「还没生成」', async () => {
+    const k1 = audioKey('只有第二块的那条', 中文声音);
+    await 元数据(k1, 3, 中文声音, '只有第二块的那条');
+    await 放块(k1, 1, Uint8Array.from([1, 2, 3]));
+    expect((await 取(k1))!.status).toBe(404);
+
+    const k2 = audioKey('一块都没有的那条', 中文声音);
+    await 元数据(k2, 3, 中文声音, '一块都没有的那条');     // 元数据在，但一块都没写
+    expect((await 取(k2))!.status).toBe(404);
+
+    const k3 = audioKey('块是空的那条', 中文声音);
+    await 元数据(k3, 0, 中文声音, '块是空的那条');
+    await 放块(k3, 0, new Uint8Array(0));
+    expect((await 取(k3))!.status).toBe(404);
+  });
+
+  it('插入顺序乱了也拼得对：按 part 排，不按写进去的先后', async () => {
+    const k = audioKey('倒着写进去的那条', 中文声音);
+    await 元数据(k, 6, 中文声音, '倒着写进去的那条');
+    await 放块(k, 2, Uint8Array.from([5, 6]));
+    await 放块(k, 0, Uint8Array.from([1, 2]));
+    await 放块(k, 1, Uint8Array.from([3, 4]));
+    expect(new Uint8Array(await (await 取(k))!.arrayBuffer())).toEqual(Uint8Array.from([1, 2, 3, 4, 5, 6]));
+    expect(拼块([{ part: 1, mp3: [3, 4] }, { part: 0, mp3: [1, 2] }])).toEqual(Uint8Array.from([1, 2, 3, 4]));
+    expect(拼块([])).toBeNull();
+  });
+
+  it('「只补缺的」问的是**分块表**：缺号的、只有元数据的都**不算已经生成**（上次写到一半断了，下次会重新生成）', async () => {
+    // 脚本里那条查询**原样拿出来**在本地库上跑一遍（不在测试里另写一份，免得两边不一样）
+    const 函数 = 读('scripts/build-audio.py').slice(读('scripts/build-audio.py').indexOf('def 库里已有的键'));
+    const sql = [...函数.slice(0, 函数.indexOf('def 切块')).matchAll(/"((?:SELECT|HAVING)[^"]*)"/g)].map((m) => m[1]).join('');
+    expect(sql).toContain('FROM en_audio_part');
+    expect(sql).toContain('COUNT(*) = MAX(part) + 1');     // 从 0 开始、没缺号 —— 和 拼块() 同一把尺子
+
+    const 完整 = audioKey('完整的那条', 中文声音);
+    await 放进库(完整, Uint8Array.from([1, 2, 3]), 中文声音, '完整的那条');
+    const 缺号 = audioKey('缺号的那条', 中文声音);
+    await 元数据(缺号, 6, 中文声音, '缺号的那条');
+    await 放块(缺号, 0, Uint8Array.from([1, 2, 3]));
+    await 放块(缺号, 2, Uint8Array.from([4, 5, 6]));
+    const 只有元数据 = audioKey('只有元数据的那条', 中文声音);
+    await 元数据(只有元数据, 3, 中文声音, '只有元数据的那条');
+
+    const 已有 = (await db.prepare(sql).all<{ k: string }>()).results.map((r) => r.k);
+    expect(已有).toEqual([完整]);                           // 另外两条下次会被重新生成
+  });
+
+  it('生成脚本自己也拦一道：切出来的每条 SQL 都比 D1 的上限小（上限和每块大小都写在脚本里）', () => {
+    const py = 读('scripts/build-audio.py');
+    expect(py).toContain('SQLITE_TOOBIG');
+    expect(py).toContain('D1单条上限 = 100_000');
+    expect(py).toContain('en_audio_part');
+    // --batch 的含义改成「一次提交几条音频」（不是"一条 SQL 里塞几条"）
+    expect(py).toContain('一次提交几条音频');
   });
 });

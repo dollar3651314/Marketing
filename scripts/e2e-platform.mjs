@@ -62,7 +62,9 @@ const REDESIGN_B = true;
 
 /**
  * 英语学习的那些语音（2026-11-13 起全部**预先生成**：微软 Edge 的神经网络语音，英文 Sonia、中文 晓晓）：
- * 本地当然没有生成好的字节，所以**先把整份清单当成"已经生成过"放进 en_audio**（这就是线上的常态）。
+ * 本地当然没有生成好的字节，所以**先把整份清单当成"已经生成过"放进库**（这就是线上的常态）：
+ * 元数据一行进 en_audio，字节进分块表 en_audio_part（迁移 0023 起字节都存在那里，一条音频可以拆成多行；
+ * 这段静音很小，一块就装下了）。
  * 放的是 test/fixtures/pron/silent.mp3 —— 一段 0.26 秒的**静音** mp3（本地用 ffmpeg 生成，不是任何人的声音）。
  * 所以这一段测的是**界面和流程**，不是"两个词念得像不像"；像不像只有人能判断，那正是「两个听着一样」那个按钮的事。
  * **纠说那条路一个替身都不放**：本地没绑 Workers AI，它走的就是"当面说用不了、其余照常能用"那条真路。
@@ -77,7 +79,10 @@ const 语音清单 = JSON.parse(
 ).清单;
 const srv = await startServer({
   name: 'e2e-platform',
-  seedSql: 语音清单.map((x) => `INSERT INTO en_audio (k, voice, txt, mp3, bytes, at) VALUES ('${x['键']}', '${x['声音']}', '', X'${SILENT_MP3}', ${SILENT_MP3.length / 2}, 0);`).join('\n'),
+  seedSql: 语音清单.flatMap((x) => [
+    `INSERT INTO en_audio (k, voice, txt, mp3, bytes, at) VALUES ('${x['键']}', '${x['声音']}', '', X'', ${SILENT_MP3.length / 2}, 0);`,
+    `INSERT INTO en_audio_part (k, part, mp3) VALUES ('${x['键']}', 0, X'${SILENT_MP3}');`,
+  ]).join('\n'),
 });
 const BASE = srv.BASE;
 const now = Date.now();
