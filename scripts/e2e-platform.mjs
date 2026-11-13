@@ -645,7 +645,7 @@ try {
       // ④ 发音训练的按钮 ≥52px（句子训练的主按钮也量，次动作"上一步"允许 44）
       await p.goto(BASE + '/#/Practical/pron');
       await waitFor(p, '#f-pron');
-      await p.waitForFunction(() => document.querySelectorAll('#f-pron #pn-cbtns .btn').length > 0, null, { timeout: WAIT }).catch(() => {});
+      await p.waitForFunction(() => document.querySelectorAll('#f-pron #pn-list .pn-todo').length > 0, null, { timeout: WAIT }).catch(() => {});
       const small = await p.evaluate(() => [...document.querySelectorAll('#f-pron button')].filter((b) => b.getClientRects().length && !b.closest('summary') && b.tagName !== 'SUMMARY')
         .map((b) => ({ t: b.textContent.slice(0, 10), h: Math.round(b.getBoundingClientRect().height) })).filter((x) => x.h < 52));
       check(`${width} 宽：发音训练看得见的按钮都 ≥52px 高（手机单手够得着）`, small.length === 0, small);
@@ -655,6 +655,9 @@ try {
         s2b.length > 0 && s2b.every((x) => x.h >= (x.g ? 44 : 52)), s2b);
 
       // ⑤ 两块都能真的走一步
+      // 2026-11-13 起「发音训练」打开是**清单**（第 0 屏），所以先点清单上「跟我做」那一条进去
+      await p.click('#f-pron #pn-list .pn-todo:first-child .go', { timeout: WAIT });
+      await p.waitForFunction(() => !document.getElementById('pn-s1').hidden, null, { timeout: WAIT });
       const 第一句 = await txt(p, '#pn-csay');
       await p.click('#f-pron #pn-cbtns .btn.go', { timeout: WAIT });
       await p.waitForTimeout(300);
@@ -735,7 +738,10 @@ try {
       });
       await login(q, '/#/Practical/pron');
       await waitFor(q, '#f-pron');
-      await q.waitForFunction(() => document.querySelectorAll('#pn-cbtns .btn').length > 0, null, { timeout: WAIT });
+      // 2026-11-13 起打开是清单：镜子在第 1 步里，先点清单上「跟我做」那一条进去
+      await q.waitForFunction(() => document.querySelectorAll('#pn-list .pn-todo').length > 0, null, { timeout: WAIT });
+      await q.click('#pn-list .pn-grp:nth-child(1) .pn-todo:nth-child(1) .go', { timeout: WAIT });
+      await q.waitForFunction(() => !document.getElementById('pn-s1').hidden && document.querySelectorAll('#pn-cbtns .btn').length > 0, null, { timeout: WAIT });
       const n0 = net.length;
       await q.click('#pn-mir');
       await q.waitForFunction(() => { const v = document.getElementById('pn-cam'); return !!v && v.videoWidth > 0; }, null, { timeout: 8000 });
@@ -1457,6 +1463,9 @@ try {
   //    **一屏上只有一步**，点「做好了，下一步」才前进；顶上是课程自己的四级练法轨；口型示意图整套撤掉了；
   // ② 第 2 步**对照听**：这一组的最小对立对，两个词各一个大按钮，点得响（那些语音已经预置进 en_audio）；
   //    **他自己点「我听出来了，开始考」才进第 3 步**；
+  // ⓪ **打开默认是清单**（2026-11-13，Amos：「将我要做的事情 做成一个 checklist 让我照着做 并在完成后一个一个的勾选确认」）：
+  //    七组、每组最多四条；点一条才进去做；做完回来那一条**自己勾上**（查库，不只看界面）；
+  //    他取消掉的那一条**刷新之后还是没勾**（不会被自动勾回来）；第 7 组的清单里**没有**「考 10 题过关」「对照听过」；
   // ③ 第 3 步**考**：一轮 10 题、**只考这一组**；每题揭晓前页面上找不到"放的是哪个词"（HTML 里没有编号）；
   // ④ **答错当场把第 2 步的对照听塞回来**（两个词都能点），点「继续」才出下一题；
   // ⑤ 第 4 步：10 题对 8 题（80%）过关，给**课件那句绕口令** + 三最法；服务器上真的记了一行；
@@ -1486,12 +1495,80 @@ try {
       ST['一共几组'] === 7 && ST['一轮几题'] === 10 && ST['及格线'] === '10 题对 8 题（80%）'
       && Object.keys(WORD).length === 56 && (ST['组'] || [])[6]['能听辨'] === false, { 组数: (ST['组'] || []).length, 词数: Object.keys(WORD).length });
 
+    // ---- ⓪ 第 0 屏：待办清单（打开默认就是它）----
+    /** 清单现在的样子：一组一项 */
+    const 清单上 = (pg) => pg.evaluate(() => [...document.querySelectorAll('#pn-list .pn-grp')].map((d) => ({
+      标题: d.querySelector('.g-t').textContent,
+      说明: d.querySelector('.g-note') ? d.querySelector('.g-note').textContent : '',
+      事: [...d.querySelectorAll('.pn-todo')].map((li) => ({
+        名: li.querySelector('.go').textContent,
+        勾: (li.querySelector('.pn-tick') || li.querySelector('.fix')).textContent,
+        能点方框: !!li.querySelector('button.pn-tick'),
+        高: Math.round(li.getBoundingClientRect().height),
+        点得动的高: [...li.querySelectorAll('button')].map((b) => Math.round(b.getBoundingClientRect().height)),
+      })),
+    })));
+    /** 点清单上第 <组> 组的第 <第几条> 条进去做（组和条都从 0 数） */
+    const 进 = async (pg, 组, 第几条) => {
+      await pg.click(`#pn-list .pn-grp:nth-child(${组 + 1}) .pn-todo:nth-child(${第几条 + 1}) .go`, { timeout: WAIT });
+    };
+    const 回清单 = async (pg) => { await pg.click('#pn-tolist', { timeout: WAIT }); await pg.waitForFunction(() => !document.getElementById('pn-s0').hidden, null, { timeout: WAIT }); };
+    await p.waitForFunction(() => document.querySelectorAll('#pn-list .pn-todo').length > 0, null, { timeout: WAIT });
+    const L0 = await 清单上(p);
+    const 屏 = await p.evaluate(() => ['pn-s0', 'pn-s1', 'pn-s2', 'pn-s3', 'pn-s4', 'pn-pick', 'pn-steps', 'pn-tolistwrap'].map((i) => [i, document.getElementById(i).hidden]));
+    check(`${tg}：**打开先看见的是清单，不是第 1 步**（四步、选一组那排、四步条全藏着）`,
+      屏.every(([i, h]) => (i === 'pn-s0' ? h === false : h === true)), 屏);
+    check(`${tg}：七组都在清单上，一共 26 件事（6 组 × 4 条 + 第 7 组 2 条）`,
+      L0.length === 7 && L0.flatMap((z) => z.事).length === 26, L0.map((z) => z.事.length));
+    check(`${tg}：第 1 组的四条就是他要的那四条，**步数不是写死的**（这一组的阶梯有几步就写几步）`,
+      L0[0].事.map((x) => x.名.replace(/（.*/, '')).join('|') === '跟我做 19 步走完|对照听过|考 10 题过关|用 🎤 把这一组念过一遍'
+      && L0[0].事.every((x) => x.勾 === '☐'), L0[0].事.map((x) => x.名));
+    check(`${tg}：七组的步数各写各的（不是七个一样的数）`, new Set(L0.map((z) => z.事[0].名)).size > 1, L0.map((z) => z.事[0].名));
+    // 2026-11-13：原来每条旁边摆整句「按你的成绩算的：…不能手动改。」，七组 × 两条 = 同一句印 14 遍，
+    // 390 的手机上占掉近一半文字。改成：条目旁只留**它独有的那半句**（🎤 的进度），
+    // 「按你的成绩算的」搬进模块底下的折叠，**全页只说一次**。这里跟着量新位置，并钉死"只说一次"。
+    const why0 = await p.evaluate(() => ({
+      条目旁: [...document.querySelectorAll('#pn-list .pn-grp:first-child .pn-why')].map((e) => e.textContent || ''),
+      全块里出现几次: ((document.getElementById('f-pron')?.textContent || '').match(/按你的成绩算的/g) || []).length,
+      折叠里有没有: (document.getElementById('f-pron')?.textContent || '').includes('勾不上也取消不了'),
+    }));
+    check(`${tg}：**算出来的那两条没有方框按钮**（不画点不动的按钮）`,
+      L0[0].事.map((x) => x.能点方框).join() === 'true,true,false,false',
+      L0[0].事.map((x) => [x.名.slice(0, 8), x.能点方框]));
+    check(`${tg}：条目旁只留 🎤 那条的进度；**「按你的成绩算的」整块里只说一次**（在折叠里），不是每条印一遍`,
+      why0.条目旁.length === 1 && /^现在 \d+ \/ \d+$/.test(why0.条目旁[0])
+      && why0.全块里出现几次 === 1 && why0.折叠里有没有, why0);
+    // 方框里那个记号**必须真的看得见**：第一版把这个按钮叫 .tick，撞上工作台待办那个 color:transparent 的
+    // 小圆点，页面上四个方框全是空的 —— 而 textContent 照样是「☐」，字符串断言一条都没红。所以这里量**算出来的颜色**。
+    const 记号 = await p.evaluate(() => [...document.querySelectorAll('#pn-list .pn-tick, #pn-list .fix')].slice(0, 4).map((e) => {
+      const c = getComputedStyle(e);
+      return { t: e.textContent, color: c.color, size: c.fontSize };
+    }));
+    check(`${tg}：方框里那个记号**真的看得见**（不是 color:transparent、字号也不是 0）`,
+      记号.length === 4 && 记号.every((x) => x.t.length > 0 && !/transparent|rgba\(0, 0, 0, 0\)/.test(x.color) && parseFloat(x.size) >= 12), 记号);
+    const 一句话 = await txt(p, '#pn-lead');
+    check(`${tg}：一句话结论写**还剩几件事**，不是"正在读取"`,
+      /还剩 26 件事没做/.test(一句话) && !/读取/.test(一句话), 一句话);
+    check(`${tg}：清单上每一条**可点区域都 ≥44px**（手机单手点得中），而且没有横向滚动`,
+      L0.flatMap((z) => z.事).every((x) => x.点得动的高.every((h) => h >= 44)) && (await noHScroll(p)),
+      L0.flatMap((z) => z.事).map((x) => x.点得动的高).filter((hs) => hs.some((h) => h < 44)));
+    // ⑥（清单这一头）第 7 组：**不出现**「考 10 题过关」和「对照听过」，并照实说明为什么
+    const g7L = L0[6];
+    check(`${tg}：**第 7 组的清单里没有「考 10 题过关」、也没有「对照听过」**（它一对最小对立对都没有，不硬凑）`,
+      g7L.事.length === 2 && !g7L.事.some((x) => /考 |对照听/.test(x.名)), g7L.事.map((x) => x.名));
+    check(`${tg}：第 7 组照实说明为什么少两条（这句话原样来自接口的「听辨说明」，页面不自己写）`,
+      g7L.说明 === (ST['组'] || [])[6]['听辨说明'] && g7L.说明.includes('一对最小对立对都没有'), g7L.说明);
+    if (SHOTS) { mkdirSync(SHOTS, { recursive: true }); await p.locator('#f-pron').screenshot({ path: path.join(SHOTS, '发音训练-清单-390.png') }); }
+
     // ---- 第 1 步：跟我做（一次只说一句话）----
     // 「做好了，下一步」那个主按钮；走到收尾屏为止
     const 下一步 = async (pg) => { await pg.click('#pn-cbtns .btn.go'); };
     const 走完跟我做 = async (pg) => {
       for (let k = 0; k < 80 && await pg.evaluate(() => document.getElementById('pn-fin').hidden); k++) await 下一步(pg);
     };
+    // 点清单上第 1 组的「跟我做」那一条才进第 1 步（下面这一整段量的都是进去以后的事）
+    await 进(p, 0, 0);
+    await p.waitForFunction(() => !document.getElementById('pn-s1').hidden, null, { timeout: WAIT });
     /** 屏幕上现在显示的这一步（页面只会显示一步，所以这就是全部） */
     const 这一步 = (pg) => pg.evaluate(() => ({
       lv: document.getElementById('pn-clv').textContent,
@@ -1574,6 +1651,10 @@ try {
       fin.coachHidden && fin.t.includes('直到没有任何发音错误') && fin.t.includes('没有给自查的办法') && fin.t.includes('机器听成了哪个词')
       && fin.rail.every((c) => c.includes('ok')), fin);
     if (SHOTS) await p.locator('#f-pron').screenshot({ path: path.join(SHOTS, '发音训练-跟我做-收尾屏-390.png') });
+    // **走完这一刻，那一条真的写进库里了**（界面上的勾好看，库里没有的话刷新一次他就白做一遍 —— 所以这里查库）
+    const 走完了 = srv.sql('SELECT k, by FROM en_done ORDER BY k');
+    check(`${tg}：走完「跟我做」这一刻，**库里真的多了那一行**（en_done，谁勾的写 auto）`,
+      JSON.stringify(走完了) === JSON.stringify([{ k: 's1:g1:follow', by: 'auto' }]), 走完了);
 
     // ---- 第 2 步：对照听（+ 纠说）----
     await p.click('#pn-go2');
@@ -1616,7 +1697,31 @@ try {
     check(`${tg}：ketch 这类词连试都不试（400 + 说清楚为什么），不拿它冤枉人`,
       sayBad.status === 400 && String(sayBad.body['出错']).includes('不能拿来纠说'), sayBad);
 
+    // ---- 回清单：那一条自己勾上了；取消它，**刷新之后不许被勾回来** ----
+    await 回清单(p);
+    const L1 = await 清单上(p);
+    check(`${tg}：回到清单，「跟我做 19 步走完」那一条**自己打上勾了**，一句话结论跟着少一件`,
+      L1[0].事[0].勾 === '☑' && /还剩 25 件事没做/.test(await txt(p, '#pn-lead')), { 事: L1[0].事.map((x) => x.勾), lead: await txt(p, '#pn-lead') });
+    // 他想重做 → 自己把这个勾取消
+    await p.click('#pn-list .pn-grp:nth-child(1) .pn-todo:nth-child(1) button.pn-tick', { timeout: WAIT });
+    await p.waitForFunction(() => document.querySelector('#pn-list .pn-grp:nth-child(1) .pn-todo:nth-child(1) button.pn-tick').textContent === '☐', null, { timeout: WAIT });
+    const 取消后 = srv.sql('SELECT k, by FROM en_done ORDER BY k');
+    check(`${tg}：取消一条机器勾上的 → **库里那一行真的删了**`, 取消后.length === 0, 取消后);
+    // **刷新**（关掉页面第二天再打开是同一件事）：这一条必须还是没勾，而且库里也不许冒出来
+    await p.reload();
+    await p.waitForSelector('#app:not([hidden])', { timeout: WAIT });
+    await waitFor(p, '#f-pron');
+    await p.waitForFunction(() => document.querySelectorAll('#pn-list .pn-todo').length > 0, null, { timeout: WAIT });
+    const L2 = await 清单上(p);
+    const 刷新后 = srv.sql('SELECT k, by FROM en_done ORDER BY k');
+    check(`${tg}：**取消掉的那一条，刷新之后还是没勾**（自动勾只在走完那一刻写一次，不是每次打开都重算）`,
+      L2[0].事[0].勾 === '☐' && 刷新后.length === 0 && /还剩 26 件事没做/.test(await txt(p, '#pn-lead')),
+      { 勾: L2[0].事[0].勾, 库里: 刷新后, lead: await txt(p, '#pn-lead') });
+
     // ---- 第 3 步：考 10 题（只考这一组）----
+    // 从清单上点「对照听过」那一条进去，再点「我听出来了，开始考」——**那一刻**这一条自己勾上
+    await 进(p, 0, 1);
+    await p.waitForFunction(() => !document.getElementById('pn-s2').hidden, null, { timeout: WAIT });
     await p.click('#pn-go3');
     await p.waitForFunction(() => !document.getElementById('pn-s3').hidden && document.getElementById('pn-l').textContent !== '—', null, { timeout: WAIT });
     const ALL_IDS = Object.keys(WORD);
@@ -1693,12 +1798,18 @@ try {
     await p.reload();
     await p.waitForSelector('#app:not([hidden])', { timeout: WAIT });
     await waitFor(p, '#f-pron');
-    await p.waitForFunction(() => /过关过/.test(document.getElementById('pn-lead-t').textContent), null, { timeout: WAIT }).catch(() => {});
-    check(`${tg}：刷新后这一组的记录还在（一句话结论写"七组里过关过 1 组"）`, /过关过 1 组/.test(await txt(p, '#pn-lead')), await txt(p, '#pn-lead'));
+    await p.waitForFunction(() => document.querySelectorAll('#pn-list .pn-todo').length > 0, null, { timeout: WAIT });
+    const L3 = await 清单上(p);
+    const 库里 = srv.sql('SELECT k, by FROM en_done ORDER BY k');
+    check(`${tg}：刷新后清单还在（存在服务器上，不在浏览器里）：这一组已经做完 2 件（对照听过 + 考 10 题过关），结论写"还剩 24 件"`,
+      L3[0].事.map((x) => x.勾).join('') === '☐☑☑☐' && /还剩 24 件事没做/.test(await txt(p, '#pn-lead')), { 事: L3[0].事.map((x) => [x.名.slice(0, 8), x.勾]), lead: await txt(p, '#pn-lead') });
+    check(`${tg}：「考 10 题过关」那一条**按成绩算，一行都不写库**（库里只有点「开始考」那一刻记的 listen）`,
+      JSON.stringify(库里) === JSON.stringify([{ k: 's1:g1:listen', by: 'auto' }]), 库里);
+    if (SHOTS) await p.locator('#f-pron').screenshot({ path: path.join(SHOTS, '发音训练-清单-做了两件-390.png') });
 
     // ⑥ 第 7 组：课件一条口型都没给 → 那一步不许说"保持这个口型"；照实说只能跟读和纠说，连「开始考」都不给
-    await p.click('#pn-pick .btn:nth-child(7)');
-    await p.waitForFunction(() => /^第 1 \//.test(document.getElementById('pn-cnum').textContent), null, { timeout: WAIT });
+    await 进(p, 6, 0);
+    await p.waitForFunction(() => !document.getElementById('pn-s1').hidden && /^第 1 \//.test(document.getElementById('pn-cnum').textContent), null, { timeout: WAIT });
     const g7a = await p.evaluate(() => {
       const 话 = [];
       for (let k = 0; k < 80; k++) {
@@ -1724,7 +1835,9 @@ try {
     await p2.addInitScript(() => { Object.defineProperty(navigator, 'mediaDevices', { value: undefined, configurable: true }); });
     await login(p2, '/#/Practical/pron');
     await waitFor(p2, '#f-pron');
-    await p2.waitForFunction(() => document.querySelectorAll('#pn-cbtns .btn').length > 0, null, { timeout: WAIT });
+    await p2.waitForFunction(() => document.querySelectorAll('#pn-list .pn-todo').length > 0, null, { timeout: WAIT });
+    await 进(p2, 0, 0);
+    await p2.waitForFunction(() => !document.getElementById('pn-s1').hidden, null, { timeout: WAIT });
     await 走完跟我做(p2);
     await p2.click('#pn-go2');
     await p2.waitForFunction(() => !document.getElementById('pn-s2').hidden, null, { timeout: WAIT });
@@ -1763,7 +1876,10 @@ try {
       });
       await login(q, '/#/Practical/pron');
       await waitFor(q, '#f-pron');
-      await q.waitForFunction(() => document.querySelectorAll('#pn-cbtns .btn').length > 0, null, { timeout: WAIT });
+      // 2026-11-13 起打开是清单：镜子在第 1 步里，所以先点清单上「跟我做」那一条进去
+      await q.waitForFunction(() => document.querySelectorAll('#pn-list .pn-todo').length > 0, null, { timeout: WAIT });
+      await q.click('#pn-list .pn-grp:nth-child(1) .pn-todo:nth-child(1) .go', { timeout: WAIT });
+      await q.waitForFunction(() => !document.getElementById('pn-s1').hidden && document.querySelectorAll('#pn-cbtns .btn').length > 0, null, { timeout: WAIT });
       const tg = '390 宽·假媒体流';
 
       // ---- ② 照镜子 ----

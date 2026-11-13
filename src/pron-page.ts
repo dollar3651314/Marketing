@@ -62,6 +62,28 @@ import { audioKey, 中文声音, 指令文本 } from './en-audio';
 import { LESSON, 级 } from './pron-lesson';
 
 export const PRON_CSS = `
+/* 第 0 屏：**待办清单**（2026-11-13，Amos：「将我要做的事情 做成一个 checklist 让我照着做 并在完成后一个一个的勾选确认」）。
+   一组一张卡，一条一行：左边方框（点它自己勾 / 取消）、右边这件事（点它进去做）。两边都 56px，手机单手够得着。 */
+.pn .pn-grp{border:1px solid var(--line);border-radius:12px;background:var(--surface);padding:var(--s3);margin:0 0 var(--s3)}
+.pn .pn-grp .g-t{font-size:var(--fs-body);font-weight:700;color:var(--ink);margin:0 0 var(--s2);overflow-wrap:anywhere}
+.pn .pn-grp .g-note{font-size:12px;color:var(--ink-2);line-height:1.6;margin:0 0 var(--s3);border-left:3px solid var(--line);padding-left:10px;overflow-wrap:anywhere}
+.pn .pn-todos{list-style:none;margin:0;padding:0}
+.pn .pn-todo{margin:0 0 var(--s2)}
+.pn .pn-todo .t-row{display:flex;align-items:stretch;gap:var(--s2)}
+/* 类名**不能叫 .tick**：工作台待办那个打勾按钮已经占了这个名字，而 .plat .tick 是 color:transparent
+   的小圆点，套上来方框里的那个记号会整个看不见 —— 2026-11-13 第一版就踩了这个坑，截图上是四个空框。 */
+#f-pron .pn-todo .pn-tick{flex:0 0 56px;min-width:56px;min-height:56px;font-size:22px;line-height:1;padding:0;color:var(--ink-2)}
+#f-pron .pn-todo .pn-tick[aria-pressed="true"]{background:var(--ok-soft);border-color:var(--ok);color:var(--ok)}
+/* 算出来的那两条（考 10 题过关 / 用 🎤 念过一遍）：**没有方框按钮**，只有一个记号 —— 它不是点得动的东西，
+   不许画一个点不动的按钮骗他（旁边那行小字写明为什么）。 */
+.pn .pn-todo .fix{flex:0 0 56px;min-width:56px;min-height:56px;display:flex;align-items:center;justify-content:center;font-size:22px;border:1px dashed var(--line);border-radius:10px;background:var(--surface-2);color:var(--muted)}
+.pn .pn-todo.on .fix{color:var(--ok);border-style:solid;border-color:var(--ok);background:var(--ok-soft)}
+/* 这件事本身：**左对齐**（.btn 默认是 inline-flex 居中，七组四条居中读起来像广告牌，不像清单） */
+#f-pron .pn-todo .go{flex:1 1 auto;min-width:0;min-height:56px;font-size:15px;font-weight:700;justify-content:flex-start;text-align:left;white-space:normal;overflow-wrap:anywhere;line-height:1.3;padding:8px 12px}
+.pn .pn-todo.on .go{color:var(--muted)}
+.pn .pn-why{font-size:12px;color:var(--muted);line-height:1.5;margin:var(--s1) 0 var(--s3) 64px;overflow-wrap:anywhere}
+/* 进了某一条之后，顶上永远有一条回清单的路（手机上翻到哪都点得到） */
+.pn .pn-tolist{margin:0 0 var(--s3)}
 /* 选一组：七个按钮（第 7 组没有听辨题，按钮上照实标出来） */
 .pn .pn-pick{display:flex;flex-wrap:wrap;gap:var(--s2);margin:0 0 var(--s4)}
 #f-pron .pn-pick .btn{display:block;min-height:56px;font-size:14px;font-weight:700;flex:1 1 calc(50% - var(--s2));min-width:0;white-space:normal;overflow-wrap:anywhere;line-height:1.3;padding:8px 10px;text-align:center}
@@ -169,21 +191,31 @@ export const PRON_CSS = `
 
 /** Practical 项目页上的「发音训练」模块（`#f-pron`，子菜单 `#/Practical/pron`）：别的项目整块 hidden */
 export const PRON_MOD = `<section class="card mod pn" id="f-pron"><header class="mh"><h2>发音训练</h2><span class="sp"></span><span class="aux" id="pn-aux">七组易错音</span></header>
-<p class="lead" id="pn-lead"><span class="dot gray" id="pn-dot"></span><span id="pn-lead-t">读取中…</span><span class="soft" id="pn-soft">跟我做（一次一句）→ 对照听 → 同一组连考 10 题 → 对 8 题过关，给绕口令。</span></p>
+<p class="lead" id="pn-lead"><span class="dot gray" id="pn-dot"></span><span id="pn-lead-t">读取中…</span><span class="soft" id="pn-soft">点一条进去做，做完回来自动打勾。</span></p>
 <div class="mbody">
   <!-- 旧的那两块去哪了（Amos 2026-11-11：「都没用了」）：照实说，并说明历史数据还在 -->
   <details class="more" id="pn-old"><summary>「英语练习」和「带练」去哪了</summary><div class="in"><p id="pn-old-t">读取中…</p>
     <p>新的这一块和它们最大的不同：第 1 步<b>一次只说一句话</b>，你做完点一下才给下一句；<b>同一组音连考 10 题</b>，不是每题换一个音；
     <b>答错当场回到对照听</b>，不是只给对错；过关才给绕口令。口型、对比词、绕口令都来自你学过的那套课程（S1 第 10、11 课）。</p></div></details>
 
+  <!-- 第 0 屏：待办清单（**打开默认就是这一屏**）。点一条才进去做那件事，做完回来自动打上勾 -->
+  <div id="pn-s0">
+    <p class="pn-h">照着做，做完一条打一个勾</p>
+    <div id="pn-list"></div>
+  </div>
+
+  <!-- 进了某一条之后才出现：回清单 -->
+  <div class="pn-one pn-tolist" id="pn-tolistwrap" hidden><button class="btn" type="button" id="pn-tolist">← 回清单</button></div>
+
   <!-- 选一组（默认 g1 = /e/ vs /æ/，你实测最弱的那一组） -->
-  <p class="pn-h">练哪一组</p>
-  <div class="pn-pick" id="pn-pick"></div>
+  <p class="pn-h" id="pn-pick-h" hidden>练哪一组</p>
+  <div class="pn-pick" id="pn-pick" hidden></div>
 
-  <div class="pn-steps" id="pn-steps" aria-label="四步"><span class="pn-step" data-st="1">1 跟我做</span><span class="pn-step" data-st="2">2 对照听</span><span class="pn-step" data-st="3">3 考 10 题</span><span class="pn-step" data-st="4">4 过关</span></div>
+  <div class="pn-steps" id="pn-steps" aria-label="四步" hidden><span class="pn-step" data-st="1">1 跟我做</span><span class="pn-step" data-st="2">2 对照听</span><span class="pn-step" data-st="3">3 考 10 题</span><span class="pn-step" data-st="4">4 过关</span></div>
 
-  <!-- 第 1 步：跟我做（不考）。一屏上只有一步；每一句话都来自 src/pron-lesson.ts，页面一句都不自己写 -->
-  <div id="pn-s1">
+  <!-- 第 1 步：跟我做（不考）。一屏上只有一步；每一句话都来自 src/pron-lesson.ts，页面一句都不自己写。
+       **默认是藏着的**：2026-11-13 起打开先看见清单（#pn-s0），点了「跟我做」那一条才进这一屏 -->
+  <div id="pn-s1" hidden>
     <!-- 课程 S1 自己的四级练法顺序（单音 → 音素拼合 → 单词拼读 → 句子和绕口令） -->
     <div class="pn-rail" id="pn-rail" aria-label="课程的四级练法"></div>
     <div class="pn-coach" id="pn-coach">
@@ -222,9 +254,10 @@ export const PRON_MOD = `<section class="card mod pn" id="f-pron"><header class=
         <p class="s-how">课程<b>没有给自查的办法</b> —— 这正是上面每一步的 🎤 要补的那一处：它告诉你<b>机器听成了哪个词</b>。
         语音识别天生要对口音稳健，<b>它听成什么是线索，不是判决</b>。</p>
       </div>
+      <div class="pn-one"><button class="btn primary" type="button" id="pn-fin2list">← 回清单</button></div>
       <div class="pn-two">
         <button class="btn" type="button" id="pn-redo">从头再走一遍</button>
-        <button class="btn primary" type="button" id="pn-go2">去对照听</button>
+        <button class="btn" type="button" id="pn-go2">去对照听</button>
       </div>
     </div>
   </div>
@@ -311,8 +344,9 @@ export const PRON_MOD = `<section class="card mod pn" id="f-pron"><header class=
         <ul id="pn-wrong"></ul>
       </div>
     </div>
+    <div class="pn-one"><button class="btn primary" type="button" id="pn-s4list">← 回清单</button></div>
     <div class="pn-two">
-      <button class="btn primary" type="button" id="pn-again2">再考一轮</button>
+      <button class="btn" type="button" id="pn-again2">再考一轮</button>
       <button class="btn" type="button" id="pn-toS1">回第 1 步跟我做</button>
     </div>
   </div>
@@ -321,6 +355,10 @@ export const PRON_MOD = `<section class="card mod pn" id="f-pron"><header class=
   <div class="pn-err" id="pn-err" hidden></div>
 </div>
 <details class="more"><summary>这一块到底在做什么 · 内容和发音各从哪来</summary><div class="in">
+  <p><b>清单上哪些能自己勾、哪些不能</b>：「跟我做」和「对照听」做完会自动勾上，
+  你也可以手动勾或者取消（想重做就取消，<b>取消之后不会被自动勾回来</b>）。
+  <b>「考 10 题过关」和「🎤 念过一遍」是按你的成绩算的</b>，勾不上也取消不了 ——
+  画一个点不动的按钮等于骗你，所以那两条只给一个记号和进度。</p>
   <p>七组是你学过的那套课程 S1 <b>第 10 课（易错元音）和第 11 课（易错辅音）</b>的对立音，口型定位、对比词、绕口令都是<b>课件原文</b>，逐张抽出来录进内容文件的。</p>
   <p>一组四步：<b>跟我做</b>（一次只说一句话，你做完点一下才给下一句）→ <b>对照听</b>（两个词来回点，点多少次都行）→ <b>连考 10 题</b>（同一组，不换别的音；答错当场回到对照听）→ <b>10 题对 8 题过关</b>，给那一组的绕口令。</p>
   <p><b>「跟我做」的四级顺序不是我编的</b>：<b>单音 → 音素拼合 → 单词拼读 → 句子和绕口令</b>，是那套课程自己写的练法顺序；作业统一写「用某某方法朗读，直到没有任何发音错误」。每一步底下的小字写明了这句话出自<b>课件原文</b>、<b>课程练法</b>，还是<b>机械拆分</b>（把课件给的音标按符号切开）。课件没写的口型，就生不出那一步 —— 不会给你编一句。</p>
@@ -345,7 +383,9 @@ try{
 var PNL=`;
 
 const PRON_JS_TAIL = `;
-var PN={base:(window.__pronBase||'/api/en/pron/'),auBase:(window.__enAudioBase||'/api/en/audio/'),zu:[],cur:null,ji:null,step:1,loaded:false,busy:false,
+var PN={base:(window.__pronBase||'/api/en/pron/'),auBase:(window.__enAudioBase||'/api/en/audio/'),zu:[],cur:null,ji:null,step:0,loaded:false,busy:false,
+  /* 清单（第 0 屏，**打开默认就是它**）：list = 服务端给的七组待办、n = 一轮几题、now = 现在进的是哪一组的哪一条 */
+  list:[],n:10,now:null,
   q:[],i:0,ok:0,same:0,bad:[],au:{},auBusy:{},player:null,rec:null,recId:'',recT0:0,recBtn:null,
   /* 「跟我做」：bu = 这一组的那串步骤、si = 走到第几步、fin = 走完了没 */
   bu:[],si:0,fin:false,
@@ -446,11 +486,13 @@ function pPick(){
     var s=document.createElement('span');s.className='p-s';
     s.textContent=z['能听辨']?(z['元音还是辅音']+' · 第 '+z['第几课']+' 课'):(z['元音还是辅音']+' · 只能跟读纠说');
     b.appendChild(s);
-    b.addEventListener('click',function(){pUse(z['组']);});
+    /* 选一组 = 从这一组的第一件事（跟我做）开始；清单上那一条跟着高亮成"现在做的" */
+    b.addEventListener('click',function(){pOpen(z['组'],'follow');});
     box.appendChild(b);
   });
 }
-function pUse(id){
+/* 选中一组。去 = 选完去哪一屏（1 = 跟我做；传 -1 = 只选中、先不切屏，由调用方决定） */
+function pUse(id,去){
   var z=null;
   PN.zu.forEach(function(x){if(x['组']===id)z=x;});
   if(!z)return;
@@ -461,7 +503,123 @@ function pUse(id){
   PN.bu=[];
   (PNL['组']||[]).forEach(function(k){if(k['组']===id)PN.bu=k['步']||[];});
   PN.si=0;PN.fin=false;
-  pPick();pCmp();pSayWords();pLead();pStep(1);pCoach();
+  pPick();pCmp();pSayWords();pCoach();
+  if(去===-1){pLead();return;}
+  pStep(去||1);
+}
+
+/* ====================================================================
+   第 0 屏：待办清单（2026-11-13）
+   Amos 原话：「将我要做的事情 做成一个 checklist 让我照着做 并在完成后一个一个的勾选确认」
+   「点某一条才进去做那件事，做完回来自动打上勾」。
+   一组最多四条；**哪几条、勾上了没有，全由服务端给**（src/pron.ts 的 清单()），
+   这里只负责画，和**数这一组的阶梯有多少步**（步数在打包进来的 PNL 里，服务端拿不到，见文件头）。
+   ==================================================================== */
+/* 这一组的「跟我做」一共几步（**不写死**：每组步数不一样，从阶梯数出来） */
+function pSteps(id){
+  var n=0;
+  (PNL['组']||[]).forEach(function(k){if(k['组']===id)n=(k['步']||[]).length;});
+  return n;
+}
+/* 一条待办在清单上叫什么。**这是界面用语，不是教学内容** ——
+   凡是关于"这个音怎么发"的话都来自 PNL / 接口，这里一个字都不碰（底线 3） */
+function pTaskName(组,x){
+  var t=x['任务'];
+  if(t==='follow')return '跟我做 '+pSteps(组)+' 步走完';
+  if(t==='listen')return '对照听过';
+  if(t==='quiz')return '考 '+PN.n+' 题过关';
+  return '用 🎤 把这一组念过一遍';
+}
+/* 清单上那一条（取不到回 null） */
+function pFind(组,t){
+  var got=null;
+  (PN.list||[]).forEach(function(z){if(z['组']===组)(z['事']||[]).forEach(function(x){if(x['任务']===t)got=x;});});
+  return got;
+}
+/* 画整张清单 */
+function pList(){
+  var box=pq('pn-list');if(!box)return;
+  pClear(box);
+  (PN.list||[]).forEach(function(z,zi){
+    var d=document.createElement('div');d.className='pn-grp';
+    var t=document.createElement('p');t.className='g-t';
+    t.textContent='第 '+(zi+1)+' 组 '+z['名字'];
+    d.appendChild(t);
+    /* 这一组为什么少两条（第 7 组没有听辨题）、或者为什么题会重复（第 4 组只有 1 对）：
+       **服务端那句原话原样摆上来**（src/pron.ts 的 earNote()），页面不自己写（底线 3） */
+    if(z['说明']){var n=document.createElement('p');n.className='g-note';n.textContent=z['说明'];d.appendChild(n);}
+    var ul=document.createElement('ul');ul.className='pn-todos';
+    (z['事']||[]).forEach(function(x){
+      var li=document.createElement('li');li.className='pn-todo'+(x['勾上了']?' on':'');
+      /* 一行 = 方框 + 这件事（底下可能还有一行小字，所以外面再包一层，不是 li 自己摆 flex） */
+      var row=document.createElement('div');row.className='t-row';
+      var 名=pTaskName(z['组'],x);
+      if(x['算出来的']){
+        /* 算出来的那两条：**不画点不动的按钮**，只给一个记号，旁边小字写明为什么（服务端那句原话） */
+        var m=document.createElement('span');m.className='fix';m.textContent=x['勾上了']?'☑':'☐';
+        m.setAttribute('aria-label',(x['勾上了']?'做完了：':'还没做：')+名);
+        row.appendChild(m);
+      }else{
+        var tk=document.createElement('button');tk.type='button';tk.className='btn pn-tick';
+        tk.textContent=x['勾上了']?'☑':'☐';
+        tk.setAttribute('aria-pressed',x['勾上了']?'true':'false');
+        tk.setAttribute('aria-label',(x['勾上了']?'取消：':'勾上：')+名);
+        tk.addEventListener('click',function(){pFlip(x);});
+        row.appendChild(tk);
+      }
+      var go=document.createElement('button');go.type='button';go.className='btn go';
+      go.dataset.t=x['任务'];go.dataset.g=z['组'];
+      /* 进度只跟在 🎤 那一条后面（3 / 7 个词）：「考 10 题过关（0 轮过关）」等于把"还没做"说两遍 */
+      go.textContent=名+(x['任务']==='say'&&x['进度']&&!x['勾上了']?('（'+x['进度']+'）'):'');
+      go.addEventListener('click',function(){pOpen(z['组'],x['任务']);});
+      row.appendChild(go);
+      li.appendChild(row);
+      /* 接口给的「说明」是整句（例：「按你的成绩算的：7 个能纠说的词每个都念过一次才算做完
+         （现在 0 / 7），不能手动改。」）。整句摆出来，七组 × 两条 = **同一句话印 14 遍**，
+         390 的手机上占掉近一半文字（2026-11-13 看截图发现的）。
+         所以这里只留**这一条独有的那半句**（括号里的进度），公共的那半句收进模块底下的折叠说明，
+         全页只说一次。**一个字都没改接口给的话，只是不重复印。** */
+      if(x['说明']){
+        var 进度=x['说明'].match(/（现在[^）]*）/);
+        var 文=进度?进度[0].replace(/^（|）$/g,''):'';
+        if(文){var w=document.createElement('p');w.className='pn-why';w.textContent=文;li.appendChild(w);}
+      }
+      ul.appendChild(li);
+    });
+    d.appendChild(ul);
+    box.appendChild(d);
+  });
+}
+/* 点一条 → 进到那一步去做 */
+function pOpen(组,t){
+  pUse(组,-1);
+  PN.now={'组':组,'任务':t};
+  if(t==='follow'){PN.si=0;PN.fin=false;pCoach();pStep(1);return;}
+  if(t==='quiz'){pStep(2);pRound();return;}
+  pStep(2);
+  /* 「用 🎤 把这一组念过一遍」：对照听和纠说在同一屏，滚到纠说那一块，省得他自己找 */
+  if(t==='say')try{pq('pn-say').scrollIntoView({block:'start'});}catch(e){}
+}
+/* 他自己点那个方框：勾上 / 取消（记 by='me'） */
+function pFlip(x){
+  if(PN.busy)return;
+  PN.busy=true;pShow('pn-err',false);
+  pPost('done',{'键':x['键'],'勾':!x['勾上了'],'谁':'me'}).then(function(j){
+    PN.busy=false;pTook(j);
+  },function(e){PN.busy=false;pErr(e.j||{'出错':e.message});});
+}
+/* 机器勾：**只在"那件事刚发生"的那一刻叫一次**，不是每次打开都重算 ——
+   所以他取消掉的那一条，下次打开**不会被勾回来**（想重做就自己再走一遍）。
+   已经勾上的不再发一次（省一趟请求，也不把他自己点的那一下改写成机器记的）。 */
+function pAuto(组,t){
+  var x=pFind(组,t);
+  if(!x||x['勾上了'])return;
+  pPost('done',{'键':x['键'],'勾':true,'谁':'auto'}).then(pTook,function(e){pErr(e.j||{'出错':e.message});});
+}
+/* 接口回来的新清单：原样换上去，重画 */
+function pTook(j){
+  if(j&&j['清单'])PN.list=j['清单'];
+  pList();pLead();
 }
 /* 丢掉上一段录音（换组、刷新都会丢；它本来就只活在这个页面里） */
 function pMyDrop(){
@@ -575,7 +733,9 @@ function pCoach(move){
 }
 function pCNext(){
   if(PN.si+1<PN.bu.length){PN.si++;pCoach(true);return;}
+  /* **走到收尾屏这一刻**，机器把「跟我做 N 步走完」那一条勾上（只这一刻写一次） */
   PN.fin=true;pCoach();
+  if(PN.cur)pAuto(PN.cur['组'],'follow');
 }
 function pCPrev(){
   if(PN.fin){PN.fin=false;pCoach(true);return;}
@@ -834,6 +994,8 @@ function pSayGo(b,audio,secs){
     pShow(pSayId(b,'sayver'),true);
     pText(pSayId(b,'saynote'),(j['这是线索不是判决']||'')+'（今天已经纠了 '+j['今天已经纠了几次']+' 次，一天最多 '+j['一天最多']+' 次）');
     pShow(pSayId(b,'saynote'),true);
+    /* 「用 🎤 把这一组念过一遍」那一条按成绩算：刚念的这个词已经算进回来的这份清单了 */
+    pTook(j);
   },function(e){
     PN.busy=false;pRecLabel(b,false);
     var j=e.j||{'出错':e.message};
@@ -924,6 +1086,9 @@ function pDone(){
   PN.busy=true;pShow('pn-err',false);
   pPost('round',{'组':PN.cur['组'],'考了':PN.q.length,'对':PN.ok,'两个听着一样':PN.same}).then(function(j){
     PN.busy=false;PN.ji=j['记录']?{'记录':j['记录']}:PN.ji;
+    /* 「考 10 题过关」那一条按成绩算：这一轮的结果已经在回的这份清单里了 */
+    if(j['清单'])PN.list=j['清单'];
+    pList();
     var box=pq('pn-sum');
     if(box)box.className='pn-sum '+(j['过关']?'pass':'fail');
     pText('pn-score',(j['过关']?'✅ 过关了：':'还没过：')+'10 题对 '+j['对']+' 题'+(j['两个听着一样']?('，点过 '+j['两个听着一样']+' 次「两个听着一样」'):''));
@@ -949,39 +1114,50 @@ function pDone(){
 }
 
 /* ---- 四步之间切换 ---- */
+/* n = 0 清单（**打开默认就是这一屏**）、1 跟我做、2 对照听、3 考、4 过关 */
 function pStep(n){
   PN.step=n;
   /* 换一步就把上一步没打出去的播放意图清掉（审查 🔴3） */
   pPlayReset();
   /* 离开第 1 步：**镜子一定关掉**（track.stop()，指示灯灭），也把没念完的那句停掉，不在后台出声 */
   if(n!==1){pMirOff();pShutUp();}
+  /* 回清单：选一组、四步条、四屏整个收起来 —— 他看见的就是那张清单，不是半屏练习 */
+  pShow('pn-s0',n===0);
+  pShow('pn-tolistwrap',n!==0);
+  pShow('pn-pick-h',n!==0);pShow('pn-pick',n!==0);pShow('pn-steps',n!==0);
   pShow('pn-s1',n===1);pShow('pn-s2',n===2);pShow('pn-s3',n===3);pShow('pn-s4',n===4);
   [].forEach.call(document.querySelectorAll('#pn-steps .pn-step'),function(e){
     var k=Number(e.dataset.st);
     e.className='pn-step'+(k<n?' ok':(k===n?' on':''));
   });
   if(n===2){pSayWords();}
+  if(n===0)PN.now=null;
+  pLead();
 }
 /* 把朗读停掉（切走、切标签页都要停，不然他已经看不见这一屏了，手机还在念） */
 /* 把正在响的那一段停掉（原来是掐浏览器自带的朗读，现在语音走的是同一个播放器） */
 function pShutUp(){try{if(PN.player)PN.player.pause();}catch(e){}}
+/* 一句话结论：**还剩几件事**（不写"正在读取"）。清单在哪一屏都写同一句，他随时知道还差多少 */
 function pLead(){
-  var rec=null;
-  ((PN.ji&&PN.ji['记录'])||[]).forEach(function(r){if(PN.cur&&r['组']===PN.cur['组'])rec=r;});
-  var 过=0,考=0;
-  ((PN.ji&&PN.ji['记录'])||[]).forEach(function(r){考+=r['考过几轮'];if(r['过关几轮']>0)过++;});
-  pText('pn-lead-t','七组里过关过 '+过+' 组；一共考过 '+考+' 轮。现在练 '+((PN.cur&&PN.cur['名字'])||'')+'。');
-  var dot=pq('pn-dot');if(dot)dot.className='dot '+(过>=7?'ok':(过>0?'amber':'gray'));
-  pText('pn-aux',(PN.cur&&PN.cur['名字'])||'七组易错音');
-  if(rec&&rec['最近一轮'])pText('pn-soft','这一组最近一轮：10 题对 '+rec['最近一轮']['对']+' 题，'+(rec['最近一轮']['过关']?'过了':'没过')+'。');
+  var 共=0,完=0;
+  (PN.list||[]).forEach(function(z){(z['事']||[]).forEach(function(x){共++;if(x['勾上了'])完++;});});
+  var 剩=共-完;
+  if(共)pText('pn-lead-t','还剩 '+剩+' 件事没做（一共 '+共+' 件，做完了 '+完+' 件）。');
+  var dot=pq('pn-dot');if(dot)dot.className='dot '+(共&&剩===0?'ok':(完>0?'amber':'gray'));
+  pText('pn-aux',共?('还剩 '+剩+' 件'):'七组易错音');
+  if(PN.step===0){pText('pn-soft','点一条进去做，做完回来自动打勾。');return;}
+  var x=PN.now?pFind(PN.now['组'],PN.now['任务']):null;
+  pText('pn-soft','现在做：'+((PN.cur&&PN.cur['名字'])||'')+(x?('　·　'+pTaskName(PN.now['组'],x)):''));
 }
 
 function pLoad(){
   return pJson('state').then(function(j){
-    PN.zu=j['组']||[];PN.ji=j;
+    PN.zu=j['组']||[];PN.ji=j;PN.list=j['清单']||[];PN.n=j['一轮几题']||10;
     pText('pn-old-t',j['旧的去哪了']||'');
     if(!PN.zu.length){pErr({'出错':'发音训练这一轮没有内容。','怎么办':'刷新一下页面再试。'});return;}
-    pUse(PN.zu[0]['组']);
+    /* 先把第 1 组备好（选一组那排、对照听、纠说都要它），但**停在清单这一屏** */
+    pUse(PN.zu[0]['组'],-1);
+    pList();pStep(0);
     pShow('pn-err',false);
   },function(e){
     pText('pn-lead-t','暂时读不到发音训练的记录');pErr(e.j||{'出错':e.message});
@@ -991,7 +1167,12 @@ function pLoad(){
 var au=pq('pn-auto');if(au)au.addEventListener('click',pAutoToggle);
 var rd=pq('pn-redo');if(rd)rd.addEventListener('click',pRedo);
 var g2=pq('pn-go2');if(g2)g2.addEventListener('click',function(){pStep(2)});
-var g3=pq('pn-go3');if(g3)g3.addEventListener('click',pRound);
+/* **点了「我听出来了，开始考」这一刻**，机器把「对照听过」那一条勾上（只这一刻写一次；
+   「再考一轮」不算 —— 那不是"对照听过"这件事） */
+var g3=pq('pn-go3');if(g3)g3.addEventListener('click',function(){if(PN.cur)pAuto(PN.cur['组'],'listen');pRound();});
+var tl=pq('pn-tolist');if(tl)tl.addEventListener('click',function(){pStep(0)});
+var fl=pq('pn-fin2list');if(fl)fl.addEventListener('click',function(){pStep(0)});
+var sl=pq('pn-s4list');if(sl)sl.addEventListener('click',function(){pStep(0)});
 var a1=pq('pn-again1');if(a1)a1.addEventListener('click',function(){var x=PN.q[PN.i];if(x)pAudio(x.p[x.say]['编号'],'pn-msg')});
 var bl=pq('pn-l');if(bl)bl.addEventListener('click',function(){pAnswer('left')});
 var br=pq('pn-r');if(br)br.addEventListener('click',function(){pAnswer('right')});

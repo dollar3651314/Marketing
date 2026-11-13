@@ -66,6 +66,10 @@ describe('0. 清单本身：写的那些文件都真的在', () => {
     // 2026-11-13 又多一张 en_audio_part（迁移 0023，一条语音的字节拆成多行存）：同样**只建表**
     expect([...读('migrations/0023_en_audio_part.sql').matchAll(/CREATE TABLE (\w+)/g)].map((m) => m[1]))
       .toEqual(['en_audio_part']);
+    // 2026-11-13 第三张：en_done（迁移 0024，清单上打上勾的那几条）。同样**只建表**，
+    // 没有 ALTER、没有 DROP、没有回填 —— 旧表和他练出来的成绩一行都没动
+    expect([...读('migrations/0024_en_done.sql').matchAll(/CREATE TABLE (\w+)/g)].map((m) => m[1]))
+      .toEqual(['en_done']);
     const 建了 = 迁移.flatMap((f) => [...读(f).matchAll(/CREATE TABLE (\w+)/g)].map((m) => m[1]));
     expect(建了.sort()).toEqual([...表].sort());
     for (const f of readdirSync(path.join(ROOT, 'migrations'))) {
@@ -78,7 +82,7 @@ describe('0. 清单本身：写的那些文件都真的在', () => {
     // 2026-11-13：迁移清单从一个变成三个（语音的 0022，和它分块存字节的 0023）。守的那件事没变 ——
     // **句子训练自己不落库**：没有 s2_xxx 表、没有 s2 字样的迁移文件。
     // 它念的那几句和发音训练共用同一张 en_audio（键是内容哈希，谁先用到就存谁），不单开一张进度表。
-    expect([...迁移]).toEqual(['migrations/0019_pron.sql', 'migrations/0022_en_audio.sql', 'migrations/0023_en_audio_part.sql']);
+    expect([...迁移]).toEqual(['migrations/0019_pron.sql', 'migrations/0022_en_audio.sql', 'migrations/0023_en_audio_part.sql', 'migrations/0024_en_done.sql']);
     const 全部迁移 = readdirSync(path.join(ROOT, 'migrations')).sort();
     expect(全部迁移.filter((f) => /s2/i.test(f))).toEqual([]);
     expect(全部迁移.some((f) => /\bs2_/.test(读('migrations/' + f)))).toBe(false);

@@ -27,25 +27,37 @@ on:
         description: '只补一部分（按「来自」里的字，例如 s2 / pron-content / g1；留空 = 全部）'
         type: string
         default: ''
-  push:
-    branches: [main]
+  # **等部署跑完再开始**（2026-11-13 修）：原来是 `push: branches: [main]`，
+  # 它和 ci 工作流里那条「部署 + 跑迁移」是**并行**的，谁先到不一定 ——
+  # 生产上因此连撞两次 `no such table`（第一次 en_audio、第二次 en_audio_part），
+  # 两次都是手动重跑才过去的。靠人去点不算修好，改成接在 ci 成功之后跑。
+  workflow_run:
+    workflows: [ci]
+    types: [completed]
+    branches: [main, staging]
 permissions:
   contents: read
 concurrency:
-  group: audio-${{ github.ref }}
+  group: audio-${{ github.event.workflow_run.head_branch || github.ref }}
   cancel-in-progress: false
 jobs:
   audio:
+    # ci 没成功就不补（部署没成功时表可能还没建；手动触发不受这条限制）
+    if: github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success'
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     env:
       CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
       CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
       WRANGLER_SEND_METRICS: 'false'
-      TARGET: ${{ inputs.env || 'production' }}
+      # 手动触发用选的那个；接在 ci 后面跑时按分支来（main → 正式版，staging → 测试版）
+      TARGET: ${{ inputs.env || (github.event.workflow_run.head_branch == 'staging' && 'staging') || 'production' }}
       ONLY: ${{ inputs.only || '' }}
     steps:
       - uses: actions/checkout@v5
+        with:
+          # workflow_run 默认检出默认分支；要的是触发那次 ci 的那个提交
+          ref: ${{ github.event.workflow_run.head_sha || github.sha }}
       - uses: actions/setup-node@v5
         with:
           node-version: 22
