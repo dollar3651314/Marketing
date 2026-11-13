@@ -41,6 +41,7 @@
  * 时间：页面时钟用 Playwright page.clock 固定在"现在"，拨时钟只拨浏览器（C106）；服务端的"现在"是真实时间，样例的截止时间都按真实时间算。
  * 每段单独 try：一段没做出来不影响别的段报结果；等待都有短超时，等不到就照实报"实际值"。任何一条不符就以非 0 退出。
  */
+import { execFileSync } from 'node:child_process';
 import { mkdirSync, readFileSync } from 'node:fs';
 import path from 'node:path';
 import { chromium } from 'playwright';
@@ -60,23 +61,23 @@ const WAIT = 4000;
 const REDESIGN_B = true;
 
 /**
- * 发音训练那 56 段发音（src/pron.ts 的 PRON_WORD_IDS，g1-1a…g7-4b）：本地没有 Workers AI，现场生成一定失败。
- * 所以**先把它们当成"已经生成过"放进 pron_audio**（aura-2-en 生成一次就永久复用，这是他第二次之后看到的常态），
- * 放的是 test/fixtures/pron/silent.mp3 —— 一段 0.26 秒的**静音** mp3（本地用 ffmpeg 生成，不是模型的声音）。
+ * 英语学习的那些语音（2026-11-13 起全部**预先生成**：微软 Edge 的神经网络语音，英文 Sonia、中文 晓晓）：
+ * 本地当然没有生成好的字节，所以**先把整份清单当成"已经生成过"放进 en_audio**（这就是线上的常态）。
+ * 放的是 test/fixtures/pron/silent.mp3 —— 一段 0.26 秒的**静音** mp3（本地用 ffmpeg 生成，不是任何人的声音）。
  * 所以这一段测的是**界面和流程**，不是"两个词念得像不像"；像不像只有人能判断，那正是「两个听着一样」那个按钮的事。
  * **纠说那条路一个替身都不放**：本地没绑 Workers AI，它走的就是"当面说用不了、其余照常能用"那条真路。
+ *
+ * 清单**不在这里手抄**：问 scripts/audio-manifest.ts 要（它读 src/en-audio-list.ts）。
+ * 哈希只有一处实现（src/en-audio.ts 的 audioKey），这边不自己算，免得两边算出不一样的键 ——
+ * 2026-11-10 从 melotts 换成 aura-2-en 那次，就是因为两边各写一份键，这条 e2e 先红的。
  */
-const PRON_WORD_IDS = [];
-for (const g of ['g1', 'g2', 'g3', 'g4', 'g5', 'g6', 'g7']) for (const i of [1, 2, 3, 4]) for (const k of ['a', 'b']) PRON_WORD_IDS.push(`${g}-${i}${k}`);
 const SILENT_MP3 = readFileSync(path.join(ROOT, 'test/fixtures/pron/silent.mp3')).toString('hex');
-/** 发音在库里的键 = 版本号 + 编号，和 src/pron-audio.ts 的 audioKey 一致（那边改了这里要跟着改） */
-const audioKey = (item) => `a2:${item}`;
+const 语音清单 = JSON.parse(
+  execFileSync(path.join(ROOT, 'node_modules/.bin/vite-node'), ['scripts/audio-manifest.ts'], { cwd: ROOT, encoding: 'utf8' }).replace(/^[^{]*/, ''),
+).清单;
 const srv = await startServer({
   name: 'e2e-platform',
-  // 键要带**发音版本号前缀**（src/pron-audio.ts 的 audioKey）：换 TTS 模型时前缀会变，
-  // 旧模型生成的那些段就再也读不到。这里不预置成新键的话，页面会当成"还没生成过"去调 AI（本地没绑 → 报错）。
-  // 2026-11-10 从 melotts 换成 aura-2-en 时，就是这条 e2e 先红的。
-  seedSql: PRON_WORD_IDS.map((i) => `INSERT INTO pron_audio (item, mp3, at) VALUES ('${audioKey(i)}', X'${SILENT_MP3}', 0);`).join('\n'),
+  seedSql: 语音清单.map((x) => `INSERT INTO en_audio (k, voice, txt, mp3, bytes, at) VALUES ('${x['键']}', '${x['声音']}', '', X'${SILENT_MP3}', ${SILENT_MP3.length / 2}, 0);`).join('\n'),
 });
 const BASE = srv.BASE;
 const now = Date.now();
@@ -1143,8 +1144,14 @@ try {
         if (SHOTS) { mkdirSync(SHOTS, { recursive: true }); await p.screenshot({ path: path.join(SHOTS, `forecast-B-${width}-${colorScheme}.png`), fullPage: true }); }
         // ⑥ Practical 项目页：没链接的"审《阶段计划》并过关卡 A"给一个明确的次动作；有链接的那条主按钮就是链接
         await p.goto(BASE + '/#/Practical');
-        await waitFor(p, '#f-todos li.todo');
-        await p.waitForTimeout(300);
+        // **项目页只有一套 DOM**（切项目换数据不换结构），所以 `#f-todos li.todo` 在切过去的
+        // 那一刻还是 forecast 的待办 —— 等这个选择器等于没等，后面那 300 毫秒纯属赌运气。
+        // 2026-11-13：项目页多了发音训练和句子训练两块，渲染多花一点时间，CI 上就读到了
+        // forecast 的待办、红了两条。改成**等它真的换成 Practical 的数据**：标题是 Practical，
+        // 并且待办里真的出现了 Practical 那一条。
+        await p.waitForFunction((want) => document.getElementById('f-title')?.textContent === 'Practical'
+          && [...document.querySelectorAll('#f-todos li.todo')].some((li) => (li.textContent || '').includes(want)),
+          T.prac.slice(0, 10), { timeout: WAIT });
         const PBb = await todoBtns(p, '#f-todos');
         const prac = PBb.find((b) => b.t.startsWith(T.prac.slice(0, 10)));
         check(`${tag}：Practical "${T.prac}"（没有链接）：不给主按钮，给正好一个明确的次动作`, !!prac && prac.prim === 0 && prac.sec.length === 1, prac ?? PBb);
@@ -1443,7 +1450,7 @@ try {
   // 守八件事：
   // ① 第 1 步**跟我做**（2026-11-12 改；Amos：「完全不知道该怎么开口」「口型图撤掉，念给我听要，开始做」）：
   //    **一屏上只有一步**，点「做好了，下一步」才前进；顶上是课程自己的四级练法轨；口型示意图整套撤掉了；
-  // ② 第 2 步**对照听**：这一组的最小对立对，两个词各一个大按钮，点得响（那 56 段已经预置进 pron_audio）；
+  // ② 第 2 步**对照听**：这一组的最小对立对，两个词各一个大按钮，点得响（那些语音已经预置进 en_audio）；
   //    **他自己点「我听出来了，开始考」才进第 3 步**；
   // ③ 第 3 步**考**：一轮 10 题、**只考这一组**；每题揭晓前页面上找不到"放的是哪个词"（HTML 里没有编号）；
   // ④ **答错当场把第 2 步的对照听塞回来**（两个词都能点），点「继续」才出下一题；
@@ -1456,7 +1463,8 @@ try {
   await section('发音训练', async () => {
     const p = await open({ width: 390, height: 844 });
     const played = [];
-    p.on('request', (r) => { const m = /\/api\/en\/pron\/audio\/(g\d-\d[ab])$/.exec(r.url()); if (m) played.push(m[1]); });
+    // 2026-11-13 起语音在 /api/en/audio/<内容哈希的键>（S1 S2 共用一条），不再是按词编号取
+    p.on('request', (r) => { const m = /\/api\/en\/audio\/(e\d+-[0-9a-f]{16})$/.exec(r.url()); if (m) played.push(m[1]); });
     // 这一轮 10 题要**答成一个确定的分数**（第 1 题故意错、其余对）才量得了"80% 过关"，
     // 所以把页面的 Math.random 钉死：放的永远是这一对的 a、左边那个按钮永远是 a。
     // 随机本身（放哪个词、左右位置）由 test/pron.test.ts 守着（pCoin / pMix），这里钉死只是为了算得出分数。
@@ -1537,10 +1545,12 @@ try {
       /第 3 级 · 单词拼读/.test(lv3.lv) && lv3.btns.some((t) => t.includes('🔊 听标准音')) && lv3.btns.some((t) => t.includes('🎤 我念一遍'))
       && lv3.rail[2].c.includes('on') && lv3.rail[0].c.includes('ok'), { lv: lv3.lv, btns: lv3.btns });
     check(`${tg}：大字就是要拼的那一串（课件给的音标按符号切开，或者照着整串拼）`, lv3.big.length > 0, lv3.big);
+    // 翻页时「自动念」也会去取一段语音；先等它落地再数，免得把它算进这一次 🔊
+    await p.waitForTimeout(300);
     const 响前 = played.length;
     await p.click('#pn-cbtns .btn >> text=🔊 听标准音');
     await p.waitForTimeout(400);
-    check(`${tg}：第 3 级的 🔊 真的点得响（那 56 段已经预置进 pron_audio）`, played.length > 响前, { 响前, 响后: played.length });
+    check(`${tg}：第 3 级的 🔊 真的点得响（那些语音已经预置进 en_audio）`, played.length > 响前, { 响前, 响后: played.length });
     if (SHOTS) await p.locator('#f-pron').screenshot({ path: path.join(SHOTS, '发音训练-跟我做-第3级带听和念-390.png') });
 
     // 走到第 4 级（句子和绕口令）：大字就是**课件那句绕口令**（页面不自己造内容）
@@ -1575,14 +1585,16 @@ try {
     check(`${tg}：**他自己点「我听出来了，开始考」才进第 3 步**（第 2 步不会自己跳过去）`, s2.go3 && s2.s3Hidden, s2);
     check(`${tg}：纠说只给**能纠说的词**（ketch 这种不是现代常用词的不给，拿它判对错是冤枉人）`,
       s2.say.length === G1['能纠说的词'].length && G1['能纠说的词'].every((w, i) => s2.say[i] === '🎤 念 ' + w) && !s2.say.join('|').includes('ketch'), s2.say);
-    // 两个词都真的点得响（那 56 段已经预置进 pron_audio，这是他第二次之后看到的常态）
+    // 两个词都真的点得响（那些语音已经预置进 en_audio，这是他第二次之后看到的常态）
+    // 同上：等前面那些「自动念」的请求落地，这一段才量得准
+    await p.waitForTimeout(300);
     const mark0 = played.length;
     await p.click('#pn-cmp .pn-pair:first-child button:first-child');
     await p.click('#pn-cmp .pn-pair:first-child button:last-child');
     await p.waitForTimeout(300);
     const auMsg = await p.evaluate(() => ({ hidden: document.getElementById('pn-msg').hidden, t: document.getElementById('pn-msg').innerText }));
-    check(`${tg}：第 2 步两个词都点得响（不报错），请求的就是这一对的两个编号`,
-      auMsg.hidden && played.slice(mark0).join(',') === [minimal[0].a['编号'], minimal[0].b['编号']].join(','), { msg: auMsg, played: played.slice(mark0) });
+    check(`${tg}：第 2 步两个词都点得响（不报错），请求的就是这一对的两个音键`,
+      auMsg.hidden && played.slice(mark0).join(',') === [minimal[0].a['音键'], minimal[0].b['音键']].join(','), { msg: auMsg, played: played.slice(mark0) });
     if (SHOTS) await p.locator('#f-pron').screenshot({ path: path.join(SHOTS, '发音训练-对照听-390.png') });
 
     // ⑦ 纠说：本地没绑 Workers AI → 走"当面说用不了"那条真路，**其余部分照常能用**

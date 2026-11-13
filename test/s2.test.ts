@@ -238,9 +238,19 @@ describe('7. 页面：脚本能解析、不花钱、不写一句语法讲解', (
     expect(S2_JS).not.toMatch(/\bas any\b|\bas unknown\b|\binterface\b|\btype \w+ =/);
     expect(S2_JS).not.toMatch(/`/);
   });
-  it('整页不发任何请求、不调 AI、不读数据库 —— 一分钱都不花（C117）', () => {
+  it('一分钱都不花（C117）：唯一的请求是去取**预先生成好**的那段语音，不调 AI、不读数据库', () => {
     const js = S2_JS;
-    expect(js).not.toMatch(/\bfetch\s*\(|XMLHttpRequest|sendBeacon|WebSocket|env\.AI|\bDB\b/);
+    // 2026-11-13 这一屏多了声音（🔈 念给我听 / 🔊 听这一句英文）。
+    // 守的那件事没变 —— **不许花钱**：声音是 scripts/build-audio.py 预先用微软的神经网络语音生成好、
+    // 写进 D1 的，页面只按键去取一段现成的字节。所以这里改成逐条钉死，**比原来更具体**：
+    //   · 一共只有一处 fetch，而且只打 /api/en/audio/ 这一个地址（不许再多一条出口）；
+    //   · XHR / sendBeacon / WebSocket / env.AI / DB 一个都不许有（这几条一条没松）。
+    expect((js.match(/\bfetch\s*\(/g) ?? []).length).toBe(1);
+    expect(js).toContain("fetch(s2base+encodeURIComponent(key))");
+    expect(js).toContain("var s2base=(window.__enAudioBase||'/api/en/audio/')");
+    expect(js).not.toMatch(/XMLHttpRequest|sendBeacon|WebSocket|env\.AI|\bDB\b/);
+    // 还是不调任何模型：这一屏里一个模型名都不出现
+    for (const w of ['@cf/', 'aura', 'melotts', 'whisper', 'speechSynthesis']) expect([w, js.includes(w)]).toEqual([w, false]);
   });
   it('一个 <input> 都没有（和「跟我做」一样，点就行，不打字）', () => {
     expect(S2_MOD).not.toMatch(/<input/i);
@@ -256,7 +266,13 @@ describe('7. 页面：脚本能解析、不花钱、不写一句语法讲解', (
     const 界面用语 = ['看这一条，记住它。', '把它变成否定句。', '把它变成一般疑问句。',
       '这一课课件里没有能出成题的内容。', '课件这一课全是空格练习，一道答案都没给 —— 不替它编。换一课。',
       '这个不对。按课件那条规则再看一遍：', '再看一遍规则，重选', '记住了，下一步',
-      '13 课 · 一屏一步 · 每一句都标出处'];
+      '13 课 · 一屏一步 · 每一句都标出处',
+      // 2026-11-13 的声音按钮和它的出错话术：也都是界面用语，一个字都不讲语法
+      '念给我听', '听这一句英文', '这一句的朗读', '这一句英文的发音',
+      '还没生成（这一步没有对应的语音编号）。照着屏幕上的字做就行。',
+      '还没生成，这一次先跳过声音（上面的字照常看）。',
+      '浏览器把这次播放挡住了。再点一下这个按钮就会响。',
+      '这台设备放不了这段声音。', '没取到：没连上服务器（', '等一下再点一次。', '怎么办：'];
     // 注释不会出现在屏幕上，先去掉，否则会把 /* 课的卡片：13 门，点一下换课… */ 当成页面文案
     const 去注释 = (t: string) => t.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
     const 句 = 去注释(S2_MOD + S2_JS.slice(S2_JS.indexOf('var s2 ='))).match(/[一-龥][一-龥，。、：—·\s]{11,}/g) ?? [];

@@ -49,13 +49,21 @@ describe('0. 清单本身：写的那些文件都真的在', () => {
     for (const f of [...源文件, ...测试, ...迁移]) expect([f, existsSync(path.join(ROOT, f))]).toEqual([f, true]);
   });
 
-  it('src/ 里凡是发音训练 / 句子训练的文件，清单上一个都不能漏（漏了下面三条界就守不住）', () => {
-    const 该在清单里 = SRC.filter((f) => /\/(pron|s2)[-.]/.test(f));
+  it('src/ 里凡是发音训练 / 句子训练 / 语音的文件，清单上一个都不能漏（漏了下面三条界就守不住）', () => {
+    // 2026-11-13 多认一类前缀 `en-`（src/en-audio.ts、src/en-audio-list.ts）：
+    // 语音那两个文件不叫 pron 也不叫 s2，不认它们的话新文件可以悄悄绕过下面四条界
+    const 该在清单里 = SRC.filter((f) => /\/(pron|s2|en)[-.]/.test(f));
     expect([...该在清单里].sort().filter((f) => !英语文件.has(f))).toEqual([]);
   });
 
-  it('清单上的表和迁移对得上：0019_pron.sql 建的就是这三张，而且**整个 migrations/ 一句 DROP 都没有**', () => {
-    const 建了 = [...读('migrations/0019_pron.sql').matchAll(/CREATE TABLE (\w+)/g)].map((m) => m[1]);
+  it('清单上的表和迁移对得上：两个迁移建的就是这四张（一张不多一张不少），而且**整个 migrations/ 一句 DROP 都没有**', () => {
+    // 2026-11-13 多了一张 en_audio（迁移 0022）：守的东西没变 ——「清单上的表」和「清单上的迁移建的表」必须完全对得上，
+    // 只是现在要把两个迁移建的表**并起来**比。逐个迁移也各自钉死，免得把表挪到别的迁移里还不被发现。
+    expect([...读('migrations/0019_pron.sql').matchAll(/CREATE TABLE (\w+)/g)].map((m) => m[1]).sort())
+      .toEqual(['pron_audio', 'pron_round', 'pron_say']);
+    expect([...读('migrations/0022_en_audio.sql').matchAll(/CREATE TABLE (\w+)/g)].map((m) => m[1]))
+      .toEqual(['en_audio']);
+    const 建了 = 迁移.flatMap((f) => [...读(f).matchAll(/CREATE TABLE (\w+)/g)].map((m) => m[1]));
     expect(建了.sort()).toEqual([...表].sort());
     for (const f of readdirSync(path.join(ROOT, 'migrations'))) {
       const sql = 读('migrations/' + f).replace(/--.*$/gm, '');
@@ -63,11 +71,15 @@ describe('0. 清单本身：写的那些文件都真的在', () => {
     }
   });
 
-  it('句子训练这一批**不加任何迁移**：迁移清单里只有发音训练那一个，s2 的表一张都没有', () => {
-    expect([...迁移]).toEqual(['migrations/0019_pron.sql']);
+  it('句子训练**不存任何进度**：全仓库没有一张 s2 的表、没有一个 s2 的迁移（它的那份语音和发音训练共用 en_audio）', () => {
+    // 2026-11-13：迁移清单从一个变成两个（多了语音的 0022）。守的那件事没变 ——
+    // **句子训练自己不落库**：没有 s2_xxx 表、没有 s2 字样的迁移文件。
+    // 它念的那几句和发音训练共用同一张 en_audio（键是内容哈希，谁先用到就存谁），不单开一张进度表。
+    expect([...迁移]).toEqual(['migrations/0019_pron.sql', 'migrations/0022_en_audio.sql']);
     const 全部迁移 = readdirSync(path.join(ROOT, 'migrations')).sort();
     expect(全部迁移.filter((f) => /s2/i.test(f))).toEqual([]);
     expect(全部迁移.some((f) => /\bs2_/.test(读('migrations/' + f)))).toBe(false);
+    expect([...表].filter((t) => /^s2/.test(t))).toEqual([]);
   });
 
   it('第三方课件 src/s2-content.ts 在清单里，而且文件自己写明了它是第三方课程材料（将来要卖必须换掉）', () => {
@@ -94,7 +106,7 @@ describe('1. 谁能 import 英语：只有清单内部 + admin-page + queue', ()
     const 页面 = 它import了谁('src/admin-page.ts').map((x) => 解析('src/admin-page.ts', x)).filter((x) => x && 英语文件.has(x));
     expect([...new Set(页面)].sort()).toEqual(['src/pron-page.ts', 'src/s2-page.ts']);
     const 路由 = 它import了谁('src/queue.ts').map((x) => 解析('src/queue.ts', x)).filter((x) => x && 英语文件.has(x));
-    expect([...new Set(路由)].sort()).toEqual(['src/pron-audio.ts', 'src/pron.ts']);
+    expect([...new Set(路由)].sort()).toEqual(['src/en-audio.ts', 'src/pron.ts']);
   });
 
   it('入口一共就这两个文件 —— 拆出去那天，src/ 里要改的也只有它们', () => {
@@ -121,7 +133,9 @@ describe('2. 英语能 import 谁：共用底座 + 清单内部，别的一律�
   });
 
   it('共用底座就那四个，而且每个都真的在（拆出去那天要在新仓库重建的就是它们）', () => {
-    expect([...共用底座]).toEqual(['./env', './usage', './workers-ai', './tts']);
+    // 2026-11-13 少了一个 ./tts：语音改成**预先生成**之后，运行时一次 TTS 都不调了 ——
+    // 这是**少一条跨界依赖**（拆出去更容易），不是放宽：少写一个，上面那条"只许 import 底座和清单内部"就更严。
+    expect([...共用底座]).toEqual(['./env', './usage', './workers-ai']);
     for (const m of 共用底座) expect([m, existsSync(path.join(ROOT, 'src', m.slice(2) + '.ts'))]).toEqual([m, true]);
   });
 
@@ -182,7 +196,7 @@ describe('3. SQL 不跨界：英语的表不和非英语的表出现在同一条
     expect([...new Set(keys)].sort()).toEqual([...共用表里的前缀].sort());
   });
 
-  it('英语的三张表**只有英语文件碰**（别的模块连 SELECT 都不许，不然拆库时数据会被别人读着）', () => {
+  it('英语的那几张表**只有英语文件碰**（别的模块连 SELECT 都不许，不然拆库时数据会被别人读着）', () => {
     const 外人: string[] = [];
     for (const f of SRC) {
       if (英语文件.has(f)) continue;
@@ -195,7 +209,7 @@ describe('3. SQL 不跨界：英语的表不和非英语的表出现在同一条
 
 // ======================================================================
 describe('4. 接口只在 /api/en/ 下面', () => {
-  it('清单上写的两条接口都在 /api/en/ 前缀下', () => {
+  it('清单上写的两条接口都在 /api/en/ 前缀下（2026-11-13：发音那条从 /api/en/pron/audio/ 挪成 /api/en/audio/，S1 S2 共用）', () => {
     expect(接口前缀).toBe('/api/en/');
     for (const a of 接口) expect([a, a.startsWith(接口前缀)]).toEqual([a, true]);
   });

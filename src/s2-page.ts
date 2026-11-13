@@ -10,9 +10,23 @@
  * 样式用工作台整站的设计变量（:root 的 --ink / --line / --teal / --fs-* 那一套），深浅色跟着全站走。
  * 2026-11-13 从 Practical 仓库搬进来（Amos：「把它合并到 marketing 项目中吧」）；拆分清单在 src/english.ts。
  */
+import { audioKey, 是英文, 中文声音, 英文声音, 指令文本 } from './en-audio';
 import { 生成, type 步 } from './s2-lesson';
 
-export const S2_DATA = 生成();
+/**
+ * 页面要的那份阶梯：课件生成的每一步，再挂两个**语音的键**（打包时就算好，和脚本生成用的是同一个 audioKey）。
+ *  - `说键`：这一句中文指令（晓晓念）；
+ *  - `大键`：大字那一行**只有是英文时**才有（课件的英文例句，Sonia 念）；中文的大字标题没有键，页面上也就没有那个按钮。
+ * 取不到声音时页面**照实说**，不假装在念（底线 3）。
+ */
+export const S2_DATA = 生成().map((课) => ({
+  ...课,
+  步: 课.步.map((s) => ({
+    ...s,
+    说键: audioKey(指令文本(s), 中文声音),
+    大键: s.大 && 是英文(s.大) ? audioKey(s.大, 英文声音) : '',
+  })),
+}));
 
 /**
  * 句子训练那一块的**样式和结构**（工作台 → Practical 项目页 `#/Practical/s2`，模块 `#f-s2`）。
@@ -60,6 +74,10 @@ export const S2_MOD = `
   padding:9px 11px;font-size:12px;color:var(--muted);margin:0;overflow-wrap:anywhere}
 .s2 .s2-src b{color:var(--ink-2);font-weight:600}
 .s2 .s2-btns{display:flex;flex-direction:column;gap:9px}
+/* 声音那两个按钮：一行放得下就并排，放不下就换行（字长的「这一句的朗读还没生成」允许换行） */
+.s2 .s2-say{display:flex;flex-wrap:wrap;gap:9px}
+.s2 .s2-say .s2-b{flex:1 1 calc(50% - 9px);min-width:0;font-size:15px;min-height:52px;text-align:center}
+.s2 .s2-saymsg{font-size:12px;color:var(--err);line-height:1.6;margin:0;white-space:pre-wrap;overflow-wrap:anywhere}
 .s2 .s2-b{font:inherit;font-size:17px;padding:14px 16px;border-radius:11px;border:1px solid var(--line);
   background:var(--surface);color:inherit;cursor:pointer;min-height:52px;text-align:left;
   white-space:normal;overflow-wrap:anywhere;line-height:1.3}
@@ -79,6 +97,7 @@ export const S2_MOD = `
   <div class="s2-pick"><span id="s2-now">第 1 课</span><button type="button" class="s2-swap" id="s2-swap" aria-expanded="false">换一课</button></div>
   <div class="s2-cards" id="s2-cards" hidden></div>
   <div class="s2-box" id="s2-step"></div>
+  <p class="s2-saymsg" id="s2-saymsg" hidden></p>
   <div class="s2-meter"><span id="s2-num">—</span><span class="s2-bar"><i id="s2-barf" style="width:0%"></i></span></div>
 </div>
 </div>
@@ -86,6 +105,7 @@ export const S2_MOD = `
 <p>两种出处：<b>课件原文</b>；<b>按课件规则推出</b>。</p>
 <p>课件 182 道练习，一道答案都没给（老师课上口头讲）。</p>
 <p>推不出来的，不出题。</p>
+<p><b>念给我听</b>和<b>听这一句</b>用的是微软 Edge「大声朗读」背后的神经网络语音（中文 晓晓、英文 Sonia，语速都慢 5%），<b>提前生成好存在服务器上</b>，点一下就放，<b>一次 AI 都不调、一分钱不花</b>。还没生成的那几句会<b>当面说"还没生成"</b>，不会假装在念。</p>
 </div></details>
 </section>`;
 
@@ -138,6 +158,51 @@ function s2换课(){
 /* 出处那一行：先标这句话是哪一类（课件原文 / 按课件规则推出），再把依据原文照抄。
    依据本身就是那几个字开头的（"课件原文（第 1 课 · 第 4 页）"）就不写第二遍 ——
    屏幕上出现过"课件原文 课件原文（第 1 课 · 第 4 页）"。 */
+/* ---- 声音：全部是**预先生成好**存在 D1 里的（中文 晓晓、英文 Sonia，语速 -5%），
+   这里只取、只放，**一次 AI 都不调**。库里没有那一条 → **当面照实说**，不假装在念（底线 3）。
+   2026-11-13 之前 S2 这一屏根本没有声音，S1「跟我做」那边用的是浏览器自带的朗读
+   —— Amos 原话嫌手机朗读太机械，所以两边一起换成了同一套预先生成的语音。 ---- */
+var s2au={},s2busy={},s2player=null;
+var s2base=(window.__enAudioBase||'/api/en/audio/');
+function s2msg(t){var m=s2q('s2-saymsg');if(!m)return;if(!t){m.hidden=true;m.textContent='';return;}m.textContent=t;m.hidden=false;}
+function s2放(url){
+  try{
+    if(!s2player)s2player=new Audio();
+    var a=s2player;a.pause();a.src=url;
+    var pr=a.play();
+    /* 连着点两下必然打断前一次，前一次以 AbortError 被拒 —— **那不是错**，不许蹦假错误 */
+    if(pr&&pr.catch)pr.catch(function(e){if(e&&e.name==='AbortError')return;s2msg('浏览器把这次播放挡住了。再点一下这个按钮就会响。');});
+  }catch(e){s2msg('这台设备放不了这段声音。');}
+}
+function s2声(key,什么){
+  if(!key){s2msg(什么+'还没生成（这一步没有对应的语音编号）。照着屏幕上的字做就行。');return;}
+  s2msg('');
+  if(s2au[key]){s2放(s2au[key]);return;}
+  if(s2busy[key])return;
+  s2busy[key]=1;
+  var done=function(){delete s2busy[key];};
+  fetch(s2base+encodeURIComponent(key)).then(function(r){
+    var ct=r.headers.get('content-type')||'';
+    if(!r.ok||ct.indexOf('audio')<0){
+      return r.json().catch(function(){return {}}).then(function(j){
+        done();
+        var t=什么+'还没生成，这一次先跳过声音（上面的字照常看）。';
+        if(j&&j['出错'])t+='\\n'+j['出错'];
+        if(j&&j['怎么办'])t+='\\n怎么办：'+j['怎么办'];
+        s2msg(t);
+      });
+    }
+    return r.blob().then(function(b){done();s2msg('');var u=URL.createObjectURL(b);s2au[key]=u;s2放(u);});
+  },function(e){done();s2msg(什么+'没取到：没连上服务器（'+e.message+'）。等一下再点一次。');});
+}
+/* 这一步的两个声音按钮：中文那一句永远有；英文大字那一句只有大字真是英文时才给（中文标题不给） */
+function s2声按钮(box,s){
+  var row=s2el('div','s2-say');
+  row.appendChild(s2btn('🔈 念给我听','s2-b',function(){s2声(s['说键'],'这一句的朗读');}));
+  if(s['大键'])row.appendChild(s2btn('🔊 听这一句英文','s2-b',function(){s2声(s['大键'],'这一句英文的发音');}));
+  box.appendChild(row);
+}
+
 function s2依据(box,s){
   var p=s2el('p','s2-src');
   if(s['依据'].indexOf(s['类'])!==0)p.appendChild(s2el('b',null,s['类']+'　'));
@@ -147,6 +212,8 @@ function s2依据(box,s){
 
 function s2画(){
   s2画课();
+  /* 换一步就把上一步那条"还没生成"的话收掉：留着会让人以为说的是这一步 */
+  s2msg('');
   var box=s2q('s2-step');if(!box)return;
   box.className='s2-box';box.textContent='';
   var c=s2本(),n=c['步'].length;
@@ -182,6 +249,7 @@ function s2画(){
       box.appendChild(ul);
     }
     if(s['表'])box.appendChild(s2表(s['表']));
+    s2声按钮(box,s);
     s2依据(box,s);
     box.appendChild(s2btn('记住了，下一步','s2-b p',s2下));
   } else {
@@ -196,6 +264,7 @@ function s2画(){
       }));
     });
     box.appendChild(btns);
+    s2声按钮(box,s);
     s2依据(box,s);
   }
   if(s2.i>0&&!s2.错)box.appendChild(s2btn('上一步','s2-b g',function(){s2.i--;s2画();}));

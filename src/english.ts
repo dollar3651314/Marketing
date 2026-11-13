@@ -15,9 +15,11 @@
 
 /** 属于英语学习的源文件（相对仓库根）。拆出去 = 把这几个文件原样复制到新仓库。 */
 export const 源文件 = [
+  // 全部语音（S1 S2 共用一张表 en_audio：微软 Edge 的神经网络语音预先生成，运行时只读）
+  'src/en-audio.ts',
+  'src/en-audio-list.ts',
   // 发音训练（S1 七组易错音）
   'src/pron.ts',
-  'src/pron-audio.ts',
   'src/pron-content.ts',
   'src/pron-lesson.ts',
   'src/pron-page.ts',
@@ -33,6 +35,7 @@ export const 源文件 = [
 
 /** 属于英语学习的测试（相对仓库根）。 */
 export const 测试 = [
+  'test/en-audio.test.ts',
   'test/pron.test.ts',
   'test/pron-lesson.test.ts',
   'test/s2.test.ts',
@@ -52,18 +55,21 @@ export const 允许的宿主 = ['src/admin-page.ts', 'src/queue.ts'] as const;
  *   ./env         Env 类型（D1、AI 绑定）
  *   ./usage       额度闸、账号限额、utcDay
  *   ./workers-ai  Workers AI 的调用和记账
- *   ./tts         aura-2-en 的调用和 neurons 换算（发音在用）
+ *
+ * **2026-11-13 少了一个**：原来还有 `./tts`（aura-2-en 的调用和 neurons 换算）。
+ * 语音换成微软 Edge 的神经网络语音、改成**预先生成写进 D1**之后，运行时一次 TTS 都不调了，
+ * 这条底座就断干净了 —— 拆出去那天要重建的东西又少一样。
  */
-export const 共用底座 = ['./env', './usage', './workers-ai', './tts'] as const;
+export const 共用底座 = ['./env', './usage', './workers-ai'] as const;
 
 /** 英语学习自己的表（迁移在 `迁移` 里）。**这几张里是 Amos 练出来的真实成绩，任何时候都不许 DROP。** */
-export const 表 = ['pron_round', 'pron_say', 'pron_audio'] as const;
+export const 表 = ['pron_round', 'pron_say', 'pron_audio', 'en_audio'] as const;
 
 /**
  * 建这几张表的迁移。拆出去 = 把这个文件照抄过去 + 从旧库 `.dump` 出这三张表的数据。
  * 句子训练这一批**不存进度、不加迁移**（学习进度模块是第二批，由 Amos 决定要不要做）。
  */
-export const 迁移 = ['migrations/0019_pron.sql'] as const;
+export const 迁移 = ['migrations/0019_pron.sql', 'migrations/0022_en_audio.sql'] as const;
 
 /**
  * 共用的 key-value 表 `settings` 里属于英语的 key 前缀（纠说的一天 200 次闸）。
@@ -76,7 +82,7 @@ export const 共用表里的前缀 = ['pron_say:'] as const;
 export const 接口前缀 = '/api/en/' as const;
 
 /** 具体几条接口（`src/queue.ts` 里挂的就是这两段）。 */
-export const 接口 = ['/api/en/pron/', '/api/en/pron/audio/'] as const;
+export const 接口 = ['/api/en/pron/', '/api/en/audio/'] as const;
 
 /** 页面上的位置：工作平台 → Practical 项目页的两个模块（别的项目整块 hidden）。 */
 export const 页面模块 = [
@@ -84,5 +90,9 @@ export const 页面模块 = [
   { id: 'f-s2', 地址: '#/Practical/s2', 名: '句子训练' },
 ] as const;
 
-/** 拆出去时要带走的用量用途标签（`src/usage.ts` 的 PURPOSES）。 */
+/**
+ * 拆出去时要带走的用量用途标签（`src/usage.ts` 的 PURPOSES）。
+ * `pron-tts` 这一条 2026-11-13 起**不再新增**（发音改成预先生成，运行时一次 AI 都不调），
+ * 但库里有它当时记的账，所以标签留着、也跟着一起搬（去掉它那些行就只剩一个看不懂的代号，底线 3）。
+ */
 export const 用量用途 = ['pron-tts', 'pron-asr'] as const;

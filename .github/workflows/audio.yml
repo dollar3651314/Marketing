@@ -1,0 +1,66 @@
+# 英语学习的语音：用微软 Edge 的神经网络语音（edge-tts）把缺的那几句生成出来，写进 D1 的 en_audio。
+#
+# **为什么单独一个工作流、不塞进 ci.yml**（Amos 2026-11-13 点名）：
+# edge-tts 走的是微软**非官方**的接口，它哪天挂了、慢了、改了协议，都不该把部署拖垮。
+# 所以它和 ci.yml 完全分开：ci.yml 里一个字都没有它，这条红了也拦不住 staging / main 的部署。
+#
+# 什么时候跑：
+#   · 手动（workflow_dispatch）——加了新句子、或者上次有几句失败，自己来点一下重跑；
+#   · 推送到 main 时自动跑一次——正式版刚上线的内容立刻有声音。
+#   · **不跑定时任务**（全账号只有 5 个，C120）。
+#
+# **不新增任何密钥**（底线 1）：edge-tts 免费、不要密钥；写回 D1 用已经有的
+# CLOUDFLARE_API_TOKEN / CLOUDFLARE_ACCOUNT_ID（没填时和 deploy 一样打印"跳过"并成功，C103）。
+#
+# **失败不许悄悄过去**（底线 9）：脚本会把失败的那几句逐条打出来并以非 0 退出，这个 job 就是红的。
+# 它只补**缺的**那些（键是内容哈希），所以重跑一次不会重复生成、不会重复花流量。
+name: audio
+on:
+  workflow_dispatch:
+    inputs:
+      env:
+        description: 写进哪个 D1
+        type: choice
+        options: [production, staging]
+        default: production
+      only:
+        description: '只补一部分（按「来自」里的字，例如 s2 / pron-content / g1；留空 = 全部）'
+        type: string
+        default: ''
+  push:
+    branches: [main]
+permissions:
+  contents: read
+concurrency:
+  group: audio-${{ github.ref }}
+  cancel-in-progress: false
+jobs:
+  audio:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      WRANGLER_SEND_METRICS: 'false'
+      TARGET: ${{ inputs.env || 'production' }}
+      ONLY: ${{ inputs.only || '' }}
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+      - run: npm ci --no-audit --no-fund
+      - name: 装 edge-tts（免费的开源工具，不需要任何密钥）
+        run: pip install "edge-tts==7.3.1"
+      - name: 先看清单算不算得出来（没有密钥也能跑的那一半）
+        run: node_modules/.bin/vite-node scripts/audio-manifest.ts > /dev/null && echo "✓ 清单正常"
+      - name: 补齐缺的那几句（失败的会逐条打出来，这个 job 就红）
+        run: |
+          if [ -z "${CLOUDFLARE_API_TOKEN:-}" ] || [ -z "${CLOUDFLARE_ACCOUNT_ID:-}" ]; then
+            echo "· 跳过：还没有 CLOUDFLARE_API_TOKEN / CLOUDFLARE_ACCOUNT_ID"; exit 0
+          fi
+          python3 scripts/build-audio.py --env "$TARGET" ${ONLY:+--only "$ONLY"}

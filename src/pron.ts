@@ -1,6 +1,6 @@
 /**
  * 工作台「发音训练」（#/work/pron，模块 `#w-pron`；页面 src/pron-page.ts，内容 src/pron-content.ts，
- * 发音 src/pron-audio.ts，表 `pron_round` / `pron_say` / `pron_audio`，迁移 0019）。
+ * 语音 src/en-audio.ts（表 `en_audio`，迁移 0022），表 `pron_round` / `pron_say` / `pron_audio`，迁移 0019）。
  *
  * **它替掉了谁**（Amos 2026-11-11 原话）：「纠"说"也做出来，只不过我使用的慢一点儿罢了。
  * 工作台 英语练习和代练（带练）都没用了，**用你新做的东西彻底替换掉它们吧**」。
@@ -38,11 +38,12 @@
  * 一次纠说约 0.78 neurons（46.63 / 音频分钟 × 1 秒），很便宜，但闸照样要有。
  * **不碰密钥**（底线 1）：whisper 走 `env.AI` 绑定，不新增任何环境变量；这里存的只有组号、词、听成了什么和几个数。
  *
- * 入口 `/api/en/pron/*`（state / answer / round / say；发音 `audio/*` 由 queue.ts 直接分给 src/pron-audio.ts），
+ * 入口 `/api/en/pron/*`（state / answer / round / say；语音在 `/api/en/audio/<键>`，由 queue.ts 直接分给 src/en-audio.ts，**只读不生成**），
  * 走的是后台登录（queue.ts 的 sessionOk）。
  */
 import type { Env } from './env';
 import { asrWordsOf, GROUPS, minimalPairsOf, type PronGroup, type PronPair, type PronWord } from './pron-content';
+import { audioKey, 英文声音 } from './en-audio';
 import { accountLimitedMessage, isAccountLimited, noteAccountLimit, utcDay } from './usage';
 import { chargeNeurons, dailyCap, usedToday, type AiLike } from './workers-ai';
 
@@ -111,7 +112,9 @@ export function earNote(g: PronGroup): string {
 
 /** 页面要的一组（两个词本来就并排摆在按钮上，藏不住也不用藏；**藏的是这一轮放了哪个**，那在页面脚本里） */
 export function groupCard(g: PronGroup): Record<string, unknown> {
-  const w = (i: number, k: 'a' | 'b') => ({ 编号: wordId(g, i, k), 词: g.pairs[i][k].word, 音标: g.pairs[i][k].ipa, 能纠说: g.pairs[i][k].asr });
+  // 音键 = 这个词的发音在 en_audio 里的那一条（内容哈希，src/en-audio.ts 的 audioKey）。
+  // 页面拿它去 /api/en/audio/<音键> 取预先生成好的 mp3；库里没有就当面说，**不会临时调 AI**（底线 3）。
+  const w = (i: number, k: 'a' | 'b') => ({ 编号: wordId(g, i, k), 词: g.pairs[i][k].word, 音标: g.pairs[i][k].ipa, 能纠说: g.pairs[i][k].asr, 音键: audioKey(g.pairs[i][k].word.trim(), 英文声音) });
   return {
     组: g.id,
     第几课: g.lesson,
@@ -379,7 +382,7 @@ async function say(env: Env, now: number, body: Record<string, unknown>): Promis
 
 /**
  * `/api/en/pron/state`（GET）、`/api/en/pron/answer`、`/api/en/pron/round`、`/api/en/pron/say`（POST）。
- * 发音 `/api/en/pron/audio/<编号>` 由 queue.ts 直接分给 src/pron-audio.ts。
+ * 语音 `/api/en/audio/<键>` 由 queue.ts 直接分给 src/en-audio.ts（预先生成好的 mp3，运行时只读）。
  * 鉴权在 queue.ts 的 adminApi 里已经过了；不认识的 sub 返回 null，由调用方给 404。
  */
 export async function pronApi(env: Env, req: Request, now: number, sub: string): Promise<Response | null> {
