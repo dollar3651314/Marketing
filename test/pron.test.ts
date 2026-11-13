@@ -72,11 +72,11 @@ beforeAll(async () => {
   ck = r.headers.get('set-cookie')!.split(';')[0];
 });
 const api = async (p: string, body?: unknown, e: Env = env(), now = T0) => {
-  const r = await handle(req('/api/pron/' + p, body === undefined ? { cookie: ck } : { method: 'POST', cookie: ck, body: JSON.stringify(body) }), e, now);
+  const r = await handle(req('/api/en/pron/' + p, body === undefined ? { cookie: ck } : { method: 'POST', cookie: ck, body: JSON.stringify(body) }), e, now);
   return { status: r.status, body: (await r.json()) as Record<string, any> };
 };
 /** 直接拿 Response（发音回的是 audio/mpeg，不是 JSON） */
-const getRaw = (p: string, e: Env = env(), now = T0) => handle(req('/api/pron/' + p, { cookie: ck }), e, now);
+const getRaw = (p: string, e: Env = env(), now = T0) => handle(req('/api/en/pron/' + p, { cookie: ck }), e, now);
 
 /** 假的 Workers AI：发音默认回 {audio: base64}（toMp3 两种都认），纠说回 whisper 那种 {text, transcription_info} */
 const MP3 = Uint8Array.from([0x49, 0x44, 0x33, 0x04, 0x00, 0x11, 0x22, 0x33]);
@@ -103,15 +103,18 @@ const BED = wordId(G1, 0, 'a');
 const BAD = wordId(G1, 0, 'b');
 
 // ======================================================================
-describe('1. 位置：工作台二级菜单 7 项，上限还是 8，公共工具一个位子都没动', () => {
+describe('1. 位置：工作台二级菜单回到 6 项，发音训练挪进 Practical 项目页', () => {
   const SUB_WORK = ADMIN_PAGE.slice(ADMIN_PAGE.indexOf('id="sub-work"'), ADMIN_PAGE.indexOf('</nav>', ADMIN_PAGE.indexOf('id="sub-work"')));
   const SUB_TOOLS = ADMIN_PAGE.slice(ADMIN_PAGE.indexOf('id="sub-tools"'), ADMIN_PAGE.indexOf('</nav>', ADMIN_PAGE.indexOf('id="sub-tools"')));
+  const SUB_PROJ = ADMIN_PAGE.slice(ADMIN_PAGE.indexOf('id="sub-project"'), ADMIN_PAGE.indexOf('</nav>', ADMIN_PAGE.indexOf('id="sub-project"')));
 
-  it('正好 7 项，第 7 项是「发音训练」；「英语练习」「它记得住你」「带练」都不在了', () => {
+  it('工作台二级菜单正好 6 项，**里面再没有「发音训练」**；「英语练习」「它记得住你」「带练」也都不在了', () => {
     const mods = [...SUB_WORK.matchAll(/data-s="(w-[a-z]+)"/g)].map((m) => m[1]);
-    expect(mods).toEqual(['w-now', 'w-todo', 'w-live', 'w-proj', 'w-num', 'w-meet', 'w-pron']);
-    expect(SUB_WORK).toContain('<a href="#/work/pron" data-s="w-pron">发音训练</a>');
-    // 上限就是 8（T-4）：现在 7 项，连上限都还没用满
+    expect(mods).toEqual(['w-now', 'w-todo', 'w-live', 'w-proj', 'w-num', 'w-meet']);
+    expect(SUB_WORK).not.toContain('w-pron');
+    expect(SUB_WORK).not.toContain('#/work/pron');
+    expect(SUB_WORK).not.toContain('发音训练');
+    // 上限就是 8（T-4）：现在 6 项
     expect(mods.length).toBeLessThanOrEqual(8);
     for (const gone of ['w-english', 'w-engmem', 'w-drill', '英语练习', '带练']) expect([gone, SUB_WORK.includes(gone)]).toEqual([gone, false]);
   });
@@ -122,18 +125,29 @@ describe('1. 位置：工作台二级菜单 7 项，上限还是 8，公共工�
     expect(SUB_TOOLS).not.toContain('w-pron');
   });
 
-  it('模块本体在工作台页 #v-work 里，只有一个，排在「经营会」后面（菜单顺序 = 页面顺序）', () => {
+  it('模块本体在**项目页** #v-project 里，只有一个，排在「交接记录」后面（菜单顺序 = 页面顺序）', () => {
+    const vproj = ADMIN_PAGE.slice(ADMIN_PAGE.indexOf('id="v-project"'), ADMIN_PAGE.indexOf('id="v-tools"'));
     const vwork = ADMIN_PAGE.slice(ADMIN_PAGE.indexOf('id="v-work"'), ADMIN_PAGE.indexOf('id="v-project"'));
-    expect(vwork).toContain('id="w-pron"');
-    expect(ADMIN_PAGE.match(/id="w-pron"/g) ?? []).toHaveLength(1);
-    expect(vwork.indexOf('id="w-pron"')).toBeGreaterThan(vwork.indexOf('id="w-meet"'));
+    expect(vproj).toContain('id="f-pron"');
+    expect(ADMIN_PAGE.match(/id="f-pron"/g) ?? []).toHaveLength(1);
+    expect(vproj.indexOf('id="f-pron"')).toBeGreaterThan(vproj.indexOf('id="f-handoff"'));
+    // 工作台那一份彻底没了（不是两份并存）
+    expect(vwork).not.toContain('pn-pick');
+    expect(ADMIN_PAGE).not.toContain('id="w-pron"');
+    // 子菜单上那一项挂在项目页，而且**默认 hidden**（只有 Practical 这个项目上才打开，setProject() 管）
+    expect(SUB_PROJ).toContain('data-s="f-pron" data-m="pron" hidden');
+    expect(SUB_PROJ).toContain('data-s="f-s2" data-m="s2" hidden');
     // 下线的那三块一个都不在页面上了
     for (const gone of ['id="w-english"', 'id="w-engmem"', 'id="w-drill"', 'id="dr-ear"']) expect([gone, ADMIN_PAGE.includes(gone)]).toEqual([gone, false]);
   });
 
-  it('进工作台时读一次记录（route() 里调 window.pronOpen），接口前缀是 /api/pron/', () => {
-    expect(ADMIN_PAGE).toContain('window.pronOpen()');
-    expect(ADMIN_PAGE).toContain("window.__pronBase='/api/pron/'");
+  it('进 **Practical 项目页**时读一次记录（route() 里调 window.pronOpen），接口前缀是 /api/en/pron/；换到别的项目先 pronStop()', () => {
+    expect(ADMIN_PAGE).toContain("if(page==='project'&&proj===EN_PROJ){try{window.pronOpen();}catch(e){}");
+    expect(ADMIN_PAGE).toContain("window.__pronBase='/api/en/pron/'");
+    // 离开项目页、换到别的项目：两条路都要关摄像头（藏起来的 DOM 里摄像头照亮，指示灯不灭）
+    expect(ADMIN_PAGE).toContain("if(page!=='project'&&typeof window.pronStop==='function')window.pronStop();");
+    expect(ADMIN_PAGE).toContain("if(!en&&typeof window.pronStop==='function')window.pronStop();");
+    expect(ADMIN_PAGE).toContain("const EN_PROJ='Practical'");
     expect(ADMIN_PAGE).not.toContain('__drillBase');
     expect(ADMIN_PAGE).not.toContain('__engmemBase');
   });
@@ -144,9 +158,11 @@ describe('1. 位置：工作台二级菜单 7 项，上限还是 8，公共工�
       expect([f, existsSync(path.join(ROOT, f))]).toEqual([f, false]);
   });
 
-  it('「最该做的事」没事做时那个按钮改去发音训练（原来指着已经没有的 #/work/english）', () => {
-    expect(ADMIN_PAGE).toContain("link('趁空练 10 分钟发音 →','#/work/pron','btn big ghost')");
+  it('「最该做的事」没事做时那个按钮指向发音训练的新家 #/Practical/pron，而且 Practical 不在名单里时不给这个按钮（不留死链）', () => {
+    expect(ADMIN_PAGE).toContain("link('趁空练 10 分钟发音 →','#/Practical/pron','btn big ghost')");
+    expect(ADMIN_PAGE).toContain("typeof PROJS!=='undefined'&&PROJS.indexOf('Practical')>=0");
     expect(ADMIN_PAGE).not.toContain('#/work/english');
+    expect(ADMIN_PAGE).not.toContain('#/work/pron');
   });
 });
 
@@ -376,13 +392,13 @@ describe('4. 接口：对错由服务端算，一轮记一行', () => {
 
   it('没登录一律 401（和后台别的接口一样）', async () => {
     for (const p of ['state', 'answer', 'round', 'say']) {
-      const r = await handle(req('/api/pron/' + p, { method: p === 'state' ? 'GET' : 'POST', body: p === 'state' ? undefined : '{}' }), env(), T0);
+      const r = await handle(req('/api/en/pron/' + p, { method: p === 'state' ? 'GET' : 'POST', body: p === 'state' ? undefined : '{}' }), env(), T0);
       expect([p, r.status]).toEqual([p, 401]);
     }
   });
 
   it('不认识的路径回 404（不会悄悄落到别的接口上）', async () => {
-    const r = await handle(req('/api/pron/whatever', { cookie: ck }), env(), T0);
+    const r = await handle(req('/api/en/pron/whatever', { cookie: ck }), env(), T0);
     expect(r.status).toBe(404);
   });
 });
@@ -640,7 +656,7 @@ describe('6. 发音：照搬带练那条链路（aura-2-en + 版本号键 + 额�
   });
 
   it('没登录一律 401', async () => {
-    const r = await handle(req('/api/pron/audio/' + BED), env(), T0);
+    const r = await handle(req('/api/en/pron/audio/' + BED), env(), T0);
     expect(r.status).toBe(401);
   });
 });
@@ -695,9 +711,9 @@ describe('8. 不让他打字、按钮够大、不碰密钥', () => {
   });
 
   it('按钮都 ≥52px 高（这里全是 56px），而且压得过外框那条 min-height:38px', () => {
-    expect(PRON_CSS).toContain('#w-pron .pn-one .btn{width:100%;min-height:56px');
-    expect(PRON_CSS).toContain('#w-pron .pn-two .btn{min-height:56px');
-    expect(PRON_CSS).toContain('#w-pron .pn-pick .btn{display:block;min-height:56px');
+    expect(PRON_CSS).toContain('#f-pron .pn-one .btn{width:100%;min-height:56px');
+    expect(PRON_CSS).toContain('#f-pron .pn-two .btn{min-height:56px');
+    expect(PRON_CSS).toContain('#f-pron .pn-pick .btn{display:block;min-height:56px');
   });
 
   it('字号只用全站那几级（12 / 13 / 15 / 17 / 18 / 22 / 26，控件可以 14），不自己造一级', () => {
@@ -784,7 +800,7 @@ const fakeStream = () => {
   return { track: t, getTracks: () => [t] };
 };
 /**
- * 开一个只有 #w-pron 的 jsdom 页面，跑真的 PRON_JS。
+ * 开一个只有 #f-pron 的 jsdom 页面，跑真的 PRON_JS。
  * 网络一律走替身并**逐条记下来**（镜子那一段要证明"一次都没往外发"）。
  */
 async function pronPage(opt: { cam?: 'ok' | 'deny' | 'none'; camDelay?: number; speech?: 'ok' | 'noZh' | 'none'; auto?: 'on' | 'off' } = {}) {
@@ -1341,7 +1357,7 @@ describe('13. 慢速对照 + 他自己的录音回放（录过才出现，刷新
       expect(p.$('pn-my').hidden).toBe(false);
       // 这一次上传就是**纠说本来那一次**（POST say），没有第二次
       await p.until(() => p.net.some((x) => x.startsWith('POST')));
-      expect(p.net.slice(n0).filter((x) => x.startsWith('POST'))).toEqual(['POST /api/pron/say']);
+      expect(p.net.slice(n0).filter((x) => x.startsWith('POST'))).toEqual(['POST /api/en/pron/say']);
       expect(p.$('pn-my-t').textContent).toContain('你刚才念的');
     } finally { await p.close(); }
   });

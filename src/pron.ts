@@ -38,7 +38,7 @@
  * 一次纠说约 0.78 neurons（46.63 / 音频分钟 × 1 秒），很便宜，但闸照样要有。
  * **不碰密钥**（底线 1）：whisper 走 `env.AI` 绑定，不新增任何环境变量；这里存的只有组号、词、听成了什么和几个数。
  *
- * 入口 `/api/pron/*`（state / answer / round / say；发音 `audio/*` 由 queue.ts 直接分给 src/pron-audio.ts），
+ * 入口 `/api/en/pron/*`（state / answer / round / say；发音 `audio/*` 由 queue.ts 直接分给 src/pron-audio.ts），
  * 走的是后台登录（queue.ts 的 sessionOk）。
  */
 import type { Env } from './env';
@@ -378,8 +378,8 @@ async function say(env: Env, now: number, body: Record<string, unknown>): Promis
 }
 
 /**
- * `/api/pron/state`（GET）、`/api/pron/answer`、`/api/pron/round`、`/api/pron/say`（POST）。
- * 发音 `/api/pron/audio/<编号>` 由 queue.ts 直接分给 src/pron-audio.ts。
+ * `/api/en/pron/state`（GET）、`/api/en/pron/answer`、`/api/en/pron/round`、`/api/en/pron/say`（POST）。
+ * 发音 `/api/en/pron/audio/<编号>` 由 queue.ts 直接分给 src/pron-audio.ts。
  * 鉴权在 queue.ts 的 adminApi 里已经过了；不认识的 sub 返回 null，由调用方给 404。
  */
 export async function pronApi(env: Env, req: Request, now: number, sub: string): Promise<Response | null> {
