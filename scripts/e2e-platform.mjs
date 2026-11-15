@@ -771,6 +771,51 @@ try {
       const 钮没了 = await p.evaluate(() => { const e = document.getElementById('s2-go-err'); return !e || e.hidden; });
       check(`${width} 宽：错题清空后，门面上那个按钮跟着收起来（不留一个点了没反应的按钮）`, 钮没了, 钮没了);
 
+      // ⑤-d 13 课清单（2026-11-15）。守两件别的测试证明不了的事：
+      //   ① 收起时**真的看不见**（量 getComputedStyle，不看属性 —— 2026-11-12 就是属性对、人还看得见）；
+      //   ② **点某一课落到那一课第一个没走完的步**，不是第 1 步。
+      await p.goto(BASE + '/#/Practical/s2');
+      await waitFor(p, '#f-s2');
+      await p.waitForFunction(() => !document.getElementById('s2-go').hidden, null, { timeout: WAIT }).catch(() => {});
+      const 收着 = await p.evaluate(() => {
+        const e = document.getElementById('s2-cards');
+        return [!!e, e ? e.hidden : null, e ? getComputedStyle(e).display : '', e ? e.getClientRects().length : -1];
+      });
+      check(`${width} 宽：13 课清单默认收起，而且**真的看不见**（display:none、量不到矩形）`,
+        收着[0] && 收着[1] === true && 收着[2] === 'none' && 收着[3] === 0, 收着);
+      await p.click('#s2-swap', { timeout: WAIT });
+      await p.waitForFunction(() => document.querySelectorAll('#s2-cards .s2-card').length === 13, null, { timeout: WAIT });
+      const 清单 = await p.evaluate(() => [...document.querySelectorAll('#s2-cards .s2-card')].map((b) => ({
+        文: (b.textContent || '').replace(/\s+/g, ' ').trim(),
+        勾: (b.querySelector('.s2-c-tick') || {}).textContent || '',
+        做完了: b.classList.contains('s2-c-done'),
+        高: Math.round(b.getBoundingClientRect().height),
+      })));
+      check(`${width} 宽：清单 13 行，每行写着第几课和走完几步 / 共几步`,
+        清单.length === 13 && 清单.every((x) => /第 \d+ 课/.test(x.文) && /\d+ \/ \d+ 步/.test(x.文)), 清单.slice(0, 3));
+      check(`${width} 宽：走完的那一课打勾☑、没走完的空框☐（不乱给勾）`,
+        清单.every((x) => (x.做完了 ? x.勾 === '☑' : x.勾 === '☐')), 清单.map((x) => [x.勾, x.做完了]));
+      check(`${width} 宽：清单每一行都点得动（高 ≥ 52）`, 清单.every((x) => x.高 >= 52), 清单.map((x) => x.高));
+      // 展开的清单单独存一张：13 行堆在一起好不好看、文字挤不挤，只有肉眼看得出来
+      if (SHOTS && width === 390) await p.locator('#f-s2').screenshot({ path: path.join(SHOTS, 'Practical项目页-句子训练-13课清单-390.png') });
+      // 挑一门"走了一半"的课：点它，看落到第几步。
+      // **期望值从清单自己的文字里读**（第 N 课、走完 X / Y 步），不往页面里塞测试专用的钩子。
+      // 前面那几段是顺着走的，所以走完的步是连着的 → 第一个没走完的就是第 X+1 步。
+      const 挑 = 清单
+        .map((x, i) => {
+          const m = /第 (\d+) 课.*?(\d+) \/ (\d+) 步/.exec(x.文);
+          return m ? { 行: i + 1, 课: Number(m[1]), 走完: Number(m[2]), 一共: Number(m[3]) } : null;
+        })
+        .filter(Boolean);
+      const 一半 = 挑.find((x) => x.走完 > 0 && x.走完 < x.一共) ?? 挑.find((x) => x.走完 === 0) ?? 挑[0];
+      const 该落到 = 一半.走完 + 1 > 一半.一共 ? 1 : 一半.走完 + 1;
+      await p.click(`#s2-cards .s2-card:nth-child(${一半.行})`, { timeout: WAIT });
+      await p.waitForFunction(() => document.getElementById('s2-cards').hidden, null, { timeout: WAIT });
+      await p.waitForTimeout(200);
+      const 落到 = await txt(p, '#s2-num');
+      check(`${width} 宽：点清单上第 ${一半.课} 课（走完 ${一半.走完} / ${一半.一共}），**落到第 ${该落到} 步**，不是第 1 步`,
+        !!落到 && new RegExp('第 ' + 该落到 + ' / 共 ' + 一半.一共 + ' 步').test(落到), { 落到, 一半, 该落到 });
+
       // ⑥ 不横向滚动；子菜单一行、可以横滑，选中项完整看得见（和 T-4 / R9 同一个口径）
       await p.goto(BASE + '/#/Practical/pron');
       await waitFor(p, '#f-pron');
