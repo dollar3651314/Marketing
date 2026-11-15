@@ -68,6 +68,7 @@ export const S2_MOD = `
 .s2 .s2-card .s2-c-k{font-size:12px;color:var(--muted);white-space:nowrap}
 .s2 .s2-card .s2-c-name{grid-column:2/4;font-size:12px;color:var(--muted);
   overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.s2 .s2-c-note{margin:2px 0 0;border-left:0;padding-left:0}
 .s2 .s2-card b{display:block;font-size:var(--fs-body)}
 .s2 .s2-card span{display:block;font-size:12px;color:var(--muted);margin-top:2px}
 .s2 .s2-card[aria-pressed="true"]{border-color:var(--teal);color:var(--teal-ink)}
@@ -250,6 +251,16 @@ function s2画课(){
     });
     box.appendChild(b);
   });
+  /* **课件自己就有重名的课**（第 7～11 课的标题都是「时态分类」）。一连五行长得一样，
+     看着像我写重了 —— 所以照实说一句（底线 3「照实说，不硬凑」，和第 7 组没听辨题那句同一个做法）。
+     这句话是**从数据里算出来的**，不是手写死的：课件哪天改了，这句话跟着变或者自己消失。 */
+  var 名表={},重名=[];
+  S2.forEach(function(c){var n=c['名'];if(!n)return;(名表[n]=名表[n]||[]).push(c['课']);});
+  Object.keys(名表).forEach(function(n){if(名表[n].length>1)重名.push('第 '+名表[n].join(' / ')+' 课在课件里都叫「'+n+'」');});
+  if(重名.length){
+    var p=s2el('p','s2-src s2-c-note',重名.join('；')+' —— 不是这里写重了。');
+    box.appendChild(p);
+  }
 }
 function s2收起(){
   var box=s2q('s2-cards'),sw=s2q('s2-swap');

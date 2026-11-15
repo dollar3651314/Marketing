@@ -287,3 +287,28 @@ describe('9. 13 课清单那一屏（2026-11-15）', () => {
     expect(最后[0]).toContain('display:none');
   });
 });
+
+describe('10. 课件自己重名的那句话（照实说，不硬凑）', () => {
+  const 页 = readFileSync(path.join(__dirname, '..', 'src', 's2-page.ts'), 'utf8');
+  const 脚本 = 页.slice(页.indexOf('function s2画课()'), 页.indexOf('function s2收起()'));
+
+  it('课件里**真的有重名的课**（这句话不是凭空加的）', () => {
+    const m: Record<string, number[]> = {};
+    for (const c of 生成()) if (c.名) (m[c.名] = m[c.名] ?? []).push(c.课);
+    const 重 = Object.keys(m).filter((n) => m[n].length > 1);
+    expect(重.length).toBeGreaterThan(0);
+    // 第 7～11 课在课件里就是同一个标题 —— 这是事实，不是 bug
+    expect(m['时态分类']).toEqual([7, 8, 9, 10, 11]);
+  });
+  it('这句话**从数据算出来**，不是手写死的（页面脚本里不出现任何一个课名的字面量）', () => {
+    expect(脚本).toContain("S2.forEach(function(c){var n=c['名']");
+    for (const 名 of [...new Set(生成().map((c) => c.名).filter(Boolean))])
+      expect([名, 脚本.includes("'" + 名 + "'")]).toEqual([名, false]);
+  });
+  it('没有重名的时候**一个字都不多说**（重名表空就不画这句）', () => {
+    expect(脚本).toMatch(/if\(重名\.length\)\{/);
+  });
+  it('话里写明了"不是这里写重了"', () => {
+    expect(脚本).toContain('不是这里写重了。');
+  });
+});
