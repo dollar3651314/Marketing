@@ -216,7 +216,12 @@ export async function apiSettled(page, 闲置上限 = 10000, 总上限 = 60000) 
   await page.evaluate(() => new Promise((ok) => setTimeout(ok, 0)));
   await page.evaluate(() => 0);
 }
-export async function openGroups(page, 闲置上限, 总上限) {
+/* 注意这里有**两种超时，别混**：
+   · 闲置上限 / 总上限 —— 等 /api/company 读回来的（见 apiSettled）；
+   · 操作超时 —— playwright 点一下、等一个条件的超时，和读接口无关，保持 4000ms 不变。
+   2026-11-15 第一版改名时把下面两处的 `wait` 抽没了，跑起来报 `wait is not defined`
+   （`node --check` 只查语法，查不出这个 —— 是跑了一遍真 e2e 才逮到的）。 */
+export async function openGroups(page, 闲置上限, 总上限, 操作超时 = 4000) {
   for (let round = 1; round <= 3; round++) {
     await apiSettled(page, 闲置上限, 总上限);
     const n = await page.evaluate(() => { window.__e2eOg = [...document.querySelectorAll('#w-todos details:not([open])')]; window.__e2eOg.forEach((d, i) => { d.dataset.e2eOg = String(i); }); return window.__e2eOg.length; });
@@ -224,12 +229,12 @@ export async function openGroups(page, 闲置上限, 总上限) {
     for (let i = 0; i < n; i++) {
       const sum = page.locator(`#w-todos details[data-e2e-og="${i}"] > summary`);
       if (!(await sum.count())) break;
-      await sum.click({ timeout: wait }).catch(async (e) => { if (await page.evaluate(() => window.__e2eOg.every((d) => d.isConnected))) throw e; });
+      await sum.click({ timeout: 操作超时 }).catch(async (e) => { if (await page.evaluate(() => window.__e2eOg.every((d) => d.isConnected))) throw e; });
     }
     const r = await page.waitForFunction(() => {
       if (window.__e2eOg.some((d) => !d.isConnected)) return 'redrawn';
       return [...document.querySelectorAll('#w-todos details')].every((d) => d.open) ? 'open' : false;
-    }, null, { timeout: wait }).then((h) => h.jsonValue());
+    }, null, { timeout: 操作超时 }).then((h) => h.jsonValue());
     if (r === 'open') { await apiSettled(page, 闲置上限, 总上限); if (await page.evaluate(() => [...document.querySelectorAll('#w-todos details')].every((d) => d.open))) return; }
   }
   throw new Error('点开"没定截止时间"：连续 3 轮刚点完就被重画换掉，或点开后又被收起');

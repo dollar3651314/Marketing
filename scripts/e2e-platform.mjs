@@ -163,7 +163,7 @@ const which = (list, t) => list.findIndex((x) => x.text.includes(t));
  */
 async function openGroups(page) {
   // 2026-11-04 修偶发失败（C57）：原来在 #w-todos 还会被切页那次读取重画时就点，重画落在点击中间会丢这一下；根因和新写法见 scripts/e2e-look.mjs openGroups()
-  await LOOK.openGroups(page, WAIT);
+  await LOOK.openGroups(page);   // 两种超时都用默认值：等读回来按「有没有进展」算，操作超时仍是 4000ms
 }
 /** 分组一览（按页面顺序）：时间段、条数、是不是收起的 details、标题文字 */
 const groupsOf = (page) => page.evaluate(() => [...document.querySelectorAll('#w-todos [data-bucket]')].map((d) => ({
