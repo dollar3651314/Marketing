@@ -825,7 +825,7 @@ function route(){if(!authed)return;let h=hashOf();
   // 批 2：在公共工具、公司总览刷新时，一级菜单上的待办数量也马上读出来（以前要切到工作台才有）
   if(page==='work'||page==='project'){try{platformOpen(page,mod);}catch(e){}}else{try{platformStop();platformPeek();}catch(e){}}
   // Practical 项目页上的「发音训练」（七组易错音，pron-page.ts）：进这一页时读一次记录；「句子训练」是静态的，画一次就行
-  if(page==='project'&&proj===EN_PROJ){try{window.pronOpen();}catch(e){}try{window.s2Draw&&window.s2Draw();}catch(e){}}
+  if(page==='project'&&proj===EN_PROJ){try{window.pronOpen();}catch(e){}try{window.s2Open&&window.s2Open();}catch(e){}try{window.s2Draw&&window.s2Draw();}catch(e){}}
   // 批 B：语音对话实测台在"语音生成"的折叠 #tts-more 里：打开 #/tools/voice 先把折叠打开再滚过去
   if(page==='tools'&&view==='voice'){const f=$('tts-more');if(f)f.open=true;}
   // 批 C：公司总览的模块是读到数据才画出来的，这时还没有就记下 coMod，第二段脚本画完再滚过去（同样 subPin）
@@ -1678,7 +1678,7 @@ var platformPeek=function(){PL.peek=true;if(!PL.timer)tickTimer();if(!PL.data&&!
 var platformReady=function(){return !!PL.data;};
 }catch(e){var platformReady=function(){return true;};var platformOpen=function(){['w-err','f-err'].forEach((id)=>{const x=document.getElementById(id);if(x){x.hidden=false;x.textContent='这一页出错了：'+e.message;}});};var platformStop=function(){};var platformPeek=function(){};}
 </script>
-<script>window.__assetsBase='/api/assets/';window.__ttsBase='/api/tts/';window.__voiceBase='/api/voice/';window.__pronBase='/api/en/pron/';window.__enAudioBase='/api/en/audio/';window.__fundsBase='/api/funds';</script>
+<script>window.__assetsBase='/api/assets/';window.__ttsBase='/api/tts/';window.__voiceBase='/api/voice/';window.__pronBase='/api/en/pron/';window.__enAudioBase='/api/en/audio/';window.__s2Base='/api/en/s2/';window.__fundsBase='/api/funds';</script>
 <script>${ASSETS_JS}</script>
 <script>${TTS_JS}</script>
 <script>${VOICE_JS}</script>

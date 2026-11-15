@@ -113,7 +113,7 @@ describe('1. 谁能 import 英语：只有清单内部 + admin-page + queue', ()
     const 页面 = 它import了谁('src/admin-page.ts').map((x) => 解析('src/admin-page.ts', x)).filter((x) => x && 英语文件.has(x));
     expect([...new Set(页面)].sort()).toEqual(['src/pron-page.ts', 'src/s2-page.ts']);
     const 路由 = 它import了谁('src/queue.ts').map((x) => 解析('src/queue.ts', x)).filter((x) => x && 英语文件.has(x));
-    expect([...new Set(路由)].sort()).toEqual(['src/en-audio.ts', 'src/pron.ts']);
+    expect([...new Set(路由)].sort()).toEqual(['src/en-audio.ts', 'src/pron.ts', 'src/s2.ts']);
   });
 
   it('入口一共就这两个文件 —— 拆出去那天，src/ 里要改的也只有它们', () => {
