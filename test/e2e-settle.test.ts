@@ -12,7 +12,7 @@
  * 压力测试证不了这个（两份 e2e 同时跑会抢同一个本地 D1 文件，启动就死），
  * 所以这里用一个假的 page 直接驱动它。
  */
-import { describe, expect, it, vi } from 'vitest';
+import { describe, expect, it } from 'vitest';
 import { trackApi, apiSettled } from '../scripts/e2e-look.mjs';
 
 /** 假的 playwright page：只实现 apiSettled 用到的那几样 */
