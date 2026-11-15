@@ -26,11 +26,13 @@ import { ttsApi } from './tts';
 import { voiceApi } from './voice';
 import { pronApi } from './pron';
 import { enAudioApi } from './en-audio';
+import { s2Api } from './s2';
 import { fundsApi } from './funds-api';
 
 /** 英语学习的接口前缀（2026-11-13 统一；src/english.ts 的 接口前缀 是同一份，test/english-boundary.test.ts 核对两边一致） */
 const EN_PRON = '/api/en/pron/';
 const EN_AUDIO = '/api/en/audio/';
+const EN_S2 = '/api/en/s2/';
 
 export const SESSION_MS = 12 * 3600_000;
 const LOCK = { ipWindow: 15 * 60_000, ipMax: 5, ipLock: 15 * 60_000, allWindow: 3600_000, allMax: 20, allLock: 3600_000 };
@@ -178,6 +180,9 @@ export async function adminApi(env: Env, req: Request, now: number): Promise<Res
   // 发音训练（Practical 项目页 → 发音训练，pron.ts）：四步循环的 state / answer / round 都不调 AI、不花钱；
   // 只有「纠说」say 调一次 whisper（约 0.78 neurons），走已有的额度闸 + 自己的一天 200 次闸（C117）
   if (p.startsWith(EN_PRON)) return (await pronApi(env, req, now, p.slice(EN_PRON.length))) ?? new Response('Not found', { status: 404 });
+  // 句子训练的存档（Practical 项目页 → 句子训练，s2.ts）：走到第几步、哪几道题第一次就答错；
+  // 只读写已有的 en_done 表，不调 AI、不花钱
+  if (p.startsWith(EN_S2)) return (await s2Api(env, req, now, p.slice(EN_S2.length))) ?? new Response('Not found', { status: 404 });
   // 基金观察（一级菜单「基金观察」#/funds，funds-api.ts）：GET 读快照、POST refresh 分批去 Yahoo / 东方财富取（每次 ≤45 个对外请求）；公开免费接口，不花钱
   if (p === '/api/funds' || p.startsWith('/api/funds/')) return (await fundsApi(env, req, now, p === '/api/funds' ? '' : p.slice('/api/funds/'.length))) ?? new Response('Not found', { status: 404 });
   const company = await companyApi(env, req, now);
