@@ -666,12 +666,110 @@ try {
       await p.goto(BASE + '/#/Practical/s2');
       await waitFor(p, '#f-s2');
       await p.waitForFunction(() => document.querySelectorAll('#f-s2 .s2-b').length > 0, null, { timeout: WAIT });
+      // 2026-11-15 这一屏上多了一张门面（#s2-go 接着练 / 总进度 / 错题重练），它自己也有一个 .s2-b.p。
+      // **所以这里必须点步骤框里的那个**（#s2-step .s2-b.p），不然点到的是门面那个按钮，
+      // 「下一步」压根没走，测试却还会绿。
       const 这一步 = await txt(p, '#s2-num');
-      await p.click('#f-s2 .s2-b.p', { timeout: WAIT });
+      await p.click('#f-s2 #s2-step .s2-b.p', { timeout: WAIT });
       await p.waitForTimeout(300);
       const 下一步 = await txt(p, '#s2-num');
       check(`${width} 宽：句子训练点主按钮真的进了下一步（第 n / 共 m 步变了）`, !!这一步 && !!下一步 && 这一步 !== 下一步, { 这一步, 下一步 });
       check(`${width} 宽：句子训练每一步都标着出处（.s2-src 那一行在）`, (await p.locator('#f-s2 .s2-src').count()) >= 1, await p.locator('#f-s2 .s2-src').count());
+
+      // ⑤-b 存档（2026-11-15）。这一条守的是 Amos 要的那件事本身：**关掉页面回来，进度还在**。
+      // 不看"属性设没设"，看屏幕上那张门面真的长出来、字真的变了（.s2-cards 那次就是属性对、人还看得见）。
+      const 门面在 = await p.evaluate(() => {
+        const e = document.getElementById('s2-go');
+        return [!!e, !!e && !!e.getClientRects().length, e ? getComputedStyle(e).display : ''];
+      });
+      check(`${width} 宽：句子训练的门面（接着练那张卡）真的显示出来了`, 门面在[0] && 门面在[1] && 门面在[2] !== 'none', 门面在);
+      const 门面字 = await txt(p, '#s2-go-t');
+      const 总进度 = await txt(p, '#s2-all');
+      check(`${width} 宽：门面上写着接着练到第几步、总共走完几步`,
+        /接着练：第 \d+ 课 第 \d+ 步|全走完了/.test(门面字) && /走完 \d+ \/ 126 步/.test(总进度), { 门面字, 总进度 });
+      // 刚才那一步存上了没有：**刷新**（真的重开一次页面，不是读内存里的变量）
+      await p.goto(BASE + '/#/Practical/s2');
+      await waitFor(p, '#f-s2');
+      await p.waitForFunction(() => {
+        const e = document.getElementById('s2-go');
+        return e && !e.hidden && /走完 [1-9]/.test((document.getElementById('s2-all') || {}).textContent || '');
+      }, null, { timeout: WAIT }).catch(() => {});
+      const 刷新后 = await txt(p, '#s2-all');
+      const 刷新后门面 = await txt(p, '#s2-go-t');
+      const 存上了 = /走完 ([1-9]\d*) \/ 126 步/.exec(刷新后);
+      check(`${width} 宽：**刷新之后进度还在**（走完的步数 ≥ 1，不是回到 0）`, !!存上了 && Number(存上了[1]) >= 1, { 刷新后, 刷新后门面 });
+      // 存不上时要当面说，不许静悄悄（底线 3、底线 9）
+      const 警告 = await p.evaluate(() => { const e = document.getElementById('s2-go-w'); return [!!e, e ? e.hidden : null, e ? (e.textContent || '').trim() : '']; });
+      check(`${width} 宽：存档正常时不蹦警告（真出事才显示那一行）`, 警告[0] && 警告[1] === true && 警告[2] === '', 警告);
+      // **两块共用一张表，靠键前缀分家** —— 句子训练写进去的每一行都必须是 s2: / s2x:，
+      // 一行都不许落到发音训练那一半（真串了，他的发音清单会凭空多出或少掉勾）。
+      const 库 = srv.sql('SELECT k FROM en_done ORDER BY k').map((r) => r.k);
+      const s2行 = 库.filter((k) => /^s2x?:/.test(k));
+      check(`${width} 宽：句子训练只写自己那一半（s2: / s2x:），一行都没落到发音训练的 s1: 里`,
+        s2行.length >= 1 && s2行.every((k) => /^s2x?:\d+:\d+$/.test(k)) && !s2行.some((k) => k.startsWith('s1:')), 库);
+
+      // ⑤-c 错题重练（2026-11-15）。**这条链路以前一个 e2e 都没有**：答错 → 攒进错题 → 重练答对 → 销账。
+      // 光有单测不够 —— 单测证明不了"他点得到那个按钮"，上一批就是这么漏过去的。
+      // 答案不在 DOM 里，所以这里**逐个选项试**：撞到 .s2-bad 就是答错了（3 个选项里有 2 个是错的，撞得到）。
+      await p.goto(BASE + '/#/Practical/s2');
+      await waitFor(p, '#f-s2');
+      await p.waitForFunction(() => document.querySelectorAll('#f-s2 #s2-step .s2-b').length > 0, null, { timeout: WAIT });
+      let 答错了 = false;
+      for (let 轮 = 0; 轮 < 24 && !答错了; 轮++) {
+        const 这屏 = await p.evaluate(() => {
+          const lv = document.querySelector('#s2-step .s2-lv');
+          return { 题: !!document.querySelector('#s2-step .s2-btns .s2-b'), lv: lv ? lv.textContent : '' };
+        });
+        if (这屏.题) {
+          await p.click('#s2-step .s2-btns .s2-b:first-child', { timeout: WAIT });
+          await p.waitForTimeout(150);
+          答错了 = await p.evaluate(() => !!document.querySelector('#s2-step.s2-bad'));
+          if (答错了) break;
+        } else {
+          const 主 = await p.locator('#s2-step .s2-b.p').count();
+          if (!主) break;
+          await p.click('#s2-step .s2-b.p', { timeout: WAIT });
+          // 走完一课那一屏的主按钮是「接着练：第 N 课 第 M 步」，而**最后一步的存档是后到的**
+          // （到了才会把那个按钮重画成新的一步），所以这里多等一会儿再点下一下
+          await p.waitForTimeout(350);
+        }
+      }
+      check(`${width} 宽：句子训练里答错一道题，当场退回去重看规则（撞到 .s2-bad 这一屏）`, 答错了, { 答错了 });
+      // 错题真的记进库了，而且门面上那个按钮**真的长出来给他点**
+      const 错题行 = srv.sql("SELECT k, by FROM en_done WHERE k LIKE 's2x:%' ORDER BY k");
+      const 重练钮 = await p.evaluate(() => {
+        const e = document.getElementById('s2-go-err');
+        return [!!e, !!e && !e.hidden && !!e.getClientRects().length, e ? (e.textContent || '').trim() : ''];
+      });
+      check(`${width} 宽：答错的那道题进了错题（库里一行 s2x:，by 写"第一次就答错"）`,
+        错题行.length === 1 && 错题行[0].by === '第一次就答错', 错题行);
+      check(`${width} 宽：门面上「错题重练」这个按钮真的出现了，而且写着几道`,
+        重练钮[0] && 重练钮[1] && /错题重练（1 道）/.test(重练钮[2]), 重练钮);
+      // 点进去重练：把这一道答对 → 库里那一行必须删掉（这才叫销账）
+      await p.click('#s2-go-err', { timeout: WAIT });
+      await p.waitForFunction(() => /错题重练/.test((document.querySelector('#s2-step .s2-lv') || {}).textContent || ''), null, { timeout: WAIT });
+      // **试过的那个选项不能再试一遍** —— 答错后重选如果还从第 1 个开始，就会永远撞同一个错的。
+      // 3 个选项里最多 2 个是错的，所以从"上次试到的下一个"开始，最迟第 3 个一定是对的。
+      let 练完了 = false, 试到 = 0;
+      for (let 轮 = 0; 轮 < 4 && !练完了; 轮++) {
+        const n = await p.locator('#s2-step .s2-btns .s2-b').count();
+        if (!n) break;
+        for (let i = 试到 + 1; i <= n; i++) {
+          await p.click(`#s2-step .s2-btns .s2-b:nth-child(${i})`, { timeout: WAIT });
+          await p.waitForTimeout(200);
+          练完了 = await p.evaluate(() => /错题重练走完了/.test((document.getElementById('s2-step') || {}).textContent || ''));
+          if (练完了) break;
+          const 还错着 = await p.evaluate(() => !!document.querySelector('#s2-step.s2-bad'));
+          if (还错着) { 试到 = i; await p.click('#s2-step .s2-b.p', { timeout: WAIT }); await p.waitForTimeout(150); break; }
+        }
+      }
+      // 界面说"走完了"是在 POST 发出去之后、回来之前就画的，所以**等库里那一行真的没了**再断言
+      for (let 等 = 0; 等 < 20 && srv.sql("SELECT k FROM en_done WHERE k LIKE 's2x:%'").length; 等++) await p.waitForTimeout(100);
+      const 销账后 = srv.sql("SELECT k FROM en_done WHERE k LIKE 's2x:%'");
+      check(`${width} 宽：**在错题重练里答对，库里那一行真的删了**（不是只把界面上的数字改掉）`,
+        练完了 && 销账后.length === 0, { 练完了, 销账后 });
+      const 钮没了 = await p.evaluate(() => { const e = document.getElementById('s2-go-err'); return !e || e.hidden; });
+      check(`${width} 宽：错题清空后，门面上那个按钮跟着收起来（不留一个点了没反应的按钮）`, 钮没了, 钮没了);
 
       // ⑥ 不横向滚动；子菜单一行、可以横滑，选中项完整看得见（和 T-4 / R9 同一个口径）
       await p.goto(BASE + '/#/Practical/pron');
@@ -1652,7 +1750,9 @@ try {
       && fin.rail.every((c) => c.includes('ok')), fin);
     if (SHOTS) await p.locator('#f-pron').screenshot({ path: path.join(SHOTS, '发音训练-跟我做-收尾屏-390.png') });
     // **走完这一刻，那一条真的写进库里了**（界面上的勾好看，库里没有的话刷新一次他就白做一遍 —— 所以这里查库）
-    const 走完了 = srv.sql('SELECT k, by FROM en_done ORDER BY k');
+    // 2026-11-15 起 `en_done` 是**两块共用**的（发音训练 `s1:`、句子训练 `s2:` / `s2x:`），
+    // 而这个脚本里 S2 那一段跑在前面，所以下面这几条查库一律**只看 `s1:` 那一半** —— 不是放宽，是只查自己。
+    const 走完了 = srv.sql("SELECT k, by FROM en_done WHERE k LIKE 's1:%' ORDER BY k");
     check(`${tg}：走完「跟我做」这一刻，**库里真的多了那一行**（en_done，谁勾的写 auto）`,
       JSON.stringify(走完了) === JSON.stringify([{ k: 's1:g1:follow', by: 'auto' }]), 走完了);
 
@@ -1705,7 +1805,7 @@ try {
     // 他想重做 → 自己把这个勾取消
     await p.click('#pn-list .pn-grp:nth-child(1) .pn-todo:nth-child(1) button.pn-tick', { timeout: WAIT });
     await p.waitForFunction(() => document.querySelector('#pn-list .pn-grp:nth-child(1) .pn-todo:nth-child(1) button.pn-tick').textContent === '☐', null, { timeout: WAIT });
-    const 取消后 = srv.sql('SELECT k, by FROM en_done ORDER BY k');
+    const 取消后 = srv.sql("SELECT k, by FROM en_done WHERE k LIKE 's1:%' ORDER BY k");
     check(`${tg}：取消一条机器勾上的 → **库里那一行真的删了**`, 取消后.length === 0, 取消后);
     // **刷新**（关掉页面第二天再打开是同一件事）：这一条必须还是没勾，而且库里也不许冒出来
     await p.reload();
@@ -1713,7 +1813,7 @@ try {
     await waitFor(p, '#f-pron');
     await p.waitForFunction(() => document.querySelectorAll('#pn-list .pn-todo').length > 0, null, { timeout: WAIT });
     const L2 = await 清单上(p);
-    const 刷新后 = srv.sql('SELECT k, by FROM en_done ORDER BY k');
+    const 刷新后 = srv.sql("SELECT k, by FROM en_done WHERE k LIKE 's1:%' ORDER BY k");
     check(`${tg}：**取消掉的那一条，刷新之后还是没勾**（自动勾只在走完那一刻写一次，不是每次打开都重算）`,
       L2[0].事[0].勾 === '☐' && 刷新后.length === 0 && /还剩 26 件事没做/.test(await txt(p, '#pn-lead')),
       { 勾: L2[0].事[0].勾, 库里: 刷新后, lead: await txt(p, '#pn-lead') });
@@ -1800,7 +1900,7 @@ try {
     await waitFor(p, '#f-pron');
     await p.waitForFunction(() => document.querySelectorAll('#pn-list .pn-todo').length > 0, null, { timeout: WAIT });
     const L3 = await 清单上(p);
-    const 库里 = srv.sql('SELECT k, by FROM en_done ORDER BY k');
+    const 库里 = srv.sql("SELECT k, by FROM en_done WHERE k LIKE 's1:%' ORDER BY k");
     check(`${tg}：刷新后清单还在（存在服务器上，不在浏览器里）：这一组已经做完 2 件（对照听过 + 考 10 题过关），结论写"还剩 24 件"`,
       L3[0].事.map((x) => x.勾).join('') === '☐☑☑☐' && /还剩 24 件事没做/.test(await txt(p, '#pn-lead')), { 事: L3[0].事.map((x) => [x.名.slice(0, 8), x.勾]), lead: await txt(p, '#pn-lead') });
     check(`${tg}：「考 10 题过关」那一条**按成绩算，一行都不写库**（库里只有点「开始考」那一刻记的 listen）`,

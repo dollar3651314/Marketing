@@ -245,9 +245,14 @@ describe('7. 页面：脚本能解析、不花钱、不写一句语法讲解', (
     // 写进 D1 的，页面只按键去取一段现成的字节。所以这里改成逐条钉死，**比原来更具体**：
     //   · 一共只有一处 fetch，而且只打 /api/en/audio/ 这一个地址（不许再多一条出口）；
     //   · XHR / sendBeacon / WebSocket / env.AI / DB 一个都不许有（这几条一条没松）。
-    expect((js.match(/\bfetch\s*\(/g) ?? []).length).toBe(1);
+    // 2026-11-15 又多了一处：存档（走到第几步、哪几道题第一次就答错）。它只读写 D1 的 en_done，
+    // **一样不调 AI、不花一分钱**。所以这里从「只有 1 处」改成「正好 2 处，各打哪个地址逐条钉死」——
+    // 仍然是白名单：出现第 3 处 fetch、或者这两处换了地址，照样红。
+    expect((js.match(/\bfetch\s*\(/g) ?? []).length).toBe(2);
     expect(js).toContain("fetch(s2base+encodeURIComponent(key))");
     expect(js).toContain("var s2base=(window.__enAudioBase||'/api/en/audio/')");
+    expect(js).toContain("fetch(s2sbase+路,选)");
+    expect(js).toContain("var s2sbase=(window.__s2Base||'/api/en/s2/')");
     expect(js).not.toMatch(/XMLHttpRequest|sendBeacon|WebSocket|env\.AI|\bDB\b/);
     // 还是不调任何模型：这一屏里一个模型名都不出现
     for (const w of ['@cf/', 'aura', 'melotts', 'whisper', 'speechSynthesis']) expect([w, js.includes(w)]).toEqual([w, false]);
@@ -272,7 +277,12 @@ describe('7. 页面：脚本能解析、不花钱、不写一句语法讲解', (
       '还没生成（这一步没有对应的语音编号）。照着屏幕上的字做就行。',
       '还没生成，这一次先跳过声音（上面的字照常看）。',
       '浏览器把这次播放挡住了。再点一下这个按钮就会响。',
-      '这台设备放不了这段声音。', '没取到：没连上服务器（', '等一下再点一次。', '怎么办：'];
+      '这台设备放不了这段声音。', '没取到：没连上服务器（', '等一下再点一次。', '怎么办：',
+      // 2026-11-15 的存档话术：存不上就当面说。也都是界面用语，一个字都不讲语法
+      '存档没取到。还能照常练，但这一次的进度不会存。',
+      '这一步没存上。屏幕上的进度可能不准，刷新一下再看。',
+      '没连上服务器（', '从第 1 课开始练', '从第 1 课再走一遍', '接着练', '存档没取到',
+      '错题重练走完了，', '先不练了，回去', '回去接着练', '还是不对', '全走完了。'];
     // 注释不会出现在屏幕上，先去掉，否则会把 /* 课的卡片：13 门，点一下换课… */ 当成页面文案
     const 去注释 = (t: string) => t.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
     const 句 = 去注释(S2_MOD + S2_JS.slice(S2_JS.indexOf('var s2 ='))).match(/[一-龥][一-龥，。、：—·\s]{11,}/g) ?? [];

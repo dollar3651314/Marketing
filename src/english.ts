@@ -29,6 +29,7 @@ export const 源文件 = [
   'src/s2-annotate.ts',
   'src/s2-lesson.ts',
   'src/s2-page.ts',
+  'src/s2.ts',
   // 这份清单自己
   'src/english.ts',
 ] as const;
@@ -39,6 +40,7 @@ export const 测试 = [
   'test/pron.test.ts',
   'test/pron-lesson.test.ts',
   'test/s2.test.ts',
+  'test/s2-progress.test.ts',
   'test/english-boundary.test.ts',
 ] as const;
 
@@ -68,12 +70,15 @@ export const 共用底座 = ['./env', './usage', './workers-ai'] as const;
  * `en_audio` 还在、还存元数据（线上 `SQLITE_TOOBIG` 那次，详见 src/en-audio.ts）。
  * 同一天再多一张 `en_done`（迁移 0024）：「发音训练」清单上**打上勾的那几条**
  * （`follow` 跟我做走完、`listen` 对照听过；另外两条按 `pron_round` / `pron_say` 现算，不落库）。
+ * 2026-11-15 起**句子训练的存档也在这张表里**，靠键的前缀分家：`s1:` 发音训练、
+ * `s2:` 句子训练走完的步、`s2x:` 第一次就答错的题（src/s2.ts）。两边各读各的前缀，不互相碰。
  */
 export const 表 = ['pron_round', 'pron_say', 'pron_audio', 'en_audio', 'en_audio_part', 'en_done'] as const;
 
 /**
  * 建这几张表的迁移。拆出去 = 把这个文件照抄过去 + 从旧库 `.dump` 出这三张表的数据。
- * 句子训练这一批**不存进度、不加迁移**（学习进度模块是第二批，由 Amos 决定要不要做）。
+ * 2026-11-15 句子训练也开始存进度了（`s2:` / `s2x:` 两种键），但**仍然没有新迁移** ——
+ * 它写的是 `en_done`（0024）这张已经有的表，所以这份迁移清单没变。
  */
 export const 迁移 = ['migrations/0019_pron.sql', 'migrations/0022_en_audio.sql', 'migrations/0023_en_audio_part.sql', 'migrations/0024_en_done.sql'] as const;
 
@@ -88,7 +93,7 @@ export const 共用表里的前缀 = ['pron_say:'] as const;
 export const 接口前缀 = '/api/en/' as const;
 
 /** 具体几条接口（`src/queue.ts` 里挂的就是这两段）。 */
-export const 接口 = ['/api/en/pron/', '/api/en/audio/'] as const;
+export const 接口 = ['/api/en/pron/', '/api/en/audio/', '/api/en/s2/'] as const;
 
 /** 页面上的位置：工作平台 → Practical 项目页的两个模块（别的项目整块 hidden）。 */
 export const 页面模块 = [
