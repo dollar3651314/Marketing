@@ -748,18 +748,23 @@ try {
       // 点进去重练：把这一道答对 → 库里那一行必须删掉（这才叫销账）
       await p.click('#s2-go-err', { timeout: WAIT });
       await p.waitForFunction(() => /错题重练/.test((document.querySelector('#s2-step .s2-lv') || {}).textContent || ''), null, { timeout: WAIT });
-      let 练完了 = false;
+      // **试过的那个选项不能再试一遍** —— 答错后重选如果还从第 1 个开始，就会永远撞同一个错的。
+      // 3 个选项里最多 2 个是错的，所以从"上次试到的下一个"开始，最迟第 3 个一定是对的。
+      let 练完了 = false, 试到 = 0;
       for (let 轮 = 0; 轮 < 4 && !练完了; 轮++) {
         const n = await p.locator('#s2-step .s2-btns .s2-b').count();
-        for (let i = 1; i <= n; i++) {
+        if (!n) break;
+        for (let i = 试到 + 1; i <= n; i++) {
           await p.click(`#s2-step .s2-btns .s2-b:nth-child(${i})`, { timeout: WAIT });
           await p.waitForTimeout(200);
           练完了 = await p.evaluate(() => /错题重练走完了/.test((document.getElementById('s2-step') || {}).textContent || ''));
           if (练完了) break;
           const 还错着 = await p.evaluate(() => !!document.querySelector('#s2-step.s2-bad'));
-          if (还错着) { await p.click('#s2-step .s2-b.p', { timeout: WAIT }); await p.waitForTimeout(150); break; }
+          if (还错着) { 试到 = i; await p.click('#s2-step .s2-b.p', { timeout: WAIT }); await p.waitForTimeout(150); break; }
         }
       }
+      // 界面说"走完了"是在 POST 发出去之后、回来之前就画的，所以**等库里那一行真的没了**再断言
+      for (let 等 = 0; 等 < 20 && srv.sql("SELECT k FROM en_done WHERE k LIKE 's2x:%'").length; 等++) await p.waitForTimeout(100);
       const 销账后 = srv.sql("SELECT k FROM en_done WHERE k LIKE 's2x:%'");
       check(`${width} 宽：**在错题重练里答对，库里那一行真的删了**（不是只把界面上的数字改掉）`,
         练完了 && 销账后.length === 0, { 练完了, 销账后 });
