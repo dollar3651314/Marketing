@@ -167,44 +167,75 @@ export async function reveal(page, sel) {
  *   3 轮都被换掉就报错（不放宽超时、不吞错误）。
  */
 const INFLIGHT = new WeakMap();
-/** 记这一页在途的 /api/company 请求数（open() 里调一次） */
+/** 这一页一共回来过几个 /api/company —— 判断有没有进展靠的就是它 */
+const 回来数 = new WeakMap();
+
+/** 记这一页在途的 /api/company 请求数，外加回来过几个（open() 里调一次） */
 export function trackApi(page) {
-  let n = 0;
+  let n = 0, 回来过 = 0;
   INFLIGHT.set(page, () => n);
+  回来数.set(page, () => 回来过);
   const mine = (r) => /\/api\/company(\?|$)/.test(r.url());
   page.on('request', (r) => { if (mine(r)) n++; });
-  const done = (r) => { if (mine(r)) n = Math.max(0, n - 1); };
+  const done = (r) => { if (mine(r)) { n = Math.max(0, n - 1); 回来过++; } };
   page.on('requestfinished', done);
   page.on('requestfailed', done);
 }
-/** 等到这一页没有在途的 /api/company，再让页面跑完已排队的任务（重画就在读回来之后的任务里） */
-export async function apiSettled(page, wait = 4000) {
+
+/**
+ * 等到这一页没有在途的 /api/company，再让页面跑完已排队的任务（重画就在读回来之后的任务里）。
+ *
+ * **2026-11-15 改了量法。** 原来是「从头数 4 秒，到点就扔错」—— 机器一忙，哪怕请求
+ * 正一个接一个地回来，总预算照样爆。那天 CI 就这么红了一次（`等 /api/company
+ * 读回来等了 4000ms（还有 1 个在途）`），同一份代码在本地单独跑是 503 / 0。
+ *
+ * **量错了东西**：该量的是「有没有进展」，不是「总共花了多久」。现在两条：
+ *   · 闲置上限：从最后一个请求回来算起，这么久一个都没再回来，才算卡住；
+ *   · 总上限：真卡死时的兜底，不让它无限等。
+ *
+ * 这不是把超时调大、更不是放宽断言（底线 6）：**卡住照样红**，错误里还写明是哪一种。
+ * 顺畅时一点不慢 —— 在途归零就立刻返回，和以前一模一样。
+ */
+export async function apiSettled(page, 闲置上限 = 10000, 总上限 = 60000) {
   const get = INFLIGHT.get(page);
   if (get) {
-    const t0 = Date.now();
+    const 回来 = 回来数.get(page) ?? (() => 0);
+    const 开始 = Date.now();
+    let 上次回来 = 回来(), 上次在途 = get(), 没动静从 = Date.now();
     while (get() > 0) {
-      if (Date.now() - t0 > wait) throw new Error(`等 /api/company 读回来等了 ${wait}ms（还有 ${get()} 个在途）`);
+      const 这次回来 = 回来(), 这次在途 = get();
+      // 有请求回来了、或者在途数变了，都算有进展 → 重新计时
+      if (这次回来 !== 上次回来 || 这次在途 !== 上次在途) { 上次回来 = 这次回来; 上次在途 = 这次在途; 没动静从 = Date.now(); }
+      if (Date.now() - 没动静从 > 闲置上限)
+        throw new Error(`等 /api/company 读回来：${闲置上限}ms 里一个都没回（还有 ${这次在途} 个在途，这一页一共回来过 ${这次回来} 个）`);
+      if (Date.now() - 开始 > 总上限)
+        throw new Error(`等 /api/company 读回来超过 ${总上限}ms 还没完（还有 ${这次在途} 个在途，这一页一共回来过 ${这次回来} 个）`);
       await new Promise((ok) => setTimeout(ok, 20));
     }
   }
   await page.evaluate(() => new Promise((ok) => setTimeout(ok, 0)));
   await page.evaluate(() => 0);
 }
-export async function openGroups(page, wait = 4000) {
+/* 注意这里有**两种超时，别混**：
+   · 闲置上限 / 总上限 —— 等 /api/company 读回来的（见 apiSettled）；
+   · 操作超时 —— playwright 点一下、等一个条件的超时，和读接口无关，保持 4000ms 不变。
+   2026-11-15 第一版改名时把下面两处的 `wait` 抽没了，跑起来报 `wait is not defined`
+   （`node --check` 只查语法，查不出这个 —— 是跑了一遍真 e2e 才逮到的）。 */
+export async function openGroups(page, 闲置上限, 总上限, 操作超时 = 4000) {
   for (let round = 1; round <= 3; round++) {
-    await apiSettled(page, wait);
+    await apiSettled(page, 闲置上限, 总上限);
     const n = await page.evaluate(() => { window.__e2eOg = [...document.querySelectorAll('#w-todos details:not([open])')]; window.__e2eOg.forEach((d, i) => { d.dataset.e2eOg = String(i); }); return window.__e2eOg.length; });
     if (!n) return;
     for (let i = 0; i < n; i++) {
       const sum = page.locator(`#w-todos details[data-e2e-og="${i}"] > summary`);
       if (!(await sum.count())) break;
-      await sum.click({ timeout: wait }).catch(async (e) => { if (await page.evaluate(() => window.__e2eOg.every((d) => d.isConnected))) throw e; });
+      await sum.click({ timeout: 操作超时 }).catch(async (e) => { if (await page.evaluate(() => window.__e2eOg.every((d) => d.isConnected))) throw e; });
     }
     const r = await page.waitForFunction(() => {
       if (window.__e2eOg.some((d) => !d.isConnected)) return 'redrawn';
       return [...document.querySelectorAll('#w-todos details')].every((d) => d.open) ? 'open' : false;
-    }, null, { timeout: wait }).then((h) => h.jsonValue());
-    if (r === 'open') { await apiSettled(page, wait); if (await page.evaluate(() => [...document.querySelectorAll('#w-todos details')].every((d) => d.open))) return; }
+    }, null, { timeout: 操作超时 }).then((h) => h.jsonValue());
+    if (r === 'open') { await apiSettled(page, 闲置上限, 总上限); if (await page.evaluate(() => [...document.querySelectorAll('#w-todos details')].every((d) => d.open))) return; }
   }
   throw new Error('点开"没定截止时间"：连续 3 轮刚点完就被重画换掉，或点开后又被收起');
 }
