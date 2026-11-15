@@ -75,14 +75,24 @@ export function 小结(done: DoneRow[]): { 一共: number; 走完了: number; �
   return { 一共: 总步数, 走完了, 还剩: 总步数 - 走完了, 百分之几: Math.round((走完了 * 100) / 总步数) };
 }
 
-/** 每课走到哪了（「换一课」那排卡片上标的就是这个） */
-export function 每课进度(done: DoneRow[]): { 课: number; 走完了: number; 一共: number }[] {
+/**
+ * 每课走到哪了（13 课清单上每一行标的就是这个）。
+ *
+ * `下一步` = **这一课里第一个还没走完的步**，整课走完了就是 `null`。
+ * 有它，点清单上某一课才能直接落到他该做的那一步 —— 否则点进去永远是第 1 步，
+ * 走到一半的课每次都要自己往前翻。
+ */
+export function 每课进度(done: DoneRow[]): { 课: number; 名: string; 走完了: number; 一共: number; 下一步: number | null }[] {
   const 有 = new Set(done.map((r) => r.k));
-  return 课表.map((c) => ({
-    课: c.课,
-    一共: c.步.length,
-    走完了: c.步.reduce((n, _s, i) => n + (有.has(进度键(c.课, i + 1)) ? 1 : 0), 0),
-  }));
+  return 课表.map((c) => {
+    let 下一步: number | null = null;
+    let 走完了 = 0;
+    for (let i = 1; i <= c.步.length; i++) {
+      if (有.has(进度键(c.课, i))) 走完了++;
+      else if (下一步 === null) 下一步 = i;
+    }
+    return { 课: c.课, 名: c.名, 一共: c.步.length, 走完了, 下一步 };
+  });
 }
 
 /** 错题组：第一次就答错、还没在重练里答对的那些题，按课内顺序 */

@@ -56,8 +56,19 @@ export const S2_MOD = `
 /* [hidden] 的 UA 默认是 display:none，但上面那条 .s2-cards{display:flex} 具体度更高，会把它盖掉
    —— 属性设了、人还看得见。2026-11-12 就是这么漏过去的，截图里课卡片明明收起了却还在屏幕上。 */
 .s2 .s2-cards[hidden]{display:none}
-.s2 .s2-card{flex:1 1 150px;min-width:0;border:1px solid var(--line);border-radius:11px;
-  background:var(--surface);color:inherit;padding:11px 12px;cursor:pointer;min-height:56px;text-align:left;font:inherit}
+/* 13 课清单（2026-11-15）：一行一课，带这一课走完几步、走完的打勾。
+   点一行**落到那一课第一个没走完的步**，不是第 1 步 —— 走到一半的课不用自己往前翻。 */
+.s2 .s2-cards{flex-direction:column;flex-wrap:nowrap}
+.s2 .s2-card{flex:1 1 auto;min-width:0;border:1px solid var(--line);border-radius:11px;
+  background:var(--surface);color:inherit;padding:11px 12px;cursor:pointer;min-height:56px;text-align:left;font:inherit;
+  display:grid;grid-template-columns:auto 1fr auto;align-items:center;gap:4px 10px}
+.s2 .s2-card .s2-c-tick{grid-row:1/3;font-size:18px;line-height:1;width:22px;text-align:center;color:var(--muted)}
+.s2 .s2-card.s2-c-done .s2-c-tick{color:var(--ok)}
+.s2 .s2-card .s2-c-n{font-weight:700;white-space:nowrap}
+.s2 .s2-card .s2-c-k{font-size:12px;color:var(--muted);white-space:nowrap}
+.s2 .s2-card .s2-c-name{grid-column:2/4;font-size:12px;color:var(--muted);
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.s2 .s2-c-note{margin:2px 0 0;border-left:0;padding-left:0}
 .s2 .s2-card b{display:block;font-size:var(--fs-body)}
 .s2 .s2-card span{display:block;font-size:12px;color:var(--muted);margin-top:2px}
 .s2 .s2-card[aria-pressed="true"]{border-color:var(--teal);color:var(--teal-ink)}
@@ -110,7 +121,7 @@ export const S2_MOD = `
     <div class="s2-go-b"><button type="button" class="s2-b p" id="s2-go-on"></button><button type="button" class="s2-b g" id="s2-go-err" hidden></button></div>
     <p class="s2-go-w" id="s2-go-w" hidden></p>
   </div>
-  <div class="s2-pick"><span id="s2-now">第 1 课</span><button type="button" class="s2-swap" id="s2-swap" aria-expanded="false">换一课</button></div>
+  <div class="s2-pick"><span id="s2-now">第 1 课</span><button type="button" class="s2-swap" id="s2-swap" aria-expanded="false">13 课清单</button></div>
   <div class="s2-cards" id="s2-cards" hidden></div>
   <div class="s2-box" id="s2-step"></div>
   <p class="s2-saymsg" id="s2-saymsg" hidden></p>
@@ -211,22 +222,45 @@ function s2跳(课,步){
 
 /* 课的卡片**默认收起**：一打开屏幕上先是"要做的那一步"，不是让他先挑课。
    （Amos 2026-11-12：「不要让我思考 不要让我自己组装 你要带着我做」） */
+/* 这一课的进度（存档里的那份）。没取到存档就回 null —— **不假装他走完了几步** */
+function s2课进度(课){
+  var m=(s2.存&&s2.存['每课'])||[];
+  for(var i=0;i<m.length;i++)if(m[i]['课']===课)return m[i];
+  return null;
+}
 function s2画课(){
   var now=s2q('s2-now');
   if(now)now.textContent='第 '+s2.课+' 课 · 共 '+s2本()['步'].length+' 步';
   var box=s2q('s2-cards');if(!box)return;box.textContent='';
   S2.forEach(function(c){
-    var b=s2el('button','s2-card');b.type='button';
-    b.appendChild(s2el('b',null,'第 '+c['课']+' 课'));
-    b.appendChild(s2el('span',null,c['步'].length+' 步'));
+    var p=s2课进度(c['课']),走完=p?p['走完了']:0,一共=c['步'].length;
+    var 整课走完了=!!p&&p['下一步']===null;
+    var b=s2el('button','s2-card'+(整课走完了?' s2-c-done':''));b.type='button';
+    /* 勾只在**真走完整课**时给。取不到存档时一律空框，不画一个看着像做完的勾（底线 3） */
+    b.appendChild(s2el('span','s2-c-tick',整课走完了?'☑':'☐'));
+    b.appendChild(s2el('span','s2-c-n','第 '+c['课']+' 课'));
+    b.appendChild(s2el('span','s2-c-k',p?(走完+' / '+一共+' 步'):(一共+' 步')));
+    if(c['名'])b.appendChild(s2el('span','s2-c-name',c['名']));
     b.setAttribute('aria-pressed',c['课']===s2.课?'true':'false');
+    b.setAttribute('aria-label','第 '+c['课']+' 课'+(c['名']?'，'+c['名']:'')+(p?('，走完 '+走完+' / '+一共+' 步'):('，共 '+一共+' 步')));
     b.addEventListener('click',function(){
       s2收起();
-      if(s2.课===c['课'])return;
-      s2.课=c['课'];s2.i=0;s2.错=null;s2.完=false;s2画();
+      /* **落到这一课第一个没走完的步**，不是第 1 步。整课走完了就从头重走。 */
+      var 到=(p&&p['下一步'])||1;
+      s2跳(c['课'],到);
     });
     box.appendChild(b);
   });
+  /* **课件自己就有重名的课**（第 7～11 课的标题都是「时态分类」）。一连五行长得一样，
+     看着像我写重了 —— 所以照实说一句（底线 3「照实说，不硬凑」，和第 7 组没听辨题那句同一个做法）。
+     这句话是**从数据里算出来的**，不是手写死的：课件哪天改了，这句话跟着变或者自己消失。 */
+  var 名表={},重名=[];
+  S2.forEach(function(c){var n=c['名'];if(!n)return;(名表[n]=名表[n]||[]).push(c['课']);});
+  Object.keys(名表).forEach(function(n){if(名表[n].length>1)重名.push('第 '+名表[n].join(' / ')+' 课在课件里都叫「'+n+'」');});
+  if(重名.length){
+    var p=s2el('p','s2-src s2-c-note',重名.join('；')+' —— 不是这里写重了。');
+    box.appendChild(p);
+  }
 }
 function s2收起(){
   var box=s2q('s2-cards'),sw=s2q('s2-swap');

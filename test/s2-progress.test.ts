@@ -115,9 +115,41 @@ describe('4. 小结 / 每课进度', () => {
     const p = 每课进度(走完前几步(9));
     expect(p.length).toBe(13);
     expect(p.map((x) => x.一共)).toEqual(每课步数);
-    expect(p[0]).toEqual({ 课: 1, 一共: 4, 走完了: 4 });   // 第 1 课 4 步全完
-    expect(p[1]).toEqual({ 课: 2, 一共: 5, 走完了: 5 });   // 第 2 课 5 步全完，正好 9
-    expect(p[2].走完了).toBe(0);
+    expect(p[0]).toMatchObject({ 课: 1, 一共: 4, 走完了: 4, 下一步: null });   // 第 1 课 4 步全完
+    expect(p[1]).toMatchObject({ 课: 2, 一共: 5, 走完了: 5, 下一步: null });   // 第 2 课 5 步全完，正好 9
+    expect(p[2]).toMatchObject({ 课: 3, 走完了: 0, 下一步: 1 });
+  });
+  it('每课都带课名（清单上每行第二排写的就是它，来自课件）', () => {
+    for (const x of 每课进度([])) expect([x.课, typeof x.名]).toEqual([x.课, 'string']);
+    expect(每课进度([])[0].名).toBe(生成()[0].名);
+  });
+});
+
+describe('4.5 每课的「下一步」—— 点清单某一课要落到哪一步', () => {
+  it('一步没走：每课都从第 1 步起', () => {
+    expect(每课进度([]).map((x) => x.下一步)).toEqual(每课步数.map(() => 1));
+  });
+  it('走完一整课：那一课的下一步是 null（清单上才给勾）', () => {
+    const p = 每课进度(走完前几步(4));
+    expect(p[0].下一步).toBeNull();
+    expect(p[1].下一步).toBe(1);
+  });
+  it('**走到一半回的是没走完的那一步**，不是第 1 步（这一条就是加它的理由）', () => {
+    const d = [行(进度键(3, 1)), 行(进度键(3, 2))];
+    expect(每课进度(d)[2]).toMatchObject({ 课: 3, 走完了: 2, 下一步: 3 });
+  });
+  it('**中间漏了一步就回那一步**，不是最远那一步', () => {
+    // 第 3 课走了 1、2、5、6，第 3 步没走 → 下一步要指 3
+    const d = [1, 2, 5, 6].map((i) => 行(进度键(3, i)));
+    expect(每课进度(d)[2]).toMatchObject({ 课: 3, 走完了: 4, 下一步: 3 });
+  });
+  it('别人的行（发音训练的 s1:、错题的 s2x:）不影响这一课的下一步', () => {
+    const d = [行('s1:g1:follow', 'me'), 行(错题键(3, 3))];
+    expect(每课进度(d)[2].下一步).toBe(1);
+    expect(每课进度(d)[2].走完了).toBe(0);
+  });
+  it('13 课全走完：每课的下一步都是 null', () => {
+    expect(每课进度(走完前几步(126)).every((x) => x.下一步 === null)).toBe(true);
   });
 });
 
@@ -208,5 +240,75 @@ describe('8. 三个选项的顺序（2026-11-15 找出来的真 bug）', () => {
   it('顺序是**定死的**，不是随机的：再生成一次，每道题的选项顺序一模一样', () => {
     const 又 = 生成().flatMap((c) => c.步).filter((s) => s.类型 === '题');
     expect(又.map((s) => s.选!.join('|'))).toEqual(题.map((s) => s.选!.join('|')));
+  });
+});
+
+describe('9. 13 课清单那一屏（2026-11-15）', () => {
+  const 页 = readFileSync(path.join(__dirname, '..', 'src', 's2-page.ts'), 'utf8');
+  const 脚本 = 页.slice(页.indexOf('function s2画课()'), 页.indexOf('function s2收起()'));
+
+  it('按钮叫「13 课清单」，不再叫「换一课」', () => {
+    expect(页).toContain('>13 课清单</button>');
+    expect(页).not.toContain('>换一课</button>');
+  });
+  it('**勾只在整课走完时给**（下一步 === null），取不到存档一律空框', () => {
+    expect(脚本).toContain("整课走完了=!!p&&p['下一步']===null");
+    expect(脚本).toContain("整课走完了?'☑':'☐'");
+  });
+  it('取不到存档时**不写"走完几步"**，只写共几步 —— 不假装他做过（底线 3）', () => {
+    expect(脚本).toMatch(/p\?\(走完\+' \/ '\+一共\+' 步'\):\(一共\+' 步'\)/);
+  });
+  it('**点一行落到那一课第一个没走完的步**，不是第 1 步', () => {
+    expect(脚本).toMatch(/var 到=\(p&&p\['下一步'\]\)\|\|1;/);
+    expect(脚本).toContain("s2跳(c['课'],到)");
+  });
+  it('每行有无障碍标签，把课号、课名、走到哪了念出来', () => {
+    expect(脚本).toContain("b.setAttribute('aria-label'");
+    expect(脚本).toMatch(/走完 '\+走完\+' \/ '\+一共\+' 步/);
+  });
+  it('课名来自课件（S2 那份数据的 名 字段），不是页面自己写的', () => {
+    expect(脚本).toContain("c['名']");
+    // 页面脚本里不许出现凭空写的课名
+    for (const 名 of 生成().map((c) => c.名).filter(Boolean))
+      expect([名, 脚本.includes("'" + 名 + "'")]).toEqual([名, false]);
+  });
+  it('清单改成一行一课（竖排），勾的颜色走设计变量', () => {
+    expect(页).toContain('.s2 .s2-cards{flex-direction:column;flex-wrap:nowrap}');
+    expect(页).toContain('.s2 .s2-card.s2-c-done .s2-c-tick{color:var(--ok)}');
+  });
+  it('[hidden] 那条覆盖还在 —— 清单收起时**真的看不见**（2026-11-12 栽过一次）', () => {
+    // 2026-11-12 的真事：`.s2-cards{display:flex}` 把 [hidden] 的默认 display:none 盖掉了，
+    // 属性设了、人还看得见。守的是**凡是给 .s2-cards 设 display 的规则，[hidden] 那条要排在最后**
+    // （同优先级时后面的赢；真正兜底的是 e2e 里那条 getComputedStyle）。
+    const 带display = [...页.matchAll(/\.s2 \.s2-cards(\[hidden\])?\{[^}]*display:[^;}]+/g)];
+    expect(带display.length).toBeGreaterThan(1);
+    const 最后 = 带display[带display.length - 1];
+    expect([最后[0], 最后[1]]).toEqual([最后[0], '[hidden]']);
+    expect(最后[0]).toContain('display:none');
+  });
+});
+
+describe('10. 课件自己重名的那句话（照实说，不硬凑）', () => {
+  const 页 = readFileSync(path.join(__dirname, '..', 'src', 's2-page.ts'), 'utf8');
+  const 脚本 = 页.slice(页.indexOf('function s2画课()'), 页.indexOf('function s2收起()'));
+
+  it('课件里**真的有重名的课**（这句话不是凭空加的）', () => {
+    const m: Record<string, number[]> = {};
+    for (const c of 生成()) if (c.名) (m[c.名] = m[c.名] ?? []).push(c.课);
+    const 重 = Object.keys(m).filter((n) => m[n].length > 1);
+    expect(重.length).toBeGreaterThan(0);
+    // 第 7～11 课在课件里就是同一个标题 —— 这是事实，不是 bug
+    expect(m['时态分类']).toEqual([7, 8, 9, 10, 11]);
+  });
+  it('这句话**从数据算出来**，不是手写死的（页面脚本里不出现任何一个课名的字面量）', () => {
+    expect(脚本).toContain("S2.forEach(function(c){var n=c['名']");
+    for (const 名 of [...new Set(生成().map((c) => c.名).filter(Boolean))])
+      expect([名, 脚本.includes("'" + 名 + "'")]).toEqual([名, false]);
+  });
+  it('没有重名的时候**一个字都不多说**（重名表空就不画这句）', () => {
+    expect(脚本).toMatch(/if\(重名\.length\)\{/);
+  });
+  it('话里写明了"不是这里写重了"', () => {
+    expect(脚本).toContain('不是这里写重了。');
   });
 });
