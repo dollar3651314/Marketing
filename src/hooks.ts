@@ -5,12 +5,12 @@
  *   顺序：① 缺签名头或事件头 → 401（不读请求体、不碰 D1） ② 请求体 > 512 KB → 413 ③ 先验签（X-Hub-Signature-256，crypto.subtle.verify 常数时间）再解析：
  *   不对 → 401，settings 的 hook:bad_sig_at 每分钟最多写一次（一条带条件的语句；不读开关、不碰别的表） ④ 开关 settings 的 hook:github（默认开）：
  *   关着回 200、不写库 ⑤ 不是 JSON → 400 ⑥ 只处理 ping、push、pull_request、workflow_run（只认 completed）、delete，别的 204
- *   ⑦ 仓库白名单（agents、new-forecast、Marketing、TopUP，不分大小写）不在 → 202 ⑧ 每个仓库每分钟 120 次（company_rate 的 gh:<仓库>，推送接口的每分钟 6 次另算）→ 429
+ *   ⑦ 仓库白名单（agents、new-forecast、Marketing、TopUP、Trading，不分大小写）不在 → 202 ⑧ 每个仓库每分钟 120 次（company_rate 的 gh:<仓库>，推送接口的每分钟 6 次另算）→ 429
  *   ⑨ X-GitHub-Delivery 见过的直接 200 ⑩ 投递编号、active_item（事件时间不早于库里的才覆盖）、active_log、清理 30 天前的放在同一个 batch，
  *   写失败整批回滚、回 503，GitHub 重送同一编号会正常处理。
  * - GET  /api/active    （会话）{ on, lastAt, badSigAt, limitedAt, items, ended }：变灰（2 小时）、最近结束（24 小时，只显示 7 天内的）在读的时候算，不加定时任务。
  * - POST /api/hook {on}  （会话 + 本站来源）切开关。
- * C147：代码仓库（new-forecast、marketing、TopUP）只给分支名、PR 标题、CI；提交说明和 PR 正文不显示也不存。agents 只存自己人提交说明的第一行。
+ * C147：代码仓库（new-forecast、marketing、TopUP、Trading）只给分支名、PR 标题、CI；提交说明和 PR 正文不显示也不存。agents 只存自己人提交说明的第一行。
  *   外部：PR 的 author_association 不是 OWNER / MEMBER / COLLABORATOR、user.type = Bot、或 fork 来的；推送的 sender 不是仓库主人。
  *   fork 来的，或者来源仓库缺失、认不出来的（head.repo / head_repository 为 null 或缺失）PR 和 CI 单独成行（键 "<fork 所有者>:<分支>"），不碰内部同名分支。外部的不显示提交说明、不进"需要我的事"。
  * 接口约定和测试在 test/platform-batch3.test.ts 文件头；页面在 src/admin-page.ts 第三段脚本（团队在做什么、#ci-alert、#hook-toggle）。
@@ -29,12 +29,12 @@ const BAD_SIG_EVERY_MS = 60_000;
 /** "有延迟"：最近 10 分钟里有过限流（company_rate 只留最近 10 分钟） */
 const LIMITED_WINDOW_MIN = 10;
 const OWNER = 'dollar3651314';
-const REPOS = ['agents', 'new-forecast', 'marketing', 'topup'] as const;
+const REPOS = ['agents', 'new-forecast', 'marketing', 'topup', 'trading'] as const;
 type Repo = (typeof REPOS)[number];
 export const ROLE_CODES = ['main', 'pm', 'mkt', 'dev', 'qa', 'ops', 'review'] as const;
-export const PROJECT_CODES = ['forecast', 'platform', 'company', 'topup'] as const;
+export const PROJECT_CODES = ['forecast', 'platform', 'company', 'topup', 'trading'] as const;
 /** 分支名、PR 标题里的项目短码 → 项目名（短码一律小写；项目名和 agents 项目版图一字不差，项目页按项目名过滤）。没写的短码就是项目名 */
-const CODE_PROJECT: Record<string, string> = { topup: 'TopUP' };
+const CODE_PROJECT: Record<string, string> = { topup: 'TopUP', trading: 'Trading' };
 const projectOf = (code: string) => CODE_PROJECT[code] ?? code;
 /** PR 标题里的岗位写中文（也认短码） */
 const ROLE_NAMES: Record<string, string> = { 主会话: 'main', 产品: 'pm', 市场: 'mkt', 研发: 'dev', 测试: 'qa', 运维安全: 'ops', 审查: 'review', 审查会话: 'review' };
@@ -119,9 +119,11 @@ function guessProject(repo: Repo, files: string[]): string {
   if (repo === 'new-forecast') return 'forecast';
   if (repo === 'marketing') return 'platform';
   if (repo === 'topup') return 'TopUP';
+  if (repo === 'trading') return 'Trading';
   const f = files[0] ?? '';
   if (f.startsWith('项目/forecast/')) return 'forecast';
   if (f.startsWith('项目/TopUP/')) return 'TopUP';
+  if (f.startsWith('项目/Trading/')) return 'Trading';
   if (f.startsWith('工作平台/') || f.startsWith('公司平台/')) return 'platform'; // 过渡期：agents 文件夹改名前后都认
   return 'company';
 }
