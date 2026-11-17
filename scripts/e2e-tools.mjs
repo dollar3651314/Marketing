@@ -77,6 +77,10 @@ const check = (name, ok, got) => {
 };
 const H = 3600_000, DAY = 24 * H;
 const WAIT = 4000;
+/* 等「读回来」时量的是**有没有进展**，不是总共多久（2026-11-15，CI 为此红过一次；
+   正文在 e2e-look.mjs 的 apiSettled）。IDLE = 这么久一个请求都没回来才算卡住；
+   TOTAL = 真卡死时的兜底。顺畅时一点不慢：在途归零就立刻往下走。 */
+const IDLE = 10000, TOTAL = 60000;
 const now = Date.now();
 const today = twDay(now);
 const T = twStart(today);
@@ -999,7 +1003,7 @@ try {
     // ① Practical 项目页"用到的工具"：结论和卡片都写 0 /"没有 Practical 待回的"，上限是 10
     await page.click('nav.nav1 a[data-proj="Practical"]', { timeout: WAIT });
     await page.waitForFunction(() => location.hash.startsWith('#/Practical') && document.getElementById('f-title')?.textContent === 'Practical' && !document.getElementById('v-project').hidden, null, { timeout: WAIT });
-    await apiSettled(page, WAIT);
+    await apiSettled(page);
     await page.waitForFunction(() => !/读取中|正在读取/.test(document.getElementById('f-tools')?.innerText || ''), null, { timeout: WAIT }).catch(() => {});
     await page.waitForTimeout(300);
     const lead = (await page.locator('#f-tools .lead').first().innerText().catch(() => '')).replace(/\s+/g, ' ').trim();
@@ -1013,7 +1017,7 @@ try {
     await page.reload();
     await page.waitForSelector('#app:not([hidden])', { timeout: WAIT });
     const stay = await page.waitForFunction(() => location.hash.startsWith('#/Practical') && document.getElementById('f-title')?.textContent === 'Practical' && !document.getElementById('v-project').hidden, null, { timeout: WAIT }).then(() => true, () => false);
-    await apiSettled(page, WAIT);
+    await apiSettled(page);
     const card2 = (await page.locator('#f-tools-body').innerText().catch(() => '')).replace(/\s+/g, ' ').trim();
     check('K 在 Practical 页刷新：仍停在 Practical 项目页，"用到的工具"仍是 0 条、今天已回 0 / 10', stay && zero(card2) && /今天已回\s*0\s*\/\s*10/.test(card2), { stay, hash: await page.evaluate(() => location.hash), title: await page.locator('#f-title').textContent().catch(() => null), card: card2.slice(0, 120) });
     // forecast 项目页对照：4 条、上限 8
@@ -1029,7 +1033,14 @@ try {
     // 上面那句等待马上就过了，那次读取还在路上。断网只挡之后的新请求——那次旧的读取在红条出现后才成功返回，load() 照样把红条收掉
     //（页面的 load() 不分先后，晚到的旧结果会盖掉新的，另报研发），于是点 #t-retry 时它已经藏起来、等满 4 秒。
     // 确定性复现：扣住切页那次读取，等断网那次失败后 5ms 再放行 → 3 遍 3 遍都是同一句 Timeout。现在：等清单读取在途数归零、页面跑完再断网。
-    { const t0 = Date.now(); while (qInflight > 0) { if (Date.now() - t0 > WAIT) throw new Error(`等清单读取回来等了 ${WAIT}ms（在途 ${qInflight}）`); await new Promise((ok) => setTimeout(ok, 20)); } }
+    // 同一个病（见 e2e-look.mjs 的 apiSettled）：量的该是「有没有进展」，不是「总共多久」
+    { let 上次 = qInflight, 没动静从 = Date.now(); const 开始 = Date.now();
+      while (qInflight > 0) {
+        if (qInflight !== 上次) { 上次 = qInflight; 没动静从 = Date.now(); }
+        if (Date.now() - 没动静从 > IDLE) throw new Error(`等清单读取回来：${IDLE}ms 里一个都没回（在途 ${qInflight}）`);
+        if (Date.now() - 开始 > TOTAL) throw new Error(`等清单读取回来超过 ${TOTAL}ms 还没完（在途 ${qInflight}）`);
+        await new Promise((ok) => setTimeout(ok, 20));
+      } }
     await page.evaluate(() => new Promise((ok) => setTimeout(ok, 0)));
     const n0 = await page.locator('#list .item').count();
     // 断网一直持续到点"再读一次"那一刻：这期间别的重读（自动刷新等）也都失败，红条不会被别的读取先收掉（第一版在 unroute 和点按钮之间偶尔被别的读取收掉，8 遍撞 1 次）
@@ -1076,7 +1087,17 @@ try {
     page.on('request', (r) => { if (isQ(r)) qIn++; });
     page.on('requestfinished', (r) => { if (isQ(r)) qIn--; });
     page.on('requestfailed', (r) => { if (isQ(r)) qIn--; });
-    const qSettled = async () => { const t0 = Date.now(); while (qIn > 0) { if (Date.now() - t0 > WAIT) throw new Error(`等清单读取回来等了 ${WAIT}ms（在途 ${qIn}）`); await new Promise((ok) => setTimeout(ok, 20)); } await page.evaluate(() => new Promise((ok) => setTimeout(ok, 0))); };
+    const qSettled = async () => {
+      // 同上：进展（在途数变了）就重新计时；真卡住照样红
+      let 上次 = qIn, 没动静从 = Date.now(); const 开始 = Date.now();
+      while (qIn > 0) {
+        if (qIn !== 上次) { 上次 = qIn; 没动静从 = Date.now(); }
+        if (Date.now() - 没动静从 > IDLE) throw new Error(`等清单读取回来：${IDLE}ms 里一个都没回（在途 ${qIn}）`);
+        if (Date.now() - 开始 > TOTAL) throw new Error(`等清单读取回来超过 ${TOTAL}ms 还没完（在途 ${qIn}）`);
+        await new Promise((ok) => setTimeout(ok, 20));
+      }
+      await page.evaluate(() => new Promise((ok) => setTimeout(ok, 0)));
+    };
     const view = () => page.evaluate(() => ({ prod: document.getElementById('f-prod').value, who: [...document.querySelectorAll('#list .item .who a')].map((a) => a.textContent).sort(), total: (document.getElementById('total')?.textContent || '').trim(), stale: !document.getElementById('t-stale')?.hidden }));
     const get = (u) => page.evaluate(async (x) => { const r = await fetch(x, { credentials: 'same-origin' }); return r.json().catch(() => null); }, u);
     const enter = async () => {
